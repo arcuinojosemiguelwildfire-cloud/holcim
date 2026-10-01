@@ -8,6 +8,7 @@ import { ComingSoonPage } from './pages/ComingSoonPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { EventsPage } from './pages/EventsPage'
 import { LoginPage } from './pages/LoginPage'
+import { MinorRandomizerPage } from './pages/MinorRandomizerPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { QrGeneratorPage } from './pages/QrGeneratorPage'
 import { QrPrintPage } from './pages/QrPrintPage'
@@ -15,11 +16,6 @@ import { RegistrationPage } from './pages/RegistrationPage'
 
 /** Placeholder routes for modules scheduled in later phases. */
 const COMING_SOON_ROUTES = [
-  {
-    path: 'minor-randomizer',
-    title: 'Minor Randomizer',
-    plannedFeatures: ['Draw winners from registered attendees', 'Fullscreen event mode', 'Winner history and re-draw rules'],
-  },
   {
     path: 'major-randomizer',
     title: 'Major Randomizer',
@@ -57,6 +53,7 @@ const router = createBrowserRouter(
             { path: 'attendees/import', element: <AttendeeImportPage /> },
             { path: 'qr-codes', element: <QrGeneratorPage /> },
             { path: 'registration', element: <RegistrationPage /> },
+            { path: 'minor-randomizer', element: <MinorRandomizerPage /> },
             ...COMING_SOON_ROUTES.map(({ path, title, plannedFeatures }) => ({
               path,
               element: <ComingSoonPage title={title} plannedFeatures={plannedFeatures} />,

@@ -137,3 +137,6 @@ even at tens of thousands of rows.
 `JSON` is a native type in MySQL. In MariaDB it's an alias for `LONGTEXT` with an
 automatic `JSON_VALID()` check. Both reject invalid JSON. Stored generated
 columns (`active_lock`) are supported by both.
+
+### `randomizer_draws` (migration 010, Phase 5)
+One row per draw: `event_id`, `attendee_id`, `randomizer_type` (`minor`/`major`), `drawn_by` (user, SET NULL), `selected_at`. Separate from `registration_scans`, so recording a winner never changes eligibility.

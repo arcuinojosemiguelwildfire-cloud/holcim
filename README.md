@@ -4,7 +4,9 @@ An online event management and prize-draw system: attendee import, QR-based
 registration, minor and major randomizers, winner management, reports and an
 audit trail.
 
-> **Current status: Phase 4 (Registration).** Phase 4 adds the camera QR scanner, check-in, duplicate protection and Minor draw eligibility.
+> **Current status: Phase 5 (Minor Randomizer).** Phase 5 adds the server-side Minor draw, draw history and Event Fullscreen Mode.
+>
+> Phase 4 (Registration): Phase 4 adds the camera QR scanner, check-in, duplicate protection and Minor draw eligibility.
 >
 > Phase 3 (QR codes): Phase 3 adds attendee QR generation, the QR / ID Generator page, regeneration and A4 bulk printing.
 >
@@ -51,13 +53,13 @@ The finished system will support a corporate event from start to finish:
 | 3 | Automatic attendee QR generation (opaque tokens) | **Built** (Phase 3) |
 | 4 | Printable attendee QR/ID | **Built** (Phase 3, A4 label sheets) |
 | 5 | Registration QR scanner | **Built** (Phase 4) |
-| 6 | Minor randomizer | Planned |
+| 6 | Minor randomizer | **Built** (Phase 5) |
 | 7 | Major randomizer | Planned |
 | 8 | Google Form / Google Sheet response import | Schema ready |
 | 9 | Winner management | Planned |
 | 10 | Reports | Planned |
 | 11 | Audit logs | **Recording** logins, logouts and event changes |
-| 12 | Fullscreen event mode | Planned |
+| 12 | Fullscreen event mode | **Built** for the Minor Randomizer (reusable stage) |
 
 The system is built around one **active event** at a time: the dashboard,
 registration and randomizers always work on the active event.
@@ -376,6 +378,8 @@ Error codes: `BAD_REQUEST` (400), `UNAUTHENTICATED` / `INVALID_CREDENTIALS` (401
 | GET / POST | `/api/attendees/{id}/qr` | Viewers / Admin | QR state / generate if missing |
 | POST | `/api/attendees/{id}/qr/regenerate` | Admin | Replace token (old QR becomes invalid) |
 | GET | `/api/registration/summary` | Admin, registration staff | Total / registered / remaining + latest 20 check-ins |
+| GET | `/api/randomizers/minor` | Admin, event operator | Event, eligible count, latest 10 winners |
+| POST | `/api/randomizers/minor/draw` | Admin, event operator | Server-side draw; records it; returns the winner (409 `NO_ELIGIBLE_ATTENDEES` if the pool is empty) |
 | POST | `/api/registration/scan` | Admin, registration staff | `{token}` (token or full QR URL) → `registered` / `already_registered`, or 422 `INVALID_QR` / `WRONG_EVENT` / `ATTENDEE_INACTIVE` |
 
 Full request/response examples: [docs/API.md](docs/API.md).
@@ -436,6 +440,14 @@ Full request/response examples: [docs/API.md](docs/API.md).
 - The server resolves the token → attendee, checks the active event and the attendee status, then inserts into `registration_scans`. The existing UNIQUE (event_id, attendee_id) key guarantees one check-in per attendee even with several scanners; a second scan returns `already_registered` and inserts nothing. Regenerated (old) tokens no longer exist and return `INVALID_QR`.
 - **Minor eligible = attendee has a `registration_scans` row for the active event and is still active.** No separate eligibility table. Phase 5 will draw from this pool.
 - Successful check-ins are audit-logged (`registration.checked_in`, with the staff member). Invalid and duplicate scans are not logged.
+
+## 9d. Minor Randomizer (Phase 5)
+
+- **Eligible pool** (queried on every draw, server-side): active attendees of the active event with a `registration_scans` row. Nothing else maintains eligibility.
+- **Draw:** the server picks the winner with `random_int()` (cryptographically secure), stores it in `randomizer_draws` (event, attendee, type `minor`, user, time; migration 010) and returns it. The browser only animates the result: it receives the winner plus a random sample of up to 24 other eligible names for the rolling effect, never the full pool.
+- **No repeat-winner rule:** winners stay eligible; `registration_scans` is never modified. If a rule is needed later it can be built on `randomizer_draws`.
+- **Access:** admin and event operator (registration staff get 403).
+- **Event Fullscreen Mode:** "Enter fullscreen" uses the standard browser Fullscreen API on the stage element, so the sidebar and top bar disappear. Space/Enter draws (works with presenter remotes); Esc or the corner button exits. Browsers require a click or key press to enter fullscreen and always let the viewer exit; the app cannot hide browser UI on its own. The stage (`components/randomizer/RandomizerStage.tsx`) is reusable for the Major Randomizer.
 
 ## 10. Creating the first admin
 

@@ -18,6 +18,7 @@ use App\Controllers\DashboardController;
 use App\Controllers\EventController;
 use App\Controllers\HealthController;
 use App\Controllers\QrCodeController;
+use App\Controllers\RandomizerController;
 use App\Controllers\RegistrationController;
 use App\Core\Router;
 use App\Middleware\AuthMiddleware;
@@ -70,4 +71,9 @@ return static function (Router $router): void {
     // Registration (QR check-in) for the active event: admin + registration staff.
     $router->get('/registration/summary', [RegistrationController::class, 'summary'], [$qrViewers]);
     $router->post('/registration/scan', [RegistrationController::class, 'scan'], [$qrViewers]);
+
+    // Randomizers (active event): admin + event operator.
+    $randomizerOperators = AuthMiddleware::roles(User::ROLE_ADMIN, User::ROLE_EVENT_OPERATOR);
+    $router->get('/randomizers/minor', [RandomizerController::class, 'minorSummary'], [$randomizerOperators]);
+    $router->post('/randomizers/minor/draw', [RandomizerController::class, 'minorDraw'], [$randomizerOperators]);
 };

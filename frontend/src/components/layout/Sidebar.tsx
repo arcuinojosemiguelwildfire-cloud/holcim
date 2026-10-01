@@ -82,7 +82,7 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
           </ul>
         </nav>
 
-        <div className="border-t border-slate-800 px-5 py-4 text-xs text-slate-500">Phase 4 · Registration</div>
+        <div className="border-t border-slate-800 px-5 py-4 text-xs text-slate-500">Phase 5 · Minor Randomizer</div>
       </aside>
     </>
   )
