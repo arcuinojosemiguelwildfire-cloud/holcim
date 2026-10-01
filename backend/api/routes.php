@@ -12,6 +12,7 @@ declare(strict_types=1);
  * winners, reports, audit-logs) register their routes here as they are built.
  */
 
+use App\Controllers\AttendeeController;
 use App\Controllers\AuthController;
 use App\Controllers\DashboardController;
 use App\Controllers\EventController;
@@ -42,4 +43,14 @@ return static function (Router $router): void {
     $router->post('/events', [EventController::class, 'store'], [$adminOnly]);
     $router->put('/events/{id}', [EventController::class, 'update'], [$adminOnly]);
     $router->patch('/events/{id}/status', [EventController::class, 'updateStatus'], [$adminOnly]);
+
+    // Attendees (scoped to the active event). Import is a 3-step flow:
+    // parse (upload) -> preview (validate + duplicates) -> import (commit).
+    $router->get('/attendees', [AttendeeController::class, 'index'], [$authenticated]);
+    $router->post('/attendees/import/parse', [AttendeeController::class, 'parseImport'], [$adminOnly]);
+    $router->post('/attendees/import/preview', [AttendeeController::class, 'previewImport'], [$adminOnly]);
+    $router->post('/attendees/import', [AttendeeController::class, 'import'], [$adminOnly]);
+    $router->get('/attendees/{id}', [AttendeeController::class, 'show'], [$authenticated]);
+    $router->put('/attendees/{id}', [AttendeeController::class, 'update'], [$adminOnly]);
+    $router->patch('/attendees/{id}/status', [AttendeeController::class, 'updateStatus'], [$adminOnly]);
 };

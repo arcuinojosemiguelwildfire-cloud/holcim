@@ -48,8 +48,9 @@ export function onUnauthorized(handler: (() => void) | null): void {
 }
 
 async function send<T>(method: HttpMethod, path: string, body?: unknown): Promise<T> {
+  const isForm = body instanceof FormData
   const headers: Record<string, string> = { Accept: 'application/json' }
-  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  if (body !== undefined && !isForm) headers['Content-Type'] = 'application/json'
   if (STATE_CHANGING_METHODS.has(method) && csrfToken) headers[CSRF_HEADER] = csrfToken
 
   let response: Response
@@ -58,7 +59,7 @@ async function send<T>(method: HttpMethod, path: string, body?: unknown): Promis
       method,
       headers,
       credentials: 'include',
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
     })
   } catch {
     throw new ApiError(0, {
@@ -116,6 +117,8 @@ export const apiClient = {
   put: <T>(path: string, body: unknown) => request<T>('PUT', path, body),
   patch: <T>(path: string, body: unknown) => request<T>('PATCH', path, body),
   delete: <T>(path: string) => request<T>('DELETE', path),
+  /** multipart/form-data upload (the browser sets the boundary header). */
+  upload: <T>(path: string, form: FormData) => request<T>('POST', path, form),
 }
 
 /** Human-readable message for any thrown value. */

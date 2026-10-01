@@ -28,7 +28,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', path: '/', icon: LayoutDashboard },
   { label: 'Events', path: '/events', icon: CalendarDays },
-  { label: 'Attendees', path: '/attendees', icon: Users, comingSoon: true },
+  { label: 'Attendees', path: '/attendees', icon: Users },
   { label: 'Registration', path: '/registration', icon: ScanLine, comingSoon: true },
   { label: 'Minor Randomizer', path: '/minor-randomizer', icon: Dices, comingSoon: true },
   { label: 'Major Randomizer', path: '/major-randomizer', icon: Trophy, comingSoon: true },

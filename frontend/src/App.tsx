@@ -2,6 +2,8 @@ import { createBrowserRouter, RouterProvider } from 'react-router'
 import { AuthProvider } from './components/auth/AuthProvider'
 import { GuestOnly, RequireAuth } from './components/auth/RouteGuards'
 import { AdminLayout } from './layouts/AdminLayout'
+import { AttendeeImportPage } from './pages/AttendeeImportPage'
+import { AttendeesPage } from './pages/AttendeesPage'
 import { ComingSoonPage } from './pages/ComingSoonPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { EventsPage } from './pages/EventsPage'
@@ -10,16 +12,6 @@ import { NotFoundPage } from './pages/NotFoundPage'
 
 /** Placeholder routes for modules scheduled in later phases. */
 const COMING_SOON_ROUTES = [
-  {
-    path: 'attendees',
-    title: 'Attendees',
-    plannedFeatures: [
-      'Import attendees from Excel/CSV with dynamic column mapping',
-      'Search, view and edit attendee records',
-      'Automatic opaque QR token per attendee',
-      'Printable attendee QR/ID cards',
-    ],
-  },
   {
     path: 'registration',
     title: 'Registration',
@@ -61,6 +53,8 @@ const router = createBrowserRouter(
           children: [
             { index: true, element: <DashboardPage /> },
             { path: 'events', element: <EventsPage /> },
+            { path: 'attendees', element: <AttendeesPage /> },
+            { path: 'attendees/import', element: <AttendeeImportPage /> },
             ...COMING_SOON_ROUTES.map(({ path, title, plannedFeatures }) => ({
               path,
               element: <ComingSoonPage title={title} plannedFeatures={plannedFeatures} />,

@@ -4,11 +4,12 @@ An online event management and prize-draw system: attendee import, QR-based
 registration, minor and major randomizers, winner management, reports and an
 audit trail.
 
-> **Current status: Phase 1 (Foundation).** This phase delivers the project
-> structure, database schema, PHP API, authentication, admin interface,
-> dashboard and event management. QR codes, scanning, imports, randomizers,
-> Google Sheets, winners, reports and fullscreen mode are **not implemented
-> yet**. Their menu items show a "Coming Soon" page.
+> **Current status: Phase 2 (Attendees).** Phase 1 delivered the foundation
+> (schema, API, auth, admin UI, dashboard, events). Phase 2 adds attendee
+> import (CSV/XLSX with dynamic column mapping, validation and duplicate
+> detection) and attendee management (search, filter, pagination, view, edit,
+> archive). QR codes, scanning, randomizers, Google Sheets, winners, reports and
+> fullscreen mode are **not implemented yet**.
 
 ---
 
@@ -42,7 +43,7 @@ The finished system will support a corporate event from start to finish:
 | # | Module | Phase 1 status |
 |---|--------|----------------|
 | 1 | Event management | **Built** (create, view, edit, set status) |
-| 2 | Attendee import (Excel/CSV, dynamic column mapping) | Schema ready |
+| 2 | Attendee import (Excel/CSV, dynamic column mapping) | **Built** (Phase 2) |
 | 3 | Automatic attendee QR generation (opaque tokens) | Schema ready |
 | 4 | Printable attendee QR/ID | Planned |
 | 5 | Registration QR scanner | Schema ready |
@@ -173,7 +174,7 @@ The folder name `Holcim` matters: the default API URL is
 | XAMPP with **PHP 8.1 or newer** | PHP 8.2+ recommended. Check with `php -v` |
 | Apache **mod_rewrite** | Enabled by default in XAMPP |
 | `AllowOverride All` for htdocs | XAMPP default. Needed for the `.htaccess` files |
-| PHP extensions: `pdo_mysql`, `mbstring`, `json` | All bundled and enabled in XAMPP. `curl` is only needed for the smoke test |
+| PHP extensions: `pdo_mysql`, `mbstring`, `json`, `zip`, `simplexml` | All bundled and enabled in XAMPP (`zip`/`simplexml` read .xlsx imports). `curl` is only needed for the smoke test |
 | MariaDB/MySQL running | Start it from the XAMPP control panel |
 | **Node.js 20.19+ or 22.12+** and npm | Only for frontend development and builds. Not needed on the production server |
 
@@ -356,6 +357,13 @@ Error codes: `BAD_REQUEST` (400), `UNAUTHENTICATED` / `INVALID_CREDENTIALS` (401
 | POST | `/api/events` | Admin | Create event |
 | PUT | `/api/events/{id}` | Admin | Update event |
 | PATCH | `/api/events/{id}/status` | Admin | Change status |
+| GET | `/api/attendees` | Signed in | Search/filter/paginate attendees of the active event |
+| GET | `/api/attendees/{id}` | Signed in | One attendee |
+| PUT | `/api/attendees/{id}` | Admin | Edit name, department, email, external ID (never the code) |
+| PATCH | `/api/attendees/{id}/status` | Admin | Archive / restore (soft delete) |
+| POST | `/api/attendees/import/parse` | Admin | Upload CSV/XLSX (multipart `file`, ≤ 5 MB) → headers, rows, suggested mapping |
+| POST | `/api/attendees/import/preview` | Admin | Validate + duplicate check, no writes |
+| POST | `/api/attendees/import` | Admin | Import only new valid rows |
 
 Full request/response examples: [docs/API.md](docs/API.md).
 
@@ -388,6 +396,16 @@ Full request/response examples: [docs/API.md](docs/API.md).
 2. Put business rules in `backend/services/`.
 3. Add a controller method that validates input with `Validator` and returns `Response`.
 4. Register the route in `backend/api/routes.php` with the right middleware.
+
+## 9a. Attendee import rules (Phase 2)
+
+- Workflow: upload → preview → map columns → validate → duplicate check → confirm → database. The server re-validates everything; spreadsheet contents are never trusted.
+- Accepted: `.csv` (comma, semicolon, tab or pipe; UTF-8 or Windows-1252) and `.xlsx` (first sheet), up to 5 MB / 5,000 rows. `.xls` is rejected with instructions to re-save as `.xlsx`/CSV.
+- The first non-empty row is the header row. Column names can be anything; mappings are suggested from common names (Name, Employee Name, Dept, Email Address, Employee No., …) and the admin can change them.
+- Required: Full Name, Department. Optional: Email (must be valid if present), External Identifier.
+- Duplicates (inside the file and against existing attendees of the event, archived included), checked in order: External Identifier → Email → normalised Full Name + Department (trimmed, spaces collapsed, case-insensitive). A match is ignored when both sides have *different* external IDs (or emails), so two different people are never merged. No fuzzy matching.
+- Duplicates and invalid rows are skipped and listed; existing attendees are never modified. New attendees get the next code `ATT-0001`, `ATT-0002`, … per event. Codes are never reassigned or editable.
+- Unmapped columns are saved in `attendees.extra_data`. Each import is recorded in `import_batches` and `audit_logs`.
 
 ## 10. Creating the first admin
 

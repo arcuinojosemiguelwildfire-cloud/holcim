@@ -76,6 +76,8 @@ Indexes on (event_id, full_name), (event_id, department) and (event_id, email)
 support search and filtering. A UNIQUE (id, event_id) key enables the composite
 FK below.
 
+**Migration 009 (Phase 2)** adds `external_identifier` (VARCHAR 190, UNIQUE per event when present), `status` ENUM(`active`,`archived`) and `archived_at` for soft delete. Attendees are archived, never hard-deleted.
+
 ### `attendee_qr_codes`
 | Column | Notes |
 |--------|-------|
