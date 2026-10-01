@@ -110,10 +110,30 @@ final class EventDay
     }
 
     /**
+     * Status shown to users, derived from the current day (Phase 8.1):
+     * the active day is "active", days before it "completed", days after it
+     * "upcoming". The stored status column only marks the active day (it is
+     * the current-day pointer); no day's records depend on it.
+     * Without a current day the stored value is shown.
+     */
+    public static function displayStatus(array $day, ?int $currentDayNumber): string
+    {
+        if ($day['status'] === self::STATUS_ACTIVE) {
+            return self::STATUS_ACTIVE;
+        }
+        if ($currentDayNumber === null) {
+            return (string) $day['status'];
+        }
+
+        return (int) $day['day_number'] < $currentDayNumber ? self::STATUS_COMPLETED : self::STATUS_UPCOMING;
+    }
+
+    /**
      * @param array<string, mixed> $day
+     * @param int|null $currentDayNumber day_number of the event's active day, for displayStatus()
      * @return array<string, mixed>
      */
-    public static function toPublic(array $day): array
+    public static function toPublic(array $day, ?int $currentDayNumber = null): array
     {
         return [
             'id' => (int) $day['id'],
@@ -121,7 +141,7 @@ final class EventDay
             'dayNumber' => (int) $day['day_number'],
             'eventDate' => $day['event_date'],
             'label' => $day['label'],
-            'status' => $day['status'],
+            'status' => self::displayStatus($day, $currentDayNumber),
             'displayName' => self::displayName($day),
         ];
     }

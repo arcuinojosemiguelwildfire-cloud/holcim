@@ -35,6 +35,7 @@ batches (RESTRICT). Events are archived, not deleted.
 | email | VARCHAR(190) NULL | **UNIQUE** when set, stored lower-case (NULL for scanner operators, Phase 8) |
 | username | VARCHAR(60) NULL | **UNIQUE** when set, lower-case; login name of scanner operators (migration 028) |
 | password_hash | VARCHAR(255) | `password_hash()` output; never returned by the API |
+| session_version | INT UNSIGNED | Stored in the session at login; incremented by an admin password reset so open sessions are rejected (migration 030) |
 | role | ENUM(`admin`,`registration_staff`,`event_operator`,`scanner_operator`) | `scanner_operator` added in Phase 8 |
 | status | ENUM(`active`,`inactive`) | Inactive users can't sign in, and existing sessions end on the next request |
 | last_login_at | DATETIME NULL | |
@@ -166,6 +167,9 @@ Failed logins only: `email_hash` (SHA-256), `ip_address`, `attempted_at`. Cleare
 
 ### `minor_manual_entries`
 Manual additions to a day's Minor pool: `event_id`, `event_day_id`, `attendee_id`, `added_by`, `reason`, `created_at`. UNIQUE (event_day_id, attendee_id). Composite FKs to event_days and attendees. Never creates a check-in.
+
+### `event_days.status`
+Only `active` has meaning for the application (the current-day pointer, one per event). The status shown in the UI and readiness check is derived: days before the current day are "completed", days after it "upcoming". Switching the current day updates only this column; no day's registrations, scan logs, eligibility, manual entries, draws or imports are touched.
 
 ### `scan_logs`
 Every scan attempt per day: `event_id`, `event_day_id`, `user_id`, `attendee_id` (NULL for invalid QR / wrong event), `result` ENUM(`registered`,`already_registered`,`invalid_qr`,`wrong_event`,`attendee_inactive`), `scanned_at`. Indexes (event_day_id, scanned_at), (event_day_id, user_id, scanned_at), (event_day_id, result). Counts of check-ins still come from `registration_scans`.

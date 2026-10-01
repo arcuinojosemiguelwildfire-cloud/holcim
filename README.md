@@ -499,13 +499,13 @@ Full request/response examples: [docs/API.md](docs/API.md).
 
 ## 9g. Multi-day events, scanner operators and manual participants (Phase 8)
 
-- **Event days** (`event_days`): every event has Day 1, 2, 3… with a date and optional label. Exactly one day of the active event is the **current day**; the server resolves it on every request (no event/day ID is ever accepted from the browser for scans, pools, draws or imports). Admin: **Events › Days** to add a day, edit it, and **Set as current**. The top bar shows "Current Event Day: Day 2 — October 11, 2026" for every role. Switching days never deletes or resets anything.
+- **Event days** (`event_days`): every event has Day 1, 2, 3… with a date and optional label. Exactly one day of the active event is the **current day**; the server resolves it on every request (no event/day ID is ever accepted from the browser for scans, pools, draws or imports). Admin: **Events › Days** to add a day, edit it, and **Set as current**. The top bar shows "Current Event Day: Day 2 — October 11, 2026" for every role. Switching days (forward or back) never deletes or resets anything: it only moves the current-day pointer. The status shown for each day is derived from the current day (earlier days "Completed", later days "Upcoming").
 - **Registration per day:** the same attendee QR is used every day. `registration_scans` is unique per (event day, attendee), so an attendee checks in once per day; a second scan the same day is "Already registered for Day N". Counts (Total / Registered / Remaining) are for the current day. Every scan attempt (including invalid / wrong event / inactive) goes to `scan_logs` for the Recent Scans list.
 - **Minor pool (per day)** = active attendees registered today **or** manually added today (`minor_manual_entries`).
 - **Major pool (per day)** = active attendees with a `major_eligibility` row for today. A response import grants eligibility for the current day only (`source = import`); earlier days' rows and import history are kept.
 - **+ Add Participant** (Minor and Major Randomizer pages; admin + event operator): search by code, name, department or email, optional reason. Creates a day-specific `source = manual` record with the user and time. It never changes the attendee, QR code or registration and never creates a check-in. Duplicates (already registered/added/imported today) return 409 "already eligible". Archived attendees and attendees of other events are refused.
 - **Draws per day:** `randomizer_draws.event_day_id`; recent winners show today's draws; only draws of the current day can be voided.
-- **Scanner Operator role** (`scanner_operator`): created by an admin in **Settings › Scanner Operators** (display name, username, password + confirmation, status; enable/disable; reset password). Passwords are hashed with `password_hash()` and never returned. Scanner operators sign in with their **username** (the login field accepts email or username), land on the scanner dashboard and can only: scan (camera or USB scanner), see **My scans today** / **All scans today**, browse Recent Scans (My Scans / All Scans, filter All / Successful / Already registered / Invalid, paginated, current day only) and use the read-only attendee lookup. Every other endpoint returns 403. Disabling an account ends its session on the next request.
+- **Scanner Operator role** (`scanner_operator`): created by an admin in **Settings › Scanner Operators** (display name, username, password + confirmation, status; enable/disable; reset password). Passwords are hashed with `password_hash()` and never returned. Scanner operators sign in with their **username** (the login field accepts email or username), land on the scanner dashboard and can only: scan (camera or USB scanner), see **My scans today** / **All scans today**, browse Recent Scans (My Scans / All Scans, filter All / Successful / Already registered / Invalid, paginated, current day only) and use the read-only attendee lookup. Every other endpoint returns 403. Disabling an account or resetting its password ends its open sessions on the next request (`users.session_version`, migration 030).
 - **Reports** have a scope toggle: current day or all days (Event Day column on every row).
 
 Permission matrix (enforced in `backend/api/routes.php`):
@@ -638,7 +638,26 @@ rows, so use it only on a development database.** Set
 `HOLCIM_TEST_STAFF_EMAIL` / `HOLCIM_TEST_STAFF_PASSWORD` to also check that a
 non-admin gets 403 when creating an event.
 
-**Frontend:** `npm run typecheck`, `npm run lint`, `npm run build`.
+**Phase 8 multi-day smoke test** (development database only):
+
+```bash
+HOLCIM_TEST_EMAIL=admin@example.com HOLCIM_TEST_PASSWORD='your-password' \
+  php backend/tests/phase8-smoke-test.php http://localhost/Holcim/backend/api --write
+```
+
+It creates its own "Phase 8 Smoke …" event (Day 1 + Day 2, attendees A–D),
+test accounts with random passwords, scans and draws, then checks day
+isolation (registration, scanner counts, Minor/Major pools, manual
+participants, draws, voids, reports), switching back and forth between days,
+scanner-operator permissions, and that a password reset or disable signs the
+operator out. While it runs, the currently active event is set to completed;
+afterwards it is restored, the smoke events are archived and the test
+accounts disabled. It refuses to run without `--write` or with
+`APP_ENV=production`.
+
+**Frontend:** `npm run typecheck`, `npm run lint`, `npm run build`. The build
+prints a "chunks larger than 500 kB" notice (≈520 kB, ≈155 kB gzipped). It is
+informational only: the build succeeds and the app loads normally.
 
 ## 15. Troubleshooting
 

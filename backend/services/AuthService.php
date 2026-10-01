@@ -21,6 +21,8 @@ final class AuthService
     private const SESSION_USER_KEY = '_user_id';
     private const SESSION_ROLE_KEY = '_user_role';
     private const SESSION_LOGIN_AT_KEY = '_login_at';
+    /** users.session_version at login; a password reset increments it (Phase 8.1). */
+    private const SESSION_VERSION_KEY = '_session_version';
 
     /** @var array<string, mixed>|null */
     private static ?array $currentUser = null;
@@ -70,6 +72,7 @@ final class AuthService
         Session::set(self::SESSION_USER_KEY, $userId);
         Session::set(self::SESSION_ROLE_KEY, $user['role']);
         Session::set(self::SESSION_LOGIN_AT_KEY, time());
+        Session::set(self::SESSION_VERSION_KEY, (int) ($user['session_version'] ?? 0));
         Csrf::rotate();
 
         User::touchLastLogin($userId);
@@ -108,10 +111,13 @@ final class AuthService
         }
 
         $user = User::findById($userId);
-        if ($user === null || $user['status'] !== User::STATUS_ACTIVE) {
-            // Account removed or deactivated since login: end the session.
+        // Sessions created before migration 030 have no stored version: treat as 0.
+        $sessionVersion = (int) (Session::get(self::SESSION_VERSION_KEY) ?? 0);
+        if ($user === null || $user['status'] !== User::STATUS_ACTIVE || (int) $user['session_version'] !== $sessionVersion) {
+            // Account removed, deactivated, or password reset since login: end the session.
             Session::forget(self::SESSION_USER_KEY);
             Session::forget(self::SESSION_ROLE_KEY);
+            Session::forget(self::SESSION_VERSION_KEY);
 
             return null;
         }

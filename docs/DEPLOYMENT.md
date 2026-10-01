@@ -28,7 +28,7 @@ A phone or tablet opening `http://192.168.x.x` **will be refused camera access**
 cd frontend && npm ci && VITE_API_BASE_URL=/api VITE_BASE_PATH=/ npm run build
 
 # On the server (backend uploaded as <web root>/api)
-php backend/cli/migrate.php            # apply all migrations (001-029)
+php backend/cli/migrate.php            # apply all migrations (001-030)
 php backend/cli/create-user.php        # first admin, if needed
 php backend/cli/check-readiness.php    # must report "No blocking problems found."
 ```
@@ -44,6 +44,8 @@ Take a backup first (`mysqldump`, see §5), then run `php backend/cli/migrate.ph
 3. Existing Major eligibility rows become `source = import` with `added_by` = the user who ran the import; Major import batches are linked to Day 1.
 4. New tables `minor_manual_entries` (manual Minor additions) and `scan_logs` (every scan attempt per day).
 5. `users` gets the `scanner_operator` role, an optional unique `username`, and `email` becomes optional (scanner operators have none).
+
+Phase 8.1 adds migration 030 (`users.session_version`, used to sign a scanner operator out when an admin resets their password).
 
 Nothing is deleted. After migrating, open **Events › Days** to add Day 2, 3… and check the current day.
 

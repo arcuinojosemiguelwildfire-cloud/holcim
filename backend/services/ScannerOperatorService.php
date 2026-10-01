@@ -17,9 +17,9 @@ use App\Models\User;
  * Scanner operators are ordinary `users` rows with role scanner_operator and
  * a username (no email). They sign in through the normal login and session
  * system. Passwords are hashed with password_hash() and never returned.
- * Disabling an account ends its session on the next request (AuthService
- * reloads the user on every request). Only scanner_operator accounts can be
- * changed here.
+ * Disabling an account or resetting its password ends its open sessions on
+ * the next request (AuthService reloads the user and checks session_version).
+ * Only scanner_operator accounts can be changed here.
  */
 final class ScannerOperatorService
 {
@@ -106,7 +106,8 @@ final class ScannerOperatorService
     public static function resetPassword(Request $request, int $id, string $password): void
     {
         $user = self::findOrFail($id);
-        User::updatePasswordHash($id, password_hash($password, PASSWORD_DEFAULT));
+        // New hash + session_version bump: the operator's open sessions end.
+        User::resetPassword($id, password_hash($password, PASSWORD_DEFAULT));
         AuditLogger::log(
             $request,
             'user.scanner_operator_password_reset',

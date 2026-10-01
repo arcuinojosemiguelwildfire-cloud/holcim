@@ -89,9 +89,13 @@ try {
         $days = $pdo->prepare('SELECT day_number, event_date, status FROM event_days WHERE event_id = :id ORDER BY day_number');
         $days->execute(['id' => $id]);
         $dayRows = $days->fetchAll();
-        $add($dayRows !== [] ? 'OK' : 'FAIL', 'Event days', $dayRows === [] ? 'none - add a day on the Events page' : count($dayRows) . ' configured: '
-            . implode(', ', array_map(static fn (array $d): string => "Day {$d['day_number']} {$d['event_date']} ({$d['status']})", $dayRows)));
         $activeDay = array_values(array_filter($dayRows, static fn (array $d): bool => $d['status'] === 'active'))[0] ?? null;
+        $currentNumber = $activeDay !== null ? (int) $activeDay['day_number'] : null;
+        $add($dayRows !== [] ? 'OK' : 'FAIL', 'Event days', $dayRows === [] ? 'none - add a day on the Events page' : count($dayRows) . ' configured: '
+            . implode(', ', array_map(
+                static fn (array $d): string => "Day {$d['day_number']} {$d['event_date']} (" . \App\Models\EventDay::displayStatus($d, $currentNumber) . ')',
+                $dayRows
+            )));
         $add($activeDay !== null ? 'OK' : 'FAIL', 'Current event day', $activeDay !== null
             ? "Day {$activeDay['day_number']} - {$activeDay['event_date']}" . ($activeDay['event_date'] !== date('Y-m-d') ? ' (not today\'s date - check before doors open)' : '')
             : 'none - activate a day on the Events page');

@@ -48,8 +48,15 @@ final class EventDayService
     public static function listForEvent(int $eventId): array
     {
         self::eventOrFail($eventId);
+        $days = EventDay::forEvent($eventId);
+        $current = null;
+        foreach ($days as $day) {
+            if ($day['status'] === EventDay::STATUS_ACTIVE) {
+                $current = (int) $day['day_number'];
+            }
+        }
 
-        return array_map([EventDay::class, 'toPublic'], EventDay::forEvent($eventId));
+        return array_map(static fn (array $day): array => EventDay::toPublic($day, $current), $days);
     }
 
     /**
@@ -97,9 +104,12 @@ final class EventDayService
     }
 
     /**
-     * Makes $dayId the active day of its event. The previously active day is
-     * marked completed (or upcoming if it is a later day, i.e. a correction).
-     * Records of every day are kept untouched.
+     * Makes $dayId the active day of its event (the current-day pointer).
+     * Only event_days.status changes: the previous day gets the same value
+     * displayStatus() derives (completed if before the new day, upcoming if
+     * after). Registrations, scan logs, eligibility, manual entries, draws,
+     * voids and import history of every day are never touched, so switching
+     * back and forth (e.g. Day 3 -> Day 1 -> Day 3) loses nothing.
      *
      * @return array<string, mixed>
      */
@@ -115,8 +125,7 @@ final class EventDayService
                 return null;
             }
             if ($current !== null) {
-                // Moving forward completes the old day; moving back (a correction)
-                // returns the later day to upcoming.
+                // Keep the stored value equal to the derived display status.
                 $target = EventDay::find($dayId);
                 $movingForward = $target !== null && (int) $target['day_number'] > (int) $current['day_number'];
                 EventDay::setStatus((int) $current['id'], $movingForward ? EventDay::STATUS_COMPLETED : EventDay::STATUS_UPCOMING);

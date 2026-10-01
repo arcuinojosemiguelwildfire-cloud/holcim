@@ -32,7 +32,7 @@ final class User
     public const STATUS_ACTIVE = 'active';
     public const STATUS_INACTIVE = 'inactive';
 
-    private const PUBLIC_COLUMNS = 'id, name, email, username, role, status, last_login_at, created_at, updated_at';
+    private const PUBLIC_COLUMNS = 'id, name, email, username, role, status, session_version, last_login_at, created_at, updated_at';
 
     /** @return array<string, mixed>|null */
     public static function findById(int $id): ?array
@@ -153,6 +153,18 @@ final class User
             'UPDATE users SET password_hash = :password_hash WHERE id = :id'
         );
         $statement->execute(['password_hash' => $passwordHash, 'id' => $id]);
+    }
+
+    /**
+     * Sets a new password hash and increments session_version in one
+     * statement, so every session opened before the change is rejected on
+     * its next request (AuthService::currentUser compares versions).
+     */
+    public static function resetPassword(int $id, string $passwordHash): void
+    {
+        Database::connection()->prepare(
+            'UPDATE users SET password_hash = :password_hash, session_version = session_version + 1 WHERE id = :id'
+        )->execute(['password_hash' => $passwordHash, 'id' => $id]);
     }
 
     public static function touchLastLogin(int $id): void
