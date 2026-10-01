@@ -1,0 +1,48 @@
+# --- Secrets / environment -------------------------------------------------
+.env
+.env.*
+!.env.example
+!.env.production.example
+backend/.env
+frontend/.env.local
+frontend/.env.*.local
+
+# --- Dependencies ------------------------------------------------------------
+node_modules/
+vendor/
+
+# --- Build artifacts ---------------------------------------------------------
+frontend/dist/
+frontend/dist-ssr/
+*.tsbuildinfo
+frontend/node_modules/.tmp/
+
+# --- Logs / temp ---------------------------------------------------------------
+*.log
+npm-debug.log*
+logs/
+tmp/
+temp/
+*.tmp
+*.swp
+*.swo
+*~
+
+# --- Local database dumps (may contain personal data) ------------------------
+*.sql.gz
+*.dump
+database/backups/
+
+# --- OS / editor -------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.code-workspace
+
+# --- Local XAMPP / PHP artifacts --------------------------------------------
+.phpunit.result.cache
+xamppfiles/
+php_errors.log

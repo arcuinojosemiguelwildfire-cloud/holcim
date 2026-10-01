@@ -1,0 +1,15 @@
+# Local development safety net when the whole repository sits inside
+# XAMPP's htdocs (http://localhost/Holcim/). Production should only expose
+# the built frontend and the backend folder - see README "Deployment".
+
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Block dotfiles and dot-folders (.git, .env, .htaccess ...)
+    RewriteRule (^|/)\. - [F,L]
+
+    # Block folders that are never meant to be served over HTTP
+    RewriteRule ^(database|docs|frontend/(src|node_modules|public))(/|$) - [F,L]
+</IfModule>
