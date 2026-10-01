@@ -1,0 +1,23 @@
+# Holcim Event System API (Apache / XAMPP / shared hosting)
+#
+# Every request under this folder is routed to index.php. Nothing else in
+# backend/ (config, .env, cli scripts, models...) is ever served directly.
+
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Pass the Authorization header through to PHP (some hosts strip it).
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # Route everything (existing files included) to the front controller.
+    RewriteCond %{REQUEST_URI} !/index\.php$
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+# Defense in depth: deny dotfiles (.env, .htaccess) even if rewrite is off.
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
