@@ -79,7 +79,7 @@ Requires CSRF. Destroys the session. `200` with `data: null`.
 ## Dashboard
 
 ### `GET /dashboard/summary`
-Signed in.
+Admin, registration staff, event operator (scanner operators use `GET /registration/summary`). Phase 8: also returns `activeDay`; registered, Minor and Major counts are for the current Event Day.
 
 ```json
 {
@@ -114,8 +114,8 @@ the same rule with a unique index, so it holds even under concurrent requests.
 
 | Method & path | Access | Body | Success |
 |---------------|--------|------|---------|
-| `GET /events` | Signed in | – | `200 { events: Event[] }` (active first, then newest date) |
-| `GET /events/{id}` | Signed in | – | `200 { event }`, or `404` |
+| `GET /events` | Admin, registration staff, event operator | – | `200 { events: Event[] }` (active first, then newest date) |
+| `GET /events/{id}` | Admin, registration staff, event operator | – | `200 { event }`, or `404` |
 | `POST /events` | Admin + CSRF | `{ name*, description, event_date*, status* }` | `201 { event }` |
 | `PUT /events/{id}` | Admin + CSRF | same as POST (full update) | `200 { event }` |
 | `PATCH /events/{id}/status` | Admin + CSRF | `{ status* }` | `200 { event }` |
@@ -128,7 +128,21 @@ Non-admins get `403 FORBIDDEN` on writes. Every change is written to
 `audit_logs` (`event.created`, `event.updated`, `event.status_changed`) with a
 before/after diff in `metadata`.
 
-## Planned route groups (not implemented)
+## Phase 2–8 endpoints
+
+The full, current endpoint list (with roles) is in the README endpoint table,
+and the role matrix is in README §9g. Phase 8 notes:
+
+- `POST /auth/login` accepts `{ login, password }` where `login` is an email
+  or a username; `{ email, password }` is still accepted.
+- Day-specific endpoints (registration, randomizers, Major eligibility,
+  reports with `scope=day`) resolve the current Event Day on the server and
+  return `409 NO_ACTIVE_DAY` when the active event has no current day. They
+  never accept an event or day ID from the client.
+- `EventDay`: `{ id, eventId, dayNumber, eventDate, label, status, displayName }`,
+  status `upcoming` / `active` / `completed`.
+
+## Planned route groups (historical)
 
 These will be registered in `backend/api/routes.php` as their phases are built:
 `/attendees`, `/imports`, `/qr-codes`, `/registration`, `/minor-draws`,

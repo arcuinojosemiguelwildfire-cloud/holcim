@@ -1,11 +1,13 @@
-export type UserRole = 'admin' | 'registration_staff' | 'event_operator'
+export type UserRole = 'admin' | 'registration_staff' | 'event_operator' | 'scanner_operator'
 
 export type UserStatus = 'active' | 'inactive'
 
 export interface AuthUser {
   id: number
   name: string
-  email: string
+  email: string | null
+  /** Set for scanner operators (username login). */
+  username: string | null
   role: UserRole
   status: UserStatus
   lastLoginAt: string | null
@@ -23,6 +25,7 @@ export interface LoginResponse {
 }
 
 export interface LoginCredentials {
-  email: string
+  /** Email address or username. */
+  login: string
   password: string
 }

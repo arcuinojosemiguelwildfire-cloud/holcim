@@ -1,26 +1,26 @@
 import { useCallback, useEffect, useState } from 'react'
+import { UserPlus } from 'lucide-react'
+import { AddParticipantModal } from '../components/randomizer/AddParticipantModal'
+import { ParticipantsCard } from '../components/randomizer/ParticipantsCard'
 import { RandomizerStage, type DrawOutcome } from '../components/randomizer/RandomizerStage'
 import { Alert } from '../components/ui/Alert'
 import { Badge } from '../components/ui/Badge'
+import { Button } from '../components/ui/Button'
 import { Card, CardHeader } from '../components/ui/Card'
 import { errorMessage } from '../services/apiClient'
 import { randomizerService, type RandomizerSummary, type RandomizerType, type RecentWinner } from '../services/randomizerService'
-
-function formatTime(value: string): string {
-  const date = new Date(value.replace(' ', 'T'))
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit', second: '2-digit' })
-}
+import { formatTime } from '../utils/format'
 
 const COPY: Record<RandomizerType, { title: string; intro: string; history: string }> = {
   minor: {
     title: 'Minor Randomizer',
-    intro: 'Draws from attendees who have checked in at registration.',
-    history: 'Latest 10 Minor draws for this event. Winners stay eligible for later draws.',
+    intro: 'Draws from attendees registered today, plus anyone added manually for today.',
+    history: 'Latest 10 Minor draws for the current event day. Winners stay eligible for later draws.',
   },
   major: {
     title: 'Major Randomizer',
-    intro: 'Draws from Major Eligible attendees (imported form responses).',
-    history: 'Latest 10 Major draws for this event. Winners stay eligible for later draws.',
+    intro: 'Draws from today’s Major Eligible attendees (imported form responses and manual additions).',
+    history: 'Latest 10 Major draws for the current event day. Winners stay eligible for later draws.',
   },
 }
 
@@ -30,6 +30,9 @@ export function RandomizerPage({ type }: { type: RandomizerType }) {
   const [summary, setSummary] = useState<RandomizerSummary | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pendingWinners, setPendingWinners] = useState<RecentWinner[] | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [poolVersion, setPoolVersion] = useState(0)
 
   const load = useCallback(() => {
     randomizerService.summary(type).then(
@@ -73,18 +76,29 @@ export function RandomizerPage({ type }: { type: RandomizerType }) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{copy.title}</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          {copy.intro} Press “Enter fullscreen” before showing it on the LED screen or projector.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{copy.title}</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            {summary && <span className="font-medium text-slate-700" data-testid="randomizer-day">{summary.eventDay.displayName}. </span>}
+            {copy.intro} Press “Enter fullscreen” before showing it on the LED screen or projector.
+          </p>
+        </div>
+        <Button variant="secondary" onClick={() => setAdding(true)} disabled={!summary} icon={<UserPlus className="size-4" aria-hidden />}>
+          Add Participant
+        </Button>
       </div>
 
       {error && <Alert tone="error">{error}</Alert>}
+      {notice && (
+        <Alert tone="success" onDismiss={() => setNotice(null)}>
+          {notice}
+        </Alert>
+      )}
 
       <RandomizerStage
         title={copy.title}
-        eventName={summary?.event.name ?? null}
+        eventName={summary ? `${summary.event.name} — Day ${summary.eventDay.dayNumber}` : null}
         eligibleCount={summary ? summary.eligibleCount : null}
         onDraw={draw}
         onVoid={voidDraw}
@@ -132,6 +146,22 @@ export function RandomizerPage({ type }: { type: RandomizerType }) {
           </div>
         )}
       </Card>
+
+      <ParticipantsCard type={type} refreshKey={poolVersion} />
+
+      {adding && (
+        <AddParticipantModal
+          type={type}
+          eventDay={summary?.eventDay ?? null}
+          onClose={() => setAdding(false)}
+          onAdded={(result) => {
+            setAdding(false)
+            setNotice(`${result.attendee.fullName} (${result.attendee.attendeeCode}) was added to today’s ${type === 'major' ? 'Major' : 'Minor'} pool.`)
+            setSummary((current) => (current ? { ...current, eligibleCount: result.eligibleCount } : current))
+            setPoolVersion((n) => n + 1)
+          }}
+        />
+      )}
     </div>
   )
 }

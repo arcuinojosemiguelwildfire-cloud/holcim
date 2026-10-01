@@ -6,18 +6,21 @@ namespace App\Controllers;
 
 use App\Core\Request;
 use App\Core\Response;
+use App\Models\EventDay;
 use App\Models\MajorEligibility;
 use App\Models\RandomizerDraw;
 use App\Services\AttendeeService;
+use App\Services\EventDayService;
 use App\Services\MajorEligibilityImportService;
 
 final class MajorEligibilityController
 {
-    /** GET /major-eligibility?search=&department=&page=&per_page= (active event, active attendees) */
+    /** GET /major-eligibility?search=&department=&page=&per_page= (active day, active attendees) */
     public static function index(Request $request): Response
     {
-        $event = AttendeeService::activeEventOrFail();
+        [$event, $day] = EventDayService::activeContext();
         $eventId = (int) $event['id'];
+        $dayId = (int) $day['id'];
         $perPage = (int) $request->query('per_page', 25);
         $perPage = in_array($perPage, AttendeeService::PAGE_SIZES, true) ? $perPage : 25;
         $page = max(1, (int) $request->query('page', 1));
@@ -25,7 +28,7 @@ final class MajorEligibilityController
         $department = $request->query('department');
 
         $result = MajorEligibility::search(
-            $eventId,
+            $dayId,
             is_string($search) ? mb_substr(trim($search), 0, 100) : '',
             is_string($department) ? $department : null,
             $perPage,
@@ -34,7 +37,8 @@ final class MajorEligibilityController
 
         return Response::success([
             'event' => ['id' => $eventId, 'name' => $event['name']],
-            'eligibleCount' => RandomizerDraw::countEligible($eventId, RandomizerDraw::TYPE_MAJOR),
+            'eventDay' => EventDay::toPublic($day),
+            'eligibleCount' => RandomizerDraw::countEligible($dayId, RandomizerDraw::TYPE_MAJOR),
             'items' => array_map(static fn (array $row): array => [
                 'id' => (int) $row['id'],
                 'attendeeCode' => $row['attendee_code'],
@@ -42,6 +46,9 @@ final class MajorEligibilityController
                 'department' => $row['department'],
                 'email' => $row['email'],
                 'importedAt' => $row['imported_at'],
+                'source' => $row['source'],
+                'addedBy' => $row['added_by_name'],
+                'reason' => $row['reason'],
             ], $result['items']),
             'departments' => $result['departments'],
             'pagination' => [
@@ -53,10 +60,10 @@ final class MajorEligibilityController
         ]);
     }
 
-    /** GET /major-eligibility/imports - recent import batches (counts only) */
+    /** GET /major-eligibility/imports - recent import batches of the active day (counts only) */
     public static function imports(Request $request): Response
     {
-        $event = AttendeeService::activeEventOrFail();
+        [, $day] = EventDayService::activeContext();
 
         return Response::success(['imports' => array_map(static function (array $row): array {
             $details = json_decode((string) $row['error_summary'], true);
@@ -75,13 +82,13 @@ final class MajorEligibilityController
                 'inactive' => (int) ($summary['inactive'] ?? 0),
                 'invalid' => (int) ($summary['invalid'] ?? 0),
             ];
-        }, MajorEligibility::importHistory((int) $event['id']))]);
+        }, MajorEligibility::importHistory((int) $day['id'])), 'eventDay' => EventDay::toPublic($day)]);
     }
 
     /** POST /major-eligibility/import/parse (admin, multipart "file") */
     public static function parseImport(Request $request): Response
     {
-        AttendeeService::activeEventOrFail();
+        EventDayService::activeContext();
         $file = $_FILES['file'] ?? null;
 
         return Response::success(MajorEligibilityImportService::parse(is_array($file) ? $file : null));
@@ -90,17 +97,17 @@ final class MajorEligibilityController
     /** POST /major-eligibility/import/preview (admin) {headers, rows, mapping} */
     public static function previewImport(Request $request): Response
     {
-        $event = AttendeeService::activeEventOrFail();
+        [$event, $day] = EventDayService::activeContext();
 
-        return Response::success(MajorEligibilityImportService::analyse((int) $event['id'], $request->body()));
+        return Response::success(MajorEligibilityImportService::analyse((int) $event['id'], (int) $day['id'], $request->body()) + ['eventDay' => EventDay::toPublic($day)]);
     }
 
     /** POST /major-eligibility/import (admin) {filename, headers, rows, mapping} */
     public static function import(Request $request): Response
     {
-        $event = AttendeeService::activeEventOrFail();
-        $result = MajorEligibilityImportService::commit($request, (int) $event['id'], $request->body());
+        [$event, $day] = EventDayService::activeContext();
+        $result = MajorEligibilityImportService::commit($request, (int) $event['id'], (int) $day['id'], $request->body());
 
-        return Response::created($result, "{$result['newlyEligible']} attendee(s) are now Major Eligible.");
+        return Response::created($result + ['eventDay' => EventDay::toPublic($day)], "{$result['newlyEligible']} attendee(s) are now Major Eligible for Day {$day['day_number']}.");
     }
 }

@@ -4,9 +4,10 @@ import type { Pagination } from '../../types/attendee'
 
 interface PaginationBarProps {
   pagination: Pagination
-  pageSizes: number[]
+  /** Omit (with onPageSizeChange) for a fixed page size. */
+  pageSizes?: number[]
   onPageChange: (page: number) => void
-  onPageSizeChange: (size: number) => void
+  onPageSizeChange?: (size: number) => void
 }
 
 export function PaginationBar({ pagination, pageSizes, onPageChange, onPageSizeChange }: PaginationBarProps) {
@@ -23,6 +24,7 @@ export function PaginationBar({ pagination, pageSizes, onPageChange, onPageSizeC
         <span className="tabular-nums">
           {formatNumber(from)}–{formatNumber(to)} of {formatNumber(total)}
         </span>
+        {pageSizes && onPageSizeChange && (
         <label className="flex items-center gap-1.5">
           <span className="text-slate-500">Rows</span>
           <select
@@ -37,6 +39,7 @@ export function PaginationBar({ pagination, pageSizes, onPageChange, onPageSizeC
             ))}
           </select>
         </label>
+        )}
       </div>
       <div className="flex items-center gap-2">
         <button type="button" className={buttonClass} disabled={page <= 1} onClick={() => onPageChange(page - 1)}>

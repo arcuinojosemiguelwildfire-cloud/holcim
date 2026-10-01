@@ -26,18 +26,20 @@ final class ImportBatch
         int $failedRows,
         array $columnMapping,
         array $errorSummary,
-        ?int $userId
+        ?int $userId,
+        ?int $eventDayId = null
     ): int {
         $flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR;
         $statement = Database::connection()->prepare(
             'INSERT INTO import_batches
-                (event_id, import_type, original_filename, status, total_rows, successful_rows, failed_rows,
+                (event_id, event_day_id, import_type, original_filename, status, total_rows, successful_rows, failed_rows,
                  column_mapping, error_summary, imported_by, completed_at)
-             VALUES (:event_id, :type, :filename, :status, :total, :successful, :failed,
+             VALUES (:event_id, :event_day_id, :type, :filename, :status, :total, :successful, :failed,
                  :mapping, :errors, :user_id, NOW())'
         );
         $statement->execute([
             'event_id' => $eventId,
+            'event_day_id' => $eventDayId,
             'type' => $type,
             'filename' => $filename,
             'status' => 'completed',

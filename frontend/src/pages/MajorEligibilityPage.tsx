@@ -9,18 +9,12 @@ import { PaginationBar } from '../components/ui/PaginationBar'
 import { Spinner } from '../components/ui/Spinner'
 import { useApiQuery } from '../hooks/useApiQuery'
 import { useAuth } from '../hooks/useAuth'
+import { Badge } from '../components/ui/Badge'
 import { majorService } from '../services/majorService'
-import { formatNumber } from '../utils/format'
+import { formatDateTime, formatNumber } from '../utils/format'
 
 const PAGE_SIZES = [25, 50, 100]
 const fetchImports = () => majorService.imports()
-
-function formatDateTime(value: string): string {
-  const date = new Date(value.replace(' ', 'T'))
-  return Number.isNaN(date.getTime())
-    ? value
-    : date.toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-}
 
 export function MajorEligibilityPage() {
   const { hasRole } = useAuth()
@@ -44,7 +38,7 @@ export function MajorEligibilityPage() {
     <>
       <PageHeader
         title="Major Eligibility"
-        description="Attendees made eligible for the Major draw by imported form responses."
+        description="Attendees eligible for the Major draw on the current event day (imported form responses or manual additions)."
         actions={
           canImport && (
             <ButtonLink to="/major-eligibility/import" icon={<FileUp className="size-4" aria-hidden />}>
@@ -60,7 +54,9 @@ export function MajorEligibilityPage() {
         <Card className="p-5">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Major eligible</p>
           <p className="mt-1 text-4xl font-bold tabular-nums text-slate-900">{data ? formatNumber(data.eligibleCount) : '—'}</p>
-          <p className="mt-1 text-xs text-slate-500">Active attendees in {data?.event.name ?? 'the active event'}</p>
+          <p className="mt-1 text-xs text-slate-500" data-testid="major-day">
+            {data ? `${data.event.name} — ${data.eventDay.displayName}` : 'Current event day'}
+          </p>
         </Card>
         <Card className="p-5 text-sm text-slate-600">
           <p className="font-medium text-slate-900">How to update</p>
@@ -68,6 +64,7 @@ export function MajorEligibilityPage() {
             <li>In Google Sheets, open the responses sheet and choose File › Download › CSV or Microsoft Excel (.xlsx).</li>
             <li>Import the file here and map its columns (email, employee ID, name and department…).</li>
             <li>Only rows that match exactly one attendee become eligible. Re-importing the same file is safe.</li>
+            <li>Eligibility is for the current event day only; earlier days keep their own lists.</li>
           </ol>
         </Card>
       </div>
@@ -113,7 +110,8 @@ export function MajorEligibilityPage() {
                     <th scope="col" className="px-5 py-3">Name</th>
                     <th scope="col" className="px-5 py-3">Department</th>
                     <th scope="col" className="px-5 py-3">Email</th>
-                    <th scope="col" className="px-5 py-3">Imported</th>
+                    <th scope="col" className="px-5 py-3">Source</th>
+                    <th scope="col" className="px-5 py-3">Added</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -123,7 +121,14 @@ export function MajorEligibilityPage() {
                       <td className="px-5 py-3 font-medium text-slate-900">{row.fullName}</td>
                       <td className="px-5 py-3 text-slate-600">{row.department ?? '—'}</td>
                       <td className="px-5 py-3 text-slate-600">{row.email ?? '—'}</td>
-                      <td className="whitespace-nowrap px-5 py-3 text-slate-500">{formatDateTime(row.importedAt)}</td>
+                      <td className="px-5 py-3">
+                        <Badge tone={row.source === 'manual' ? 'warning' : 'neutral'}>{row.source === 'manual' ? 'Manual' : 'Import'}</Badge>
+                        {row.reason && <span className="ml-2 text-xs text-slate-500">{row.reason}</span>}
+                      </td>
+                      <td className="whitespace-nowrap px-5 py-3 text-slate-500">
+                        {formatDateTime(row.importedAt)}
+                        {row.addedBy && <span className="block text-xs">by {row.addedBy}</span>}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -140,7 +145,7 @@ export function MajorEligibilityPage() {
       </Card>
 
       <Card className="overflow-hidden">
-        <CardHeader title="Import history" description="Latest 20 response imports for this event." />
+        <CardHeader title="Import history" description="Latest 20 response imports for the current event day." />
         {history.data && history.data.length === 0 ? (
           <p className="px-5 py-6 text-center text-sm text-slate-500">No imports yet.</p>
         ) : (

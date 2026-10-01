@@ -1,4 +1,5 @@
 import type { EventRecord } from './event'
+import type { EventDay } from './eventDay'
 
 export interface DashboardMetric {
   value: number
@@ -8,6 +9,7 @@ export interface DashboardMetric {
 
 export interface DashboardSummary {
   activeEvent: EventRecord | null
+  activeDay: EventDay | null
   metrics: {
     totalAttendees: DashboardMetric
     registered: DashboardMetric

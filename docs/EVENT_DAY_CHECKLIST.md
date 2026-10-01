@@ -5,6 +5,8 @@
 - [ ] `php backend/cli/check-readiness.php` → "No blocking problems found."
 - [ ] Database backup taken.
 - [ ] Events page: the correct event is **Active**.
+- [ ] Events › **Days**: every event day is listed with the right date (Day 1, Day 2, …).
+- [ ] Settings › **Scanner Operators**: one enabled account per scanning device/person; each one can sign in with its username.
 - [ ] Attendees imported (Attendees › Import attendees); review invalid/duplicate rows.
 - [ ] QR / ID Generator: **Generate missing QR codes** → QR missing = 0 (no "Do not print" warning shown).
 - [ ] Print labels (Print all, 100% / actual size). **Scan one printed label** on the Registration page.
@@ -13,11 +15,26 @@
 - [ ] Minor and Major Randomizer: test draw, **Void draw** it, test fullscreen on the LED/projector laptop.
   (Test draws stay in history as VOID; that is expected.)
 
+## Before each event day
+- [ ] Database backup taken (end of the previous day or now).
+- [ ] Events › **Days** › **Set as current** on today's day. The top bar must show **Current Event Day: Day N — today's date**.
+- [ ] `php backend/cli/check-readiness.php` → "Current event day" shows today's date (no "not today's date" warning).
+- [ ] Registration page shows Registered = 0 for the new day (previous days' check-ins are kept, not reset).
+- [ ] Scanner operators signed in on each device; disable any account that should not be used today.
+- [ ] Major: import today's form responses only after today's form closes (imports apply to the current day).
+
 ## During registration
 - [ ] Open **Registration**, allow the camera.
 - [ ] Scan the attendee's QR → green "Registration successful".
 - [ ] Move the ID away after each scan (the same QR shows "Already registered" if held in view).
-- [ ] Watch Registered / Remaining. Red result = invalid/other event/archived: check the attendee at the desk.
+- [ ] Watch Registered / Remaining (current day). Red result = invalid/other event/archived: check the attendee at the desk.
+- [ ] "Already registered for Day N" = this attendee already checked in **today**; no action needed.
+- [ ] Use **Attendee lookup** on the scanner page to check whether someone is registered today.
+- [ ] Recent Scans: **My Scans** / **All Scans** and the result filter help find problem scans.
+
+## During event (manual participants)
+- [ ] Attendee present but could not be scanned (lost QR, etc.) and should join today's draw: Minor/Major Randomizer › **+ Add Participant** → search → reason → add. This does **not** register them.
+- [ ] Check **Today's participants** (Source: Registration / Import / Manual) before the draw.
 
 ## Minor draw
 - [ ] Open **Minor Randomizer** → **Enter fullscreen** (Space/Enter draws, Esc exits).
@@ -34,6 +51,12 @@
 - [ ] Open **Major Randomizer** → **Enter fullscreen**.
 - [ ] Draw, confirm the winner; **Void draw** if necessary and draw again.
 
-## After the event
-- [ ] **Reports**: download Registration, Major eligibility and Draw winners CSVs.
+## After each day (do NOT delete or reset records)
+- [ ] **Reports** › "Day N only": download Registration, Major eligibility and Draw winners CSVs.
 - [ ] Database backup taken.
+- [ ] Do **not** delete, archive or re-import anything to "clear" the day. The next day starts empty automatically when an admin sets it as the current day.
+
+## After the event
+- [ ] **Reports** › "All days": download the three CSVs (Event Day column on every row).
+- [ ] Database backup taken.
+- [ ] Disable scanner operator accounts that are no longer needed (Settings › Scanner Operators).

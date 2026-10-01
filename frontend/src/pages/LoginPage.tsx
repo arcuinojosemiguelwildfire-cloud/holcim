@@ -27,7 +27,7 @@ export function LoginPage() {
     setError(null)
     try {
       // On success GuestOnly redirects to the originally requested page.
-      await login({ email: email.trim(), password })
+      await login({ login: email.trim(), password })
     } catch (caught) {
       setError(caught instanceof ApiError ? caught : errorMessage(caught))
       setPassword('')
@@ -102,15 +102,17 @@ export function LoginPage() {
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-5" noValidate>
             <TextField
-              label="Email"
-              type="email"
-              name="email"
+              label="Email or username"
+              type="text"
+              name="login"
               autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
               required
               autoFocus
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              error={apiError?.fieldError('email')}
+              error={apiError?.fieldError('login')}
             />
             <TextField
               label="Password"

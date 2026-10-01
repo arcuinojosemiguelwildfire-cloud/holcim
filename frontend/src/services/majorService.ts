@@ -1,4 +1,5 @@
 import type { ImportRow, Pagination } from '../types/attendee'
+import type { EventDay } from '../types/eventDay'
 import { apiClient } from './apiClient'
 
 export const MAJOR_FIELDS = ['attendee_code', 'external_identifier', 'email', 'full_name', 'department'] as const
@@ -36,6 +37,7 @@ export interface MajorSummary {
 }
 
 export interface MajorPreview {
+  eventDay?: EventDay
   summary: MajorSummary
   rows: MajorPreviewRow[]
 }
@@ -44,6 +46,7 @@ export interface MajorImportResult {
   importBatchId: number
   newlyEligible: number
   summary: MajorSummary
+  eventDay?: EventDay
 }
 
 export interface MajorEligibleRow {
@@ -53,10 +56,14 @@ export interface MajorEligibleRow {
   department: string | null
   email: string | null
   importedAt: string
+  source: 'import' | 'manual'
+  addedBy: string | null
+  reason: string | null
 }
 
 export interface MajorEligibleList {
   event: { id: number; name: string }
+  eventDay: EventDay
   eligibleCount: number
   items: MajorEligibleRow[]
   departments: string[]

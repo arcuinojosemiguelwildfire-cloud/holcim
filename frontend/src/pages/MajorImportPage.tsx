@@ -5,7 +5,9 @@ import { Badge, type BadgeTone } from '../components/ui/Badge'
 import { Button, ButtonLink } from '../components/ui/Button'
 import { Card, CardHeader } from '../components/ui/Card'
 import { PageHeader } from '../components/ui/PageHeader'
+import { useApiQuery } from '../hooks/useApiQuery'
 import { ApiError, errorMessage } from '../services/apiClient'
+import { eventDayService } from '../services/eventDayService'
 import {
   MAJOR_FIELDS,
   majorService,
@@ -46,7 +48,10 @@ const STEPS: Array<{ key: Step; label: string }> = [
   { key: 'done', label: 'Done' },
 ]
 
+const fetchCurrentDay = () => eventDayService.current()
+
 export function MajorImportPage() {
+  const currentDay = useApiQuery(fetchCurrentDay).data?.eventDay ?? null
   const [step, setStep] = useState<Step>('upload')
   const [parsed, setParsed] = useState<MajorParsedFile | null>(null)
   const [mapping, setMapping] = useState<MajorMapping | null>(null)
@@ -118,7 +123,7 @@ export function MajorImportPage() {
     <>
       <PageHeader
         title="Import Major responses"
-        description="Match exported form responses to attendees. Matching attendees become Major Eligible; attendee details are never changed."
+        description={`Match exported form responses to attendees. Matching attendees become Major Eligible for ${currentDay ? currentDay.displayName : 'the current event day'}; attendee details are never changed.`}
         actions={<ButtonLink to="/major-eligibility" variant="secondary" icon={<ArrowLeft className="size-4" aria-hidden />}>Back</ButtonLink>}
       />
 
@@ -326,6 +331,7 @@ export function MajorImportPage() {
             </span>
             <h2 className="mt-4 text-lg font-semibold text-slate-900">
               {formatNumber(result.newlyEligible)} attendee{result.newlyEligible === 1 ? ' is' : 's are'} now Major Eligible
+              {result.eventDay && ` for Day ${result.eventDay.dayNumber}`}
             </h2>
             <p className="mt-1 max-w-md text-sm text-slate-500">
               {formatNumber(result.summary.total)} rows read · {formatNumber(result.summary.alreadyEligible)} already eligible ·{' '}

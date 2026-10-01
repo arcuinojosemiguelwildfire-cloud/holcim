@@ -17,6 +17,7 @@ declare(strict_types=1);
  *       it would be saved in shell history.
  *
  * Roles: admin (default), registration_staff, event_operator
+ * (Scanner operators are created by an admin in Settings > Scanner Operators.)
  */
 
 if (PHP_SAPI !== 'cli') {
@@ -77,6 +78,9 @@ if ($name === '' || mb_strlen($name) > 150) {
 }
 if (filter_var($email, FILTER_VALIDATE_EMAIL) === false || strlen($email) > 190) {
     fail('A valid email address is required.');
+}
+if ($role === User::ROLE_SCANNER_OPERATOR) {
+    fail('Create scanner operators in the app: Settings > Scanner Operators.');
 }
 if (!in_array($role, User::ROLES, true)) {
     fail('Role must be one of: ' . implode(', ', User::ROLES));

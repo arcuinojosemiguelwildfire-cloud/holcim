@@ -10,7 +10,6 @@ import { Spinner } from '../components/ui/Spinner'
 import { useApiQuery } from '../hooks/useApiQuery'
 import { useAuth } from '../hooks/useAuth'
 import { dashboardService } from '../services/dashboardService'
-import { formatLongDate } from '../utils/format'
 import type { DashboardSummary } from '../types/dashboard'
 
 const fetchSummary = () => dashboardService.getSummary()
@@ -44,7 +43,7 @@ export function DashboardPage() {
 
 function DashboardContent({ summary }: { summary: DashboardSummary }) {
   const { hasRole } = useAuth()
-  const { activeEvent, metrics } = summary
+  const { activeEvent, activeDay, metrics } = summary
 
   return (
     <div className="space-y-6">
@@ -58,7 +57,15 @@ function DashboardContent({ summary }: { summary: DashboardSummary }) {
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current event</p>
                 <h2 className="mt-0.5 text-lg font-semibold text-slate-900">{activeEvent.name}</h2>
-                <p className="mt-0.5 text-sm text-slate-600">{formatLongDate(activeEvent.eventDate)}</p>
+                <p className="mt-0.5 text-sm text-slate-600" data-testid="dashboard-day">
+                  {activeDay ? (
+                    <>
+                      Current Event Day: <span className="font-medium text-slate-800">{activeDay.displayName}</span>
+                    </>
+                  ) : (
+                    <span className="font-medium text-amber-700">No current event day. An admin must set one on the Events page (Days).</span>
+                  )}
+                </p>
                 {activeEvent.description && <p className="mt-2 max-w-2xl text-sm text-slate-500">{activeEvent.description}</p>}
               </div>
             </div>
@@ -87,9 +94,9 @@ function DashboardContent({ summary }: { summary: DashboardSummary }) {
 
       <section aria-label="Event statistics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Total Attendees" metric={metrics.totalAttendees} icon={Users} hint="Imported for the active event" />
-        <StatCard label="Registered" metric={metrics.registered} icon={UserCheck} hint="Checked in by QR scan" />
-        <StatCard label="Minor Eligible" metric={metrics.minorEligible} icon={Dices} hint="Registered attendees in the minor draw" />
-        <StatCard label="Major Eligible" metric={metrics.majorEligible} icon={Trophy} hint="Imported Major form responses" />
+        <StatCard label="Registered" metric={metrics.registered} icon={UserCheck} hint={activeDay ? `Checked in on Day ${activeDay.dayNumber}` : 'Checked in by QR scan'} />
+        <StatCard label="Minor Eligible" metric={metrics.minorEligible} icon={Dices} hint="Registered or manually added today" />
+        <StatCard label="Major Eligible" metric={metrics.majorEligible} icon={Trophy} hint="Imported or manually added today" />
       </section>
     </div>
   )

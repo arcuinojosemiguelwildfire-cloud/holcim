@@ -32,9 +32,10 @@ final class AuthService
      */
     public static function attempt(Request $request, string $email, string $password): array
     {
+        // $email is the login identifier: an email address or (Phase 8) a username.
         LoginThrottle::assertNotLocked($email, $request->ip());
 
-        $user = User::findByEmailWithPassword($email);
+        $user = User::findByLoginWithPassword($email);
 
         // Always run password_verify so response time doesn't reveal whether
         // the email exists (user enumeration via timing).
@@ -48,13 +49,13 @@ final class AuthService
                 AuditLogger::AUTH_LOGIN_FAILED,
                 'Failed login attempt.',
                 metadata: [
-                    'email' => strtolower($email),
-                    'reason' => $user === null ? 'unknown_email' : ($passwordMatches ? 'inactive_account' : 'wrong_password'),
+                    'login' => strtolower($email),
+                    'reason' => $user === null ? 'unknown_login' : ($passwordMatches ? 'inactive_account' : 'wrong_password'),
                 ],
                 userId: $user !== null ? (int) $user['id'] : null
             );
 
-            throw new HttpException(401, 'INVALID_CREDENTIALS', 'Invalid email or password.');
+            throw new HttpException(401, 'INVALID_CREDENTIALS', 'Invalid email/username or password.');
         }
 
         $userId = (int) $user['id'];

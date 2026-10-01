@@ -1,4 +1,5 @@
 import { Menu } from 'lucide-react'
+import { CurrentDayChip } from './CurrentDayChip'
 import { UserMenu } from './UserMenu'
 
 interface TopbarProps {
@@ -18,6 +19,7 @@ export function Topbar({ title, onOpenNavigation }: TopbarProps) {
         <Menu className="size-5" aria-hidden />
       </button>
       <p className="flex-1 truncate text-sm font-medium text-slate-500">{title}</p>
+      <CurrentDayChip />
       <UserMenu />
     </header>
   )

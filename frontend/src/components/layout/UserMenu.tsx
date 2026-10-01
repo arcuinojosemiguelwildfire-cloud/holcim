@@ -71,7 +71,7 @@ export function UserMenu() {
         >
           <div className="border-b border-slate-100 px-4 py-3">
             <p className="truncate text-sm font-medium text-slate-900">{user.name}</p>
-            <p className="truncate text-sm text-slate-500">{user.email}</p>
+            <p className="truncate text-sm text-slate-500">{user.email ?? user.username}</p>
             <p className="mt-2 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
               {ROLE_LABELS[user.role]}
             </p>

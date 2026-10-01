@@ -63,6 +63,11 @@ try {
     $admins = (int) $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'admin' AND status = 'active'")->fetchColumn();
     $add($admins > 0 ? 'OK' : 'FAIL', 'Active admin account', (string) $admins);
 
+    $scannerOps = $pdo->query("SELECT SUM(status = 'active') AS active, COUNT(*) AS total FROM users WHERE role = 'scanner_operator'")->fetch();
+    $activeOps = (int) ($scannerOps['active'] ?? 0);
+    $add($activeOps > 0 ? 'OK' : 'INFO', 'Scanner operators', "{$activeOps} active of " . (int) ($scannerOps['total'] ?? 0)
+        . ($activeOps > 0 ? '' : ' - add them in Settings > Scanner Operators if needed'));
+
     $event = $pdo->query("SELECT id, name FROM events WHERE status = 'active' LIMIT 1")->fetch();
     if (!$event) {
         $add('FAIL', 'Active event', 'none - set one on the Events page');
@@ -79,6 +84,17 @@ try {
         $missingQr = $count("SELECT COUNT(*) FROM attendees a LEFT JOIN attendee_qr_codes q ON q.attendee_id = a.id WHERE a.event_id = :id AND a.status = 'active' AND q.id IS NULL");
         $add($attendees > 0 ? 'OK' : 'WARN', 'Active attendees', (string) $attendees);
         $add($missingQr === 0 ? 'OK' : 'WARN', 'Attendees without a QR', (string) $missingQr);
+
+        // Phase 8: event days of the active event and the current day.
+        $days = $pdo->prepare('SELECT day_number, event_date, status FROM event_days WHERE event_id = :id ORDER BY day_number');
+        $days->execute(['id' => $id]);
+        $dayRows = $days->fetchAll();
+        $add($dayRows !== [] ? 'OK' : 'FAIL', 'Event days', $dayRows === [] ? 'none - add a day on the Events page' : count($dayRows) . ' configured: '
+            . implode(', ', array_map(static fn (array $d): string => "Day {$d['day_number']} {$d['event_date']} ({$d['status']})", $dayRows)));
+        $activeDay = array_values(array_filter($dayRows, static fn (array $d): bool => $d['status'] === 'active'))[0] ?? null;
+        $add($activeDay !== null ? 'OK' : 'FAIL', 'Current event day', $activeDay !== null
+            ? "Day {$activeDay['day_number']} - {$activeDay['event_date']}" . ($activeDay['event_date'] !== date('Y-m-d') ? ' (not today\'s date - check before doors open)' : '')
+            : 'none - activate a day on the Events page');
         if ($appUrl !== '') {
             $s = $pdo->prepare('SELECT COUNT(*) FROM attendee_qr_codes q JOIN attendees a ON a.id = q.attendee_id WHERE a.event_id = :id');
             $s->execute(['id' => $id]);

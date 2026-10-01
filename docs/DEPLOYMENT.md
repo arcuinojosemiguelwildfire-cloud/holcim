@@ -28,27 +28,40 @@ A phone or tablet opening `http://192.168.x.x` **will be refused camera access**
 cd frontend && npm ci && VITE_API_BASE_URL=/api VITE_BASE_PATH=/ npm run build
 
 # On the server (backend uploaded as <web root>/api)
-php backend/cli/migrate.php            # apply all migrations (001-013)
+php backend/cli/migrate.php            # apply all migrations (001-029)
 php backend/cli/create-user.php        # first admin, if needed
 php backend/cli/check-readiness.php    # must report "No blocking problems found."
 ```
 
-`check-readiness.php` verifies APP_ENV/APP_DEBUG, that APP_URL is HTTPS and not local, secure cookies, MAJOR_FORM_URL, PHP extensions, database connection, migrations, an admin account, the active event, and attendees without QR codes. It prints no passwords.
+`check-readiness.php` verifies APP_ENV/APP_DEBUG, that APP_URL is HTTPS and not local, secure cookies, MAJOR_FORM_URL, PHP extensions, database connection, migrations, an admin account, scanner operators, the active event, its event days and the current day (warns if the current day's date is not today), and attendees without QR codes. It prints no passwords.
+
+### Upgrading an existing Phase 7 installation to Phase 8
+
+Take a backup first (`mysqldump`, see §5), then run `php backend/cli/migrate.php`. Migrations 014–029 are additive and keep all data:
+
+1. `event_days` is created and **every existing event gets a Day 1** on its event date (active event → Day 1 is the current day; draft → upcoming; others → completed).
+2. `registration_scans`, `major_eligibility` and `randomizer_draws` get `event_day_id`, back-filled to that event's Day 1, then made NOT NULL with foreign keys. The uniqueness rules change from per-event to **per-day** (`event_day_id, attendee_id`), so the same QR can check in again on Day 2.
+3. Existing Major eligibility rows become `source = import` with `added_by` = the user who ran the import; Major import batches are linked to Day 1.
+4. New tables `minor_manual_entries` (manual Minor additions) and `scan_logs` (every scan attempt per day).
+5. `users` gets the `scanner_operator` role, an optional unique `username`, and `email` becomes optional (scanner operators have none).
+
+Nothing is deleted. After migrating, open **Events › Days** to add Day 2, 3… and check the current day.
 
 ## 4. URLs at the event
 
 | URL | Who | Purpose |
 |-----|-----|---------|
 | `https://domain/` | Staff | Admin app (login) |
-| `https://domain/registration` | Registration staff | Camera scanner |
+| `https://domain/registration` | Registration staff, scanner operators | Camera scanner + scanner dashboard (scanner operators land here after login) |
 | `https://domain/major-qr` | Event operator | LED screen with the Major QR (fullscreen) |
-| `https://domain/minor-randomizer`, `/major-randomizer` | Event operator | Draw stages (fullscreen) |
+| `https://domain/minor-randomizer`, `/major-randomizer` | Event operator | Draw stages (fullscreen), + Add Participant |
+| `https://domain/settings` | Admin | Scanner Operators (add, enable/disable, reset password) |
 | `https://domain/major-form` | Public (from the Major QR) | Redirects to `MAJOR_FORM_URL` |
 | `https://domain/q/<token>` | Encoded in attendee QR labels | Read by the scanner; not meant to be opened |
 
 ## 5. Backups
 
-Back up the database before the event, after registration closes, and after the draws:
+Back up the database before each event day, after registration closes, and after the draws (multi-day events: at the end of every day):
 
 ```bash
 mysqldump -u USER -p DB_NAME > holcim-$(date +%Y%m%d-%H%M).sql

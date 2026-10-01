@@ -3,12 +3,20 @@ import QrScanner from 'qr-scanner'
 import { CircleAlert, CircleCheck, CircleX, Keyboard, RefreshCw, Video, Volume2, VolumeX } from 'lucide-react'
 import { Alert } from '../components/ui/Alert'
 import { Button } from '../components/ui/Button'
-import { Card, CardHeader } from '../components/ui/Card'
+import { Card } from '../components/ui/Card'
+import { AttendeeStatusSearch } from '../components/registration/AttendeeStatusSearch'
+import { RecentScansCard } from '../components/registration/RecentScansCard'
 import { ApiError, errorMessage } from '../services/apiClient'
-import { registrationService, type RegistrationCounts, type RegistrationSummary, type ScanSuccess } from '../services/registrationService'
+import {
+  registrationService,
+  type RegistrationCounts,
+  type RegistrationSummary,
+  type ScanCounts,
+  type ScanSuccess,
+} from '../services/registrationService'
 import { beep } from '../utils/beep'
 import { cn } from '../utils/cn'
-import { formatNumber } from '../utils/format'
+import { formatNumber, formatTime } from '../utils/format'
 
 /** How long a result stays on screen before the scanner is ready again. */
 const RESULT_MS = 2500
@@ -26,12 +34,7 @@ const ERROR_TITLES: Record<string, string> = {
   WRONG_EVENT: 'Invalid for this event',
   ATTENDEE_INACTIVE: 'Attendee inactive',
   NO_ACTIVE_EVENT: 'No active event',
-}
-
-function formatTime(value: string | null): string {
-  if (!value) return ''
-  const date = new Date(value.replace(' ', 'T'))
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit', second: '2-digit' })
+  NO_ACTIVE_DAY: 'No active event day',
 }
 
 function cameraErrorMessage(error: unknown): string {
@@ -71,6 +74,7 @@ export function RegistrationPage() {
   const [sound, setSound] = useState(true)
   const soundRef = useRef(sound)
   const [manualValue, setManualValue] = useState('')
+  const [scansVersion, setScansVersion] = useState(0)
 
   useEffect(() => {
     soundRef.current = sound
@@ -103,8 +107,8 @@ export function RegistrationPage() {
     }, RESULT_MS)
   }, [])
 
-  const updateCounts = useCallback((counts: RegistrationCounts) => {
-    setSummary((current) => (current ? { ...current, counts } : current))
+  const updateCounts = useCallback((counts: RegistrationCounts, scanCounts: ScanCounts) => {
+    setSummary((current) => (current ? { ...current, counts, scanCounts } : current))
   }, [])
 
   /** Scan lock: one request at a time, results shown, then resume. */
@@ -119,7 +123,7 @@ export function RegistrationPage() {
       try {
         const data = await registrationService.scan(trimmed)
         if (soundRef.current) beep(data.status === 'registered' ? 'success' : 'warning')
-        updateCounts(data.counts)
+        updateCounts(data.counts, data.scanCounts)
         if (data.status === 'registered') loadSummary()
         showResult({ kind: data.status, data }, trimmed)
       } catch (error) {
@@ -136,6 +140,7 @@ export function RegistrationPage() {
         )
       } finally {
         setProcessing(false)
+        setScansVersion((n) => n + 1)
       }
     },
     [loadSummary, showResult, updateCounts],
@@ -224,13 +229,22 @@ export function RegistrationPage() {
   }
 
   const counts = summary?.counts
+  const scanCounts = summary?.scanCounts
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Registration</h1>
-          <p className="mt-1 text-sm text-slate-500">{summary ? summary.event.name : 'Scan attendee QR codes to check them in.'}</p>
+          <p className="mt-1 text-sm text-slate-500">
+            {summary ? (
+              <>
+                {summary.event.name} — <span className="font-medium text-slate-700" data-testid="scanner-day">{summary.eventDay.displayName}</span>
+              </>
+            ) : (
+              'Scan attendee QR codes to check them in.'
+            )}
+          </p>
         </div>
         <Button
           variant="ghost"
@@ -244,10 +258,12 @@ export function RegistrationPage() {
 
       {summaryError && <Alert tone="error">{summaryError}</Alert>}
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-3 lg:grid-cols-5">
         <Counter label="Total attendees" value={counts?.total} />
-        <Counter label="Registered" value={counts?.registered} tone="good" />
+        <Counter label="Registered today" value={counts?.registered} tone="good" />
         <Counter label="Remaining" value={counts?.remaining} />
+        <Counter label="My scans today" value={scanCounts?.mine} testId="personal-scans" />
+        <Counter label="All scans today" value={scanCounts?.all} testId="general-scans" />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
@@ -312,35 +328,17 @@ export function RegistrationPage() {
           </div>
         </Card>
 
-        <Card className="flex max-h-[640px] flex-col overflow-hidden">
-          <CardHeader title="Recent registrations" description="Latest 20 check-ins" />
-          {summary && summary.recent.length === 0 ? (
-            <p className="px-5 py-8 text-center text-sm text-slate-500">No one has been registered yet.</p>
-          ) : (
-            <ul className="divide-y divide-slate-100 overflow-y-auto">
-              {summary?.recent.map((row) => (
-                <li key={`${row.attendeeCode}-${row.registeredAt}`} className="flex items-baseline gap-3 px-5 py-2.5 text-sm">
-                  <span className="w-20 shrink-0 tabular-nums text-slate-500">{formatTime(row.registeredAt)}</span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium text-slate-900">{row.fullName}</span>
-                    <span className="block truncate text-xs text-slate-500">
-                      <span className="font-mono">{row.attendeeCode}</span>
-                      {row.department && ` · ${row.department}`}
-                    </span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
+        <RecentScansCard refreshKey={scansVersion} />
       </div>
+
+      <AttendeeStatusSearch />
     </div>
   )
 }
 
-function Counter({ label, value, tone }: { label: string; value: number | undefined; tone?: 'good' }) {
+function Counter({ label, value, tone, testId }: { label: string; value: number | undefined; tone?: 'good'; testId?: string }) {
   return (
-    <Card className="px-4 py-3 sm:px-5 sm:py-4">
+    <Card className="px-4 py-3 sm:px-5 sm:py-4" data-testid={testId}>
       <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 sm:text-xs">{label}</p>
       <p className={cn('mt-1 text-2xl font-bold tabular-nums sm:text-4xl', tone === 'good' ? 'text-emerald-700' : 'text-slate-900')}>
         {value === undefined ? '—' : formatNumber(value)}
@@ -382,7 +380,10 @@ function ResultOverlay({ result }: { result: ScanResult }) {
       {registered ? (
         <p className="mt-1 rounded-full bg-white/20 px-4 py-1 text-sm font-bold uppercase tracking-wide">Minor draw: eligible</p>
       ) : (
-        <p className="text-base">This attendee is already registered.</p>
+        <p className="text-base">
+          Already registered for Day {data.eventDay.dayNumber}
+          {data.registeredBy ? ` (by ${data.registeredBy})` : ''}.
+        </p>
       )}
     </div>
   )

@@ -11,7 +11,7 @@ use App\Services\RegistrationService;
 
 final class RegistrationController
 {
-    /** GET /registration/summary - counters + recent check-ins for the active event */
+    /** GET /registration/summary - day counters, personal/general scans, recent check-ins */
     public static function summary(Request $request): Response
     {
         return Response::success(RegistrationService::summary());
@@ -26,5 +26,26 @@ final class RegistrationController
         }
 
         return Response::success(RegistrationService::scan($request, $value));
+    }
+
+    /** GET /registration/scans?view=mine|all&result=all|successful|already_registered|invalid&page= */
+    public static function scans(Request $request): Response
+    {
+        $view = $request->query('view', 'mine');
+        $result = $request->query('result', 'all');
+
+        return Response::success(RegistrationService::scans(
+            is_string($view) ? $view : 'mine',
+            is_string($result) ? $result : 'all',
+            (int) $request->query('page', 1)
+        ));
+    }
+
+    /** GET /registration/attendees?search= - read-only status lookup */
+    public static function attendees(Request $request): Response
+    {
+        $search = $request->query('search', '');
+
+        return Response::success(RegistrationService::searchAttendees(is_string($search) ? $search : ''));
     }
 }

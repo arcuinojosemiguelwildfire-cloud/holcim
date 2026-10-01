@@ -1,5 +1,7 @@
 import { Navigate, Outlet, useLocation } from 'react-router'
 import { useAuth } from '../../hooks/useAuth'
+import { homePathFor } from '../../layouts/navigation'
+import type { UserRole } from '../../types/auth'
 import { Spinner } from '../ui/Spinner'
 
 function FullPageSpinner() {
@@ -34,6 +36,21 @@ export function GuestOnly() {
   if (status === 'authenticated') {
     const from = (location.state as { from?: string } | null)?.from
     return <Navigate to={from && from.startsWith('/') ? from : '/'} replace />
+  }
+  return <Outlet />
+}
+
+/**
+ * Renders child routes only for the given roles; other roles are sent to
+ * their home page (scanner operators -> /registration). The API enforces the
+ * same rules server-side; this only avoids showing pages that would fail.
+ */
+export function RequireRole({ roles }: { roles: UserRole[] }) {
+  const { user } = useAuth()
+  if (!user) return null
+  if (!roles.includes(user.role)) {
+    const home = homePathFor(user.role)
+    return <Navigate to={home} replace />
   }
   return <Outlet />
 }

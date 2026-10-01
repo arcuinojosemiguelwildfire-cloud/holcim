@@ -28,17 +28,25 @@ final class AuthController
         ]);
     }
 
-    /** POST /auth/login */
+    /**
+     * POST /auth/login {login | email, password}
+     * "login" accepts an email address or a username (Phase 8 scanner
+     * operators); "email" is still accepted for older clients.
+     */
     public static function login(Request $request): Response
     {
-        $input = Validator::make($request->body())
-            ->email('email', required: true)
+        $body = $request->body();
+        if (!isset($body['login']) && isset($body['email'])) {
+            $body['login'] = $body['email'];
+        }
+        $input = Validator::make($body)
+            ->string('login', required: true, max: 190, label: 'Email or username')
             ->string('password', required: true, max: 1024)
             ->validate();
 
         // Use the raw password (validator trims); passwords may contain spaces.
         $password = (string) $request->input('password');
-        $user = AuthService::attempt($request, $input['email'], $password);
+        $user = AuthService::attempt($request, $input['login'], $password);
 
         return Response::success([
             'user' => $user,

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { CalendarDays, CalendarPlus, Pencil } from 'lucide-react'
+import { CalendarDays, CalendarPlus, CalendarRange, Pencil } from 'lucide-react'
+import { EventDaysModal } from '../components/events/EventDaysModal'
 import { EventFormModal } from '../components/events/EventFormModal'
 import { EventStatusBadge } from '../components/events/EventStatusBadge'
 import { Alert } from '../components/ui/Alert'
@@ -11,6 +12,7 @@ import { Spinner } from '../components/ui/Spinner'
 import { useApiQuery } from '../hooks/useApiQuery'
 import { useAuth } from '../hooks/useAuth'
 import { errorMessage } from '../services/apiClient'
+import { EVENT_DAY_CHANGED } from '../services/eventDayService'
 import { eventService } from '../services/eventService'
 import { EVENT_STATUSES, type EventRecord, type EventStatus } from '../types/event'
 import { formatShortDate } from '../utils/format'
@@ -28,6 +30,7 @@ export function EventsPage() {
   const [form, setForm] = useState<FormState>({ open: false })
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
   const [statusSaving, setStatusSaving] = useState<number | null>(null)
+  const [daysFor, setDaysFor] = useState<EventRecord | null>(null)
 
   const handleSaved = (event: EventRecord, created: boolean) => {
     setForm({ open: false })
@@ -42,6 +45,7 @@ export function EventsPage() {
     try {
       const updated = await eventService.setStatus(event.id, status)
       setNotice({ tone: 'success', text: `"${updated.name}" is now ${EVENT_STATUS_LABELS[updated.status].toLowerCase()}.` })
+      window.dispatchEvent(new Event(EVENT_DAY_CHANGED))
       reload()
     } catch (caught) {
       setNotice({ tone: 'error', text: errorMessage(caught) })
@@ -54,7 +58,7 @@ export function EventsPage() {
     <>
       <PageHeader
         title="Events"
-        description="The active event drives the dashboard, registration and randomizers."
+        description="The active event and its current day drive the dashboard, registration and randomizers."
         actions={
           canManage && (
             <Button onClick={() => setForm({ open: true, event: null })} icon={<CalendarPlus className="size-4" aria-hidden />}>
@@ -97,7 +101,7 @@ export function EventsPage() {
               <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
                   <th scope="col" className="px-5 py-3">Event</th>
-                  <th scope="col" className="px-5 py-3">Date</th>
+                  <th scope="col" className="px-5 py-3">Start date</th>
                   <th scope="col" className="px-5 py-3">Status</th>
                   {canManage && <th scope="col" className="px-5 py-3 text-right"><span className="sr-only">Actions</span></th>}
                 </tr>
@@ -140,6 +144,14 @@ export function EventsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
+                          onClick={() => setDaysFor(event)}
+                          icon={<CalendarRange className="size-4" aria-hidden />}
+                        >
+                          Days
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => setForm({ open: true, event })}
                           icon={<Pencil className="size-4" aria-hidden />}
                         >
@@ -154,6 +166,8 @@ export function EventsPage() {
           </div>
         ) : null}
       </Card>
+
+      {daysFor && <EventDaysModal key={daysFor.id} event={daysFor} onClose={() => setDaysFor(null)} />}
 
       {form.open && (
         <EventFormModal

@@ -15,6 +15,8 @@ use App\Utils\SpreadsheetReader;
 /**
  * Major eligibility import (Phase 6): a Google Sheet of form responses,
  * exported as CSV/XLSX, is matched to attendees of the ACTIVE event.
+ * Phase 8: eligibility is granted for the ACTIVE EVENT DAY only (source
+ * import); earlier days' imports are kept as history.
  *
  * Flow (stateless, like the attendee import): parse -> preview -> import.
  * The file only grants eligibility; attendee data is never changed and the
@@ -55,24 +57,25 @@ final class MajorEligibilityImportService
     }
 
     /** @return array<string, mixed> */
-    public static function analyse(int $eventId, array $payload): array
+    public static function analyse(int $eventId, int $dayId, array $payload): array
     {
         [$headers, $rows, $mapping] = self::readPayload($payload);
-        $analysis = self::buildAnalysis($eventId, $rows, $mapping);
+        $analysis = self::buildAnalysis($eventId, $dayId, $rows, $mapping);
         unset($analysis['newAttendeeIds']);
 
         return $analysis;
     }
 
     /** @return array<string, mixed> */
-    public static function commit(Request $request, int $eventId, array $payload): array
+    public static function commit(Request $request, int $eventId, int $dayId, array $payload): array
     {
         [$headers, $rows, $mapping] = self::readPayload($payload);
         $filename = self::safeFilename((string) ($payload['filename'] ?? 'responses'));
 
-        $result = Database::transaction(static function (\PDO $pdo) use ($eventId, $headers, $rows, $mapping, $filename): array {
+        $userId = AuthService::currentUserId();
+        $result = Database::transaction(static function (\PDO $pdo) use ($eventId, $dayId, $headers, $rows, $mapping, $filename, $userId): array {
             $pdo->prepare('SELECT id FROM events WHERE id = :id FOR UPDATE')->execute(['id' => $eventId]);
-            $analysis = self::buildAnalysis($eventId, $rows, $mapping);
+            $analysis = self::buildAnalysis($eventId, $dayId, $rows, $mapping);
             $summary = $analysis['summary'];
 
             $mappingByName = [];
@@ -96,12 +99,13 @@ final class MajorEligibilityImportService
                         array_slice(array_values(array_filter($analysis['rows'], static fn ($r) => !in_array($r['result'], ['matched', 'already_eligible'], true))), 0, 300)
                     ),
                 ],
-                AuthService::currentUserId()
+                $userId,
+                $dayId
             );
 
             $added = 0;
             foreach ($analysis['newAttendeeIds'] as $attendeeId) {
-                if (MajorEligibility::add($eventId, $attendeeId, $batchId)) {
+                if (MajorEligibility::add($eventId, $dayId, $attendeeId, $batchId, $userId)) {
                     $added++;
                 }
             }
@@ -124,7 +128,7 @@ final class MajorEligibilityImportService
                 $result['summary']['invalid']
             ),
             $eventId,
-            ['import_batch_id' => $result['batchId'], 'summary' => $result['summary']]
+            ['import_batch_id' => $result['batchId'], 'event_day_id' => $dayId, 'summary' => $result['summary']]
         );
 
         return ['importBatchId' => $result['batchId'], 'newlyEligible' => $result['added'], 'summary' => $result['summary']];
@@ -155,7 +159,7 @@ final class MajorEligibilityImportService
      * @param array<string, int|null> $mapping
      * @return array<string, mixed>
      */
-    private static function buildAnalysis(int $eventId, array $rows, array $mapping): array
+    private static function buildAnalysis(int $eventId, int $dayId, array $rows, array $mapping): array
     {
         $attendees = [];
         $index = ['attendee_code' => [], 'external_identifier' => [], 'email' => [], 'name_department' => []];
@@ -169,7 +173,7 @@ final class MajorEligibilityImportService
                 }
             }
         }
-        $eligible = MajorEligibility::attendeeIdSet($eventId);
+        $eligible = MajorEligibility::attendeeIdSet($dayId); // "already eligible" means already eligible TODAY
 
         $results = [];
         $newIds = [];

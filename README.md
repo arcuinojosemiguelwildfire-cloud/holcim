@@ -4,7 +4,9 @@ An online event management and prize-draw system: attendee import, QR-based
 registration, minor and major randomizers, winner management, reports and an
 audit trail.
 
-> **Current status: Phase 7 (event-day readiness).** Login rate limiting, CSV reports, draw voiding, the Major QR (`/major-form` → `MAJOR_FORM_URL`), a readiness check and the [deployment guide](docs/DEPLOYMENT.md) and [event-day checklist](docs/EVENT_DAY_CHECKLIST.md).
+> **Current status: Phase 8 (multi-day events).** Events run over several Event Days with one current day; registration, Minor/Major eligibility, draws and reports are per day. New **Scanner Operator** role (scanner only, username login, managed in Settings) and **+ Add Participant** for manual Minor/Major pool additions. See [§9g](#9g-multi-day-events-scanner-operators-and-manual-participants-phase-8).
+>
+> Phase 7 (event-day readiness): login rate limiting, CSV reports, draw voiding, the Major QR (`/major-form` → `MAJOR_FORM_URL`), a readiness check and the [deployment guide](docs/DEPLOYMENT.md) and [event-day checklist](docs/EVENT_DAY_CHECKLIST.md).
 >
 > Phase 6 (Major): Phase 6 adds Major eligibility import (exported Google Sheet CSV/XLSX), the Major Eligibility page and the Major Randomizer.
 >
@@ -64,9 +66,11 @@ The finished system will support a corporate event from start to finish:
 | 10 | Reports | **Built** (Phase 7, CSV exports) |
 | 11 | Audit logs | **Recording** logins, logouts and event changes |
 | 12 | Fullscreen event mode | **Built** for the Minor Randomizer (reusable stage) |
+| 13 | Multi-day events, scanner operators, manual draw participants | **Built** (Phase 8) |
 
-The system is built around one **active event** at a time: the dashboard,
-registration and randomizers always work on the active event.
+The system is built around one **active event** at a time and its **current
+Event Day**: the dashboard, registration, eligibility and randomizers always
+work on the current day of the active event.
 
 ## 2. Technology stack
 
@@ -364,14 +368,14 @@ Error codes: `BAD_REQUEST` (400), `UNAUTHENTICATED` / `INVALID_CREDENTIALS` (401
 | POST | `/api/auth/login` | Public + CSRF | Email/password login |
 | POST | `/api/auth/logout` | CSRF | End the session |
 | GET | `/api/auth/me` | Signed in | **Protected route example**: 401 if not signed in |
-| GET | `/api/dashboard/summary` | Signed in | Active event + metrics |
+| GET | `/api/dashboard/summary` | Admin, registration staff, event operator | Active event, current day + per-day metrics |
 | GET | `/api/events` | Signed in | List events (active first) |
 | GET | `/api/events/{id}` | Signed in | One event |
 | POST | `/api/events` | Admin | Create event |
 | PUT | `/api/events/{id}` | Admin | Update event |
 | PATCH | `/api/events/{id}/status` | Admin | Change status |
-| GET | `/api/attendees` | Signed in | Search/filter/paginate attendees of the active event |
-| GET | `/api/attendees/{id}` | Signed in | One attendee |
+| GET | `/api/attendees` | Admin, registration staff, event operator | Search/filter/paginate attendees of the active event |
+| GET | `/api/attendees/{id}` | Admin, registration staff, event operator | One attendee |
 | PUT | `/api/attendees/{id}` | Admin | Edit name, department, email, external ID (never the code) |
 | PATCH | `/api/attendees/{id}/status` | Admin | Archive / restore (soft delete) |
 | POST | `/api/attendees/import/parse` | Admin | Upload CSV/XLSX (multipart `file`, ≤ 5 MB) → headers, rows, suggested mapping |
@@ -383,17 +387,27 @@ Error codes: `BAD_REQUEST` (400), `UNAUTHENTICATED` / `INVALID_CREDENTIALS` (401
 | GET | `/api/qr-codes/print?ids=` | Admin, registration staff | Print data (all, or selected IDs) |
 | GET / POST | `/api/attendees/{id}/qr` | Viewers / Admin | QR state / generate if missing |
 | POST | `/api/attendees/{id}/qr/regenerate` | Admin | Replace token (old QR becomes invalid) |
-| GET | `/api/registration/summary` | Admin, registration staff | Total / registered / remaining + latest 20 check-ins |
+| GET | `/api/registration/summary` | Admin, registration staff, scanner operator | Current day: total / registered / remaining, my / all scans today, latest 20 check-ins |
 | GET | `/api/randomizers/minor` | Admin, event operator | Event, eligible count, latest 10 winners |
 | POST | `/api/randomizers/minor/draw` | Admin, event operator | Server-side draw; records it; returns the winner (409 `NO_ELIGIBLE_ATTENDEES` if the pool is empty) |
 | GET | `/api/randomizers/major` · POST `/api/randomizers/major/draw` | Admin, event operator | Same as Minor, drawing from Major Eligible attendees |
 | GET | `/api/major-eligibility` · `/api/major-eligibility/imports` | Admin, event operator | Major Eligible list (search/department/pages) and import history |
 | POST | `/api/major-eligibility/import/parse` · `/preview` · `/import` | Admin | Upload → match preview → commit |
 | POST | `/api/randomizers/draws/{id}/void` | Admin, event operator | Mark a draw VOID `{reason?}` (kept in history; eligibility unchanged) |
-| GET | `/api/reports/registration.csv` · `major-eligibility.csv` · `draws.csv` | Admin | CSV exports for the active event |
+| GET | `/api/reports/registration.csv` · `major-eligibility.csv` · `draws.csv` `?scope=day\|all` | Admin | CSV exports for the current day or all days of the active event |
 | GET | `/api/major-form` | Public | 302 redirect to `MAJOR_FORM_URL` (or a safe "not available yet" page) |
 | GET | `/api/major-form/info` | Admin, event operator | Whether the form is configured + the QR target URL |
-| POST | `/api/registration/scan` | Admin, registration staff | `{token}` (token or full QR URL) → `registered` / `already_registered`, or 422 `INVALID_QR` / `WRONG_EVENT` / `ATTENDEE_INACTIVE` |
+| POST | `/api/registration/scan` | Admin, registration staff, scanner operator | `{token}` (token or full QR URL) → `registered` / `already_registered` (for the current day), or 422 `INVALID_QR` / `WRONG_EVENT` / `ATTENDEE_INACTIVE`; 409 `NO_ACTIVE_DAY` |
+| GET | `/api/registration/scans?view=mine\|all&result=all\|successful\|already_registered\|invalid&page=` | Admin, registration staff, scanner operator | Scan attempts of the current day (20 per page) |
+| GET | `/api/registration/attendees?search=` | Signed in | Read-only lookup: attendee + registered today |
+| GET | `/api/event-days/current` | Signed in | Active event + current Event Day |
+| GET / POST | `/api/events/{id}/days` | Admin | List / add event days `{event_date, label?}` |
+| PUT · PATCH | `/api/event-days/{id}` · `/api/event-days/{id}/activate` | Admin | Edit a day / make it the current day |
+| GET | `/api/randomizers/{minor\|major}/participants?search=&page=` | Admin, event operator | Today's pool with source (registration / import / manual) |
+| GET | `/api/randomizers/{minor\|major}/candidates?search=` | Admin, event operator | Active attendees to add, with `alreadyEligible` |
+| POST | `/api/randomizers/{minor\|major}/participants` | Admin, event operator | `{attendee_id, reason?}` manual add for today (409 `ALREADY_ELIGIBLE`) |
+| GET / POST | `/api/settings/scanner-operators` | Admin | List / create `{name, username, password, password_confirmation, status}` |
+| PATCH · POST | `/api/settings/scanner-operators/{id}` · `/{id}/password` | Admin | Enable/disable `{status}` / reset password |
 
 Full request/response examples: [docs/API.md](docs/API.md).
 
@@ -483,6 +497,28 @@ Full request/response examples: [docs/API.md](docs/API.md).
 - **Major QR** (`/major-qr`, admin, event operator): large high-contrast QR for the LED screen, with fullscreen. It encodes `{APP_URL}/major-form`; that route redirects to `MAJOR_FORM_URL` (server config only), so the client can change the form link without a new QR. Scanning only opens the form; eligibility still comes from the Major import.
 - **Readiness:** `php backend/cli/check-readiness.php`, the QR Generator and print sheet warn when `APP_URL` is blank or local. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and [docs/EVENT_DAY_CHECKLIST.md](docs/EVENT_DAY_CHECKLIST.md).
 
+## 9g. Multi-day events, scanner operators and manual participants (Phase 8)
+
+- **Event days** (`event_days`): every event has Day 1, 2, 3… with a date and optional label. Exactly one day of the active event is the **current day**; the server resolves it on every request (no event/day ID is ever accepted from the browser for scans, pools, draws or imports). Admin: **Events › Days** to add a day, edit it, and **Set as current**. The top bar shows "Current Event Day: Day 2 — October 11, 2026" for every role. Switching days never deletes or resets anything.
+- **Registration per day:** the same attendee QR is used every day. `registration_scans` is unique per (event day, attendee), so an attendee checks in once per day; a second scan the same day is "Already registered for Day N". Counts (Total / Registered / Remaining) are for the current day. Every scan attempt (including invalid / wrong event / inactive) goes to `scan_logs` for the Recent Scans list.
+- **Minor pool (per day)** = active attendees registered today **or** manually added today (`minor_manual_entries`).
+- **Major pool (per day)** = active attendees with a `major_eligibility` row for today. A response import grants eligibility for the current day only (`source = import`); earlier days' rows and import history are kept.
+- **+ Add Participant** (Minor and Major Randomizer pages; admin + event operator): search by code, name, department or email, optional reason. Creates a day-specific `source = manual` record with the user and time. It never changes the attendee, QR code or registration and never creates a check-in. Duplicates (already registered/added/imported today) return 409 "already eligible". Archived attendees and attendees of other events are refused.
+- **Draws per day:** `randomizer_draws.event_day_id`; recent winners show today's draws; only draws of the current day can be voided.
+- **Scanner Operator role** (`scanner_operator`): created by an admin in **Settings › Scanner Operators** (display name, username, password + confirmation, status; enable/disable; reset password). Passwords are hashed with `password_hash()` and never returned. Scanner operators sign in with their **username** (the login field accepts email or username), land on the scanner dashboard and can only: scan (camera or USB scanner), see **My scans today** / **All scans today**, browse Recent Scans (My Scans / All Scans, filter All / Successful / Already registered / Invalid, paginated, current day only) and use the read-only attendee lookup. Every other endpoint returns 403. Disabling an account ends its session on the next request.
+- **Reports** have a scope toggle: current day or all days (Event Day column on every row).
+
+Permission matrix (enforced in `backend/api/routes.php`):
+
+| Area | admin | registration_staff | event_operator | scanner_operator |
+|------|:-----:|:-----:|:-----:|:-----:|
+| Events, event days, attendee import/edit, QR generation, Major import, reports, settings | ✓ | | | |
+| View dashboard, events, attendees | ✓ | ✓ | ✓ | |
+| QR view/print | ✓ | ✓ | | |
+| Registration scanner, scan history | ✓ | ✓ | | ✓ |
+| Attendee status lookup | ✓ | ✓ | ✓ | ✓ |
+| Randomizers, + Add Participant, void draw, Major eligibility list | ✓ | | ✓ | |
+
 ## 10. Creating the first admin
 
 There are **no default or hard-coded credentials**. Create accounts from the
@@ -501,7 +537,9 @@ php backend/cli/create-user.php --name="Stage Operator" --email=stage@example.co
 ```
 
 Rules: valid unique email, password at least 10 characters. Roles: `admin`
-(default), `registration_staff`, `event_operator`. For automation, pipe the
+(default), `registration_staff`, `event_operator`. Scanner operators are not
+created here: an admin adds them in **Settings › Scanner Operators** (username
+login, password at least 8 characters). For automation, pipe the
 password with `--password-stdin`. Never pass a password as a command-line
 argument, because it would end up in shell history.
 

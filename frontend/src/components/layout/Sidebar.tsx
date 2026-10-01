@@ -82,7 +82,7 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
           </ul>
         </nav>
 
-        <div className="border-t border-slate-800 px-5 py-4 text-xs text-slate-500">Phase 7 · Event-day ready</div>
+        <div className="border-t border-slate-800 px-5 py-4 text-xs text-slate-500">Phase 8 · Multi-day events</div>
       </aside>
     </>
   )

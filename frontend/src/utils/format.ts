@@ -33,3 +33,19 @@ export function formatShortDate(value: string): string {
 export function formatNumber(value: number): string {
   return value.toLocaleString('en-PH')
 }
+
+/** "2:05:09 PM" from "YYYY-MM-DD HH:MM:SS" (server local time). */
+export function formatTime(value: string | null): string {
+  if (!value) return ''
+  const date = new Date(value.replace(' ', 'T'))
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit', second: '2-digit' })
+}
+
+/** "Dec 12, 2:05 PM" from "YYYY-MM-DD HH:MM:SS". */
+export function formatDateTime(value: string | null): string {
+  if (!value) return ''
+  const date = new Date(value.replace(' ', 'T'))
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+}

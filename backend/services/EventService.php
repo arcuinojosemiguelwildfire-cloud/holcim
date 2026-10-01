@@ -40,7 +40,11 @@ final class EventService
                 self::assertNoOtherActive(null);
             }
 
-            return Event::create($data);
+            $eventId = Event::create($data);
+            // Phase 8: every event starts with Day 1 on its event date.
+            EventDayService::createFirstDay($eventId, (string) $data['event_date'], ($data['status'] ?? Event::STATUS_DRAFT) === Event::STATUS_ACTIVE);
+
+            return $eventId;
         });
 
         $event = self::findOrFail($id);
@@ -71,6 +75,9 @@ final class EventService
         });
 
         $after = self::findOrFail($id);
+        if ($after['status'] === Event::STATUS_ACTIVE) {
+            EventDayService::ensureActiveDay($id, (string) $after['event_date']);
+        }
         $changes = self::diff($before, $after, array_keys($data));
 
         if ($changes !== []) {
