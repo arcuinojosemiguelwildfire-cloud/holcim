@@ -9,45 +9,46 @@ use App\Core\Request;
 use App\Models\RandomizerDraw;
 
 /**
- * Minor Randomizer for the ACTIVE event.
+ * Minor and Major Randomizers for the ACTIVE event (Phase 5/6).
  *
- * Eligible pool = active attendees of the active event with a successful
- * registration_scans record (queried server-side on every draw).
+ * Eligible pool (queried server-side on every draw):
+ *   minor = active attendees with a successful registration_scans record
+ *   major = active attendees with a major_eligibility record (imported responses)
  * The winner is chosen here with random_int() (CSPRNG); the browser only
  * animates the result. Each draw is stored in randomizer_draws; winners stay
  * eligible (no repeat-winner rule has been defined).
  */
-final class MinorRandomizerService
+final class RandomizerService
 {
     /** Extra eligible names sent for the rolling animation (never the whole pool). */
     private const ROLL_SAMPLE_SIZE = 24;
 
     /** @return array<string, mixed> */
-    public static function summary(): array
+    public static function summary(string $type): array
     {
         $event = AttendeeService::activeEventOrFail();
         $eventId = (int) $event['id'];
 
         return [
             'event' => ['id' => $eventId, 'name' => $event['name']],
-            'eligibleCount' => RandomizerDraw::countMinorEligible($eventId),
-            'recentWinners' => self::recentWinners($eventId),
+            'eligibleCount' => RandomizerDraw::countEligible($eventId, $type),
+            'recentWinners' => self::recentWinners($eventId, $type),
         ];
     }
 
     /** @return array<string, mixed> */
-    public static function draw(Request $request): array
+    public static function draw(Request $request, string $type): array
     {
         $event = AttendeeService::activeEventOrFail();
         $eventId = (int) $event['id'];
 
-        $pool = RandomizerDraw::minorEligibleIds($eventId);
+        $pool = RandomizerDraw::eligibleIds($eventId, $type);
         if ($pool === []) {
             throw new HttpException(409, 'NO_ELIGIBLE_ATTENDEES', 'No eligible attendees yet.');
         }
 
         $winnerId = $pool[random_int(0, count($pool) - 1)];
-        $drawId = RandomizerDraw::create($eventId, $winnerId, RandomizerDraw::TYPE_MINOR, AuthService::currentUserId());
+        $drawId = RandomizerDraw::create($eventId, $winnerId, $type, AuthService::currentUserId());
 
         // Random sample of other eligible names for the rolling effect.
         $others = array_values(array_diff($pool, [$winnerId]));
@@ -68,8 +69,8 @@ final class MinorRandomizerService
 
         AuditLogger::log(
             $request,
-            'randomizer.minor_draw',
-            "Minor draw winner: {$winner['attendee_code']} ({$winner['full_name']}).",
+            "randomizer.{$type}_draw",
+            ucfirst($type) . " draw winner: {$winner['attendee_code']} ({$winner['full_name']}).",
             $eventId,
             ['draw_id' => $drawId, 'attendee_id' => $winnerId, 'pool_size' => count($pool)]
         );
@@ -83,12 +84,12 @@ final class MinorRandomizerService
                 static fn (int $id): string => $rows[$id]['full_name'],
                 array_filter($sample, static fn (int $id): bool => isset($rows[$id]))
             )),
-            'recentWinners' => self::recentWinners($eventId),
+            'recentWinners' => self::recentWinners($eventId, $type),
         ];
     }
 
     /** @return list<array<string, mixed>> */
-    private static function recentWinners(int $eventId): array
+    private static function recentWinners(int $eventId, string $type): array
     {
         return array_map(static fn (array $row): array => [
             'drawId' => (int) $row['id'],
@@ -97,7 +98,7 @@ final class MinorRandomizerService
             'fullName' => $row['full_name'],
             'department' => $row['department'],
             'drawnBy' => $row['drawn_by_name'],
-        ], RandomizerDraw::recent($eventId, RandomizerDraw::TYPE_MINOR, 10));
+        ], RandomizerDraw::recent($eventId, $type, 10));
     }
 
     /**

@@ -3,27 +3,42 @@ import { RandomizerStage, type DrawOutcome } from '../components/randomizer/Rand
 import { Alert } from '../components/ui/Alert'
 import { Card, CardHeader } from '../components/ui/Card'
 import { errorMessage } from '../services/apiClient'
-import { randomizerService, type MinorSummary, type RecentWinner } from '../services/randomizerService'
+import { randomizerService, type RandomizerSummary, type RandomizerType, type RecentWinner } from '../services/randomizerService'
 
 function formatTime(value: string): string {
   const date = new Date(value.replace(' ', 'T'))
   return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit', second: '2-digit' })
 }
 
-export function MinorRandomizerPage() {
-  const [summary, setSummary] = useState<MinorSummary | null>(null)
+const COPY: Record<RandomizerType, { title: string; intro: string; history: string }> = {
+  minor: {
+    title: 'Minor Randomizer',
+    intro: 'Draws from attendees who have checked in at registration.',
+    history: 'Latest 10 Minor draws for this event. Winners stay eligible for later draws.',
+  },
+  major: {
+    title: 'Major Randomizer',
+    intro: 'Draws from Major Eligible attendees (imported form responses).',
+    history: 'Latest 10 Major draws for this event. Winners stay eligible for later draws.',
+  },
+}
+
+/** Shared page for the Minor and Major Randomizers (same stage + fullscreen). */
+export function RandomizerPage({ type }: { type: RandomizerType }) {
+  const copy = COPY[type]
+  const [summary, setSummary] = useState<RandomizerSummary | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pendingWinners, setPendingWinners] = useState<RecentWinner[] | null>(null)
 
   const load = useCallback(() => {
-    randomizerService.minorSummary().then(
+    randomizerService.summary(type).then(
       (data) => {
         setSummary(data)
         setError(null)
       },
       (caught: unknown) => setError(errorMessage(caught)),
     )
-  }, [])
+  }, [type])
 
   // Initial load + refresh the eligible count as registrations come in.
   useEffect(() => {
@@ -33,12 +48,12 @@ export function MinorRandomizerPage() {
   }, [load])
 
   const draw = useCallback(async (): Promise<DrawOutcome> => {
-    const result = await randomizerService.minorDraw()
+    const result = await randomizerService.draw(type)
     setSummary((current) => (current ? { ...current, eligibleCount: result.eligibleCount } : current))
     // Reveal the new history row only after the animation has landed.
     setPendingWinners(result.recentWinners)
     return { winner: result.winner, rollNames: result.rollNames }
-  }, [])
+  }, [type])
 
   useEffect(() => {
     if (!pendingWinners) return
@@ -52,23 +67,23 @@ export function MinorRandomizerPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Minor Randomizer</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{copy.title}</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Draws from attendees who have checked in at registration. Press “Enter fullscreen” before showing it on the LED screen or projector.
+          {copy.intro} Press “Enter fullscreen” before showing it on the LED screen or projector.
         </p>
       </div>
 
       {error && <Alert tone="error">{error}</Alert>}
 
       <RandomizerStage
-        title="Minor Randomizer"
+        title={copy.title}
         eventName={summary?.event.name ?? null}
         eligibleCount={summary ? summary.eligibleCount : null}
         onDraw={draw}
       />
 
       <Card className="overflow-hidden">
-        <CardHeader title="Recent winners" description="Latest 10 Minor draws for this event. Winners stay eligible for later draws." />
+        <CardHeader title="Recent winners" description={copy.history} />
         {summary && summary.recentWinners.length === 0 ? (
           <p className="px-5 py-8 text-center text-sm text-slate-500">No draws yet.</p>
         ) : (

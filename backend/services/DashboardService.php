@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Models\Attendee;
 use App\Models\Event;
+use App\Models\RandomizerDraw;
 use App\Models\RegistrationScan;
 
 /**
@@ -14,8 +15,8 @@ use App\Models\RegistrationScan;
  * Every metric reports whether it is backed by a working module:
  *   available = true  -> value comes from real database rows
  *   available = false -> the module that defines it is not built yet; value is 0
- * Minor eligible = registered active attendees. Major eligibility arrives
- * with the Major response import, so it reports available = false.
+ * Minor eligible = registered active attendees.
+ * Major eligible = active attendees made eligible by a response import.
  */
 final class DashboardService
 {
@@ -54,7 +55,11 @@ final class DashboardService
                 'value' => $eventId !== null ? RegistrationScan::countRegisteredForEvent($eventId) : 0,
                 'available' => true,
             ],
-            'majorEligible' => ['value' => 0, 'available' => false],
+            // Major eligible = active attendees with an imported major_eligibility row (Phase 6).
+            'majorEligible' => [
+                'value' => $eventId !== null ? RandomizerDraw::countEligible($eventId, RandomizerDraw::TYPE_MAJOR) : 0,
+                'available' => true,
+            ],
         ];
     }
 }

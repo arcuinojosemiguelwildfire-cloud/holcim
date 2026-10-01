@@ -6,19 +6,32 @@ namespace App\Controllers;
 
 use App\Core\Request;
 use App\Core\Response;
-use App\Services\MinorRandomizerService;
+use App\Models\RandomizerDraw;
+use App\Services\RandomizerService;
 
 final class RandomizerController
 {
-    /** GET /randomizers/minor - event, eligible count, recent winners */
+    /** GET /randomizers/minor - event, eligible count, recent Minor winners */
     public static function minorSummary(Request $request): Response
     {
-        return Response::success(MinorRandomizerService::summary());
+        return Response::success(RandomizerService::summary(RandomizerDraw::TYPE_MINOR));
     }
 
-    /** POST /randomizers/minor/draw - server-side draw from the eligible pool */
+    /** POST /randomizers/minor/draw - server-side draw from registered attendees */
     public static function minorDraw(Request $request): Response
     {
-        return Response::success(MinorRandomizerService::draw($request));
+        return Response::success(RandomizerService::draw($request, RandomizerDraw::TYPE_MINOR));
+    }
+
+    /** GET /randomizers/major - event, eligible count, recent Major winners */
+    public static function majorSummary(Request $request): Response
+    {
+        return Response::success(RandomizerService::summary(RandomizerDraw::TYPE_MAJOR));
+    }
+
+    /** POST /randomizers/major/draw - server-side draw from Major Eligible attendees */
+    public static function majorDraw(Request $request): Response
+    {
+        return Response::success(RandomizerService::draw($request, RandomizerDraw::TYPE_MAJOR));
     }
 }

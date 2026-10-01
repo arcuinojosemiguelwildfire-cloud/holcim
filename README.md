@@ -4,7 +4,9 @@ An online event management and prize-draw system: attendee import, QR-based
 registration, minor and major randomizers, winner management, reports and an
 audit trail.
 
-> **Current status: Phase 5 (Minor Randomizer).** Phase 5 adds the server-side Minor draw, draw history and Event Fullscreen Mode.
+> **Current status: Phase 6 (Major).** Phase 6 adds Major eligibility import (exported Google Sheet CSV/XLSX), the Major Eligibility page and the Major Randomizer.
+>
+> Phase 5 (Minor Randomizer): Phase 5 adds the server-side Minor draw, draw history and Event Fullscreen Mode.
 >
 > Phase 4 (Registration): Phase 4 adds the camera QR scanner, check-in, duplicate protection and Minor draw eligibility.
 >
@@ -54,7 +56,7 @@ The finished system will support a corporate event from start to finish:
 | 4 | Printable attendee QR/ID | **Built** (Phase 3, A4 label sheets) |
 | 5 | Registration QR scanner | **Built** (Phase 4) |
 | 6 | Minor randomizer | **Built** (Phase 5) |
-| 7 | Major randomizer | Planned |
+| 7 | Major randomizer | **Built** (Phase 6) |
 | 8 | Google Form / Google Sheet response import | Schema ready |
 | 9 | Winner management | Planned |
 | 10 | Reports | Planned |
@@ -380,6 +382,9 @@ Error codes: `BAD_REQUEST` (400), `UNAUTHENTICATED` / `INVALID_CREDENTIALS` (401
 | GET | `/api/registration/summary` | Admin, registration staff | Total / registered / remaining + latest 20 check-ins |
 | GET | `/api/randomizers/minor` | Admin, event operator | Event, eligible count, latest 10 winners |
 | POST | `/api/randomizers/minor/draw` | Admin, event operator | Server-side draw; records it; returns the winner (409 `NO_ELIGIBLE_ATTENDEES` if the pool is empty) |
+| GET | `/api/randomizers/major` · POST `/api/randomizers/major/draw` | Admin, event operator | Same as Minor, drawing from Major Eligible attendees |
+| GET | `/api/major-eligibility` · `/api/major-eligibility/imports` | Admin, event operator | Major Eligible list (search/department/pages) and import history |
+| POST | `/api/major-eligibility/import/parse` · `/preview` · `/import` | Admin | Upload → match preview → commit |
 | POST | `/api/registration/scan` | Admin, registration staff | `{token}` (token or full QR URL) → `registered` / `already_registered`, or 422 `INVALID_QR` / `WRONG_EVENT` / `ATTENDEE_INACTIVE` |
 
 Full request/response examples: [docs/API.md](docs/API.md).
@@ -448,6 +453,19 @@ Full request/response examples: [docs/API.md](docs/API.md).
 - **No repeat-winner rule:** winners stay eligible; `registration_scans` is never modified. If a rule is needed later it can be built on `randomizer_draws`.
 - **Access:** admin and event operator (registration staff get 403).
 - **Event Fullscreen Mode:** "Enter fullscreen" uses the standard browser Fullscreen API on the stage element, so the sidebar and top bar disappear. Space/Enter draws (works with presenter remotes); Esc or the corner button exits. Browsers require a click or key press to enter fullscreen and always let the viewer exit; the app cannot hide browser UI on its own. The stage (`components/randomizer/RandomizerStage.tsx`) is reusable for the Major Randomizer.
+
+## 9e. Major eligibility and Major Randomizer (Phase 6)
+
+- **Source:** the client's form responses in Google Sheets, downloaded as CSV or XLSX (File › Download) and imported on **Major Eligibility › Import responses**. No Google API/OAuth.
+- **Mapping:** any column names. Map whichever identifiers the form collected: Attendee Code, External Identifier (Employee ID/No.), Email, Full Name + Department. Suggestions are made from the headers.
+- **Matching** (exact after trimming, collapsing spaces and ignoring case; no fuzzy matching). Every mapped identifier with a value is checked:
+  - an identifier that matches 2+ attendees, or identifiers pointing to different attendees → **ambiguous** (skipped)
+  - the single candidate has a different code / external ID / email than the row → **ambiguous** (conflict, skipped)
+  - no match → **unmatched**; no identifier values → **invalid**
+  - exactly one consistent match → **matched**; archived attendees are reported and not made eligible; attendees already eligible (or repeated in the file) are reported as **already eligible**.
+  - Names may be spelled differently in the form; when a code, external ID or email matches, the name is not used to reject the row.
+- **Major eligible = a `major_eligibility` row for the active event AND the attendee is active.** Unique per (event, attendee), so re-imports never duplicate. Attendee data and `registration_scans` are never modified. Spreadsheet contents are not stored; only counts, row numbers and reasons go into `import_batches` (type `major_entries`) and the audit log.
+- **Major Randomizer:** same stage, fullscreen and server-side `random_int()` draw as Minor, using `randomizer_draws.randomizer_type = 'major'`. Winners stay eligible (no repeat rule).
 
 ## 10. Creating the first admin
 

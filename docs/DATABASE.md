@@ -140,3 +140,6 @@ columns (`active_lock`) are supported by both.
 
 ### `randomizer_draws` (migration 010, Phase 5)
 One row per draw: `event_id`, `attendee_id`, `randomizer_type` (`minor`/`major`), `drawn_by` (user, SET NULL), `selected_at`. Separate from `registration_scans`, so recording a winner never changes eligibility.
+
+### `major_eligibility` (migration 011, Phase 6)
+`event_id`, `attendee_id` (composite FK to attendees(id, event_id)), `import_batch_id` (SET NULL), `imported_at`. UNIQUE (event_id, attendee_id). Major eligible = row here + attendee active. The Phase 1 `major_entries` table (full responses) is intentionally not used, so client spreadsheet contents are not stored.

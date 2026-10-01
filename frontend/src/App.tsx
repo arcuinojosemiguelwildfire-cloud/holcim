@@ -8,19 +8,16 @@ import { ComingSoonPage } from './pages/ComingSoonPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { EventsPage } from './pages/EventsPage'
 import { LoginPage } from './pages/LoginPage'
-import { MinorRandomizerPage } from './pages/MinorRandomizerPage'
+import { MajorEligibilityPage } from './pages/MajorEligibilityPage'
+import { MajorImportPage } from './pages/MajorImportPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { QrGeneratorPage } from './pages/QrGeneratorPage'
 import { QrPrintPage } from './pages/QrPrintPage'
+import { RandomizerPage } from './pages/RandomizerPage'
 import { RegistrationPage } from './pages/RegistrationPage'
 
 /** Placeholder routes for modules scheduled in later phases. */
 const COMING_SOON_ROUTES = [
-  {
-    path: 'major-randomizer',
-    title: 'Major Randomizer',
-    plannedFeatures: ['Import Google Form / Google Sheet responses', 'Draw major prize winners', 'Fullscreen event mode'],
-  },
   {
     path: 'reports',
     title: 'Reports',
@@ -53,7 +50,10 @@ const router = createBrowserRouter(
             { path: 'attendees/import', element: <AttendeeImportPage /> },
             { path: 'qr-codes', element: <QrGeneratorPage /> },
             { path: 'registration', element: <RegistrationPage /> },
-            { path: 'minor-randomizer', element: <MinorRandomizerPage /> },
+            { path: 'minor-randomizer', element: <RandomizerPage key="minor" type="minor" /> },
+            { path: 'major-eligibility', element: <MajorEligibilityPage /> },
+            { path: 'major-eligibility/import', element: <MajorImportPage /> },
+            { path: 'major-randomizer', element: <RandomizerPage key="major" type="major" /> },
             ...COMING_SOON_ROUTES.map(({ path, title, plannedFeatures }) => ({
               path,
               element: <ComingSoonPage title={title} plannedFeatures={plannedFeatures} />,

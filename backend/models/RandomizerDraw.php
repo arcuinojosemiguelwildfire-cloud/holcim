@@ -7,33 +7,44 @@ namespace App\Models;
 use App\Core\Database;
 
 /**
- * Minor eligible pool (read-only, derived from registration_scans) and the
- * randomizer_draws history.
+ * Eligible pools (read-only: minor from registration_scans, major from
+ * major_eligibility) and the randomizer_draws history.
  */
 final class RandomizerDraw
 {
     public const TYPE_MINOR = 'minor';
+    public const TYPE_MAJOR = 'major';
 
     /** SQL fragment: active attendees of :event_id with a check-in. */
     private const ELIGIBLE_FROM = "FROM registration_scans r
         JOIN attendees a ON a.id = r.attendee_id AND a.event_id = r.event_id
         WHERE r.event_id = :event_id AND a.status = 'active'";
 
-    public static function countMinorEligible(int $eventId): int
+    /** SQL fragment: active attendees of :event_id with a Major eligibility row. */
+    private const MAJOR_ELIGIBLE_FROM = "FROM major_eligibility m
+        JOIN attendees a ON a.id = m.attendee_id AND a.event_id = m.event_id
+        WHERE m.event_id = :event_id AND a.status = 'active'";
+
+    public static function countEligible(int $eventId, string $type): int
     {
-        $statement = Database::connection()->prepare('SELECT COUNT(*) ' . self::ELIGIBLE_FROM);
+        $statement = Database::connection()->prepare('SELECT COUNT(*) ' . self::fromFor($type));
         $statement->execute(['event_id' => $eventId]);
 
         return (int) $statement->fetchColumn();
     }
 
-    /** @return list<int> attendee IDs of the Minor eligible pool */
-    public static function minorEligibleIds(int $eventId): array
+    /** @return list<int> attendee IDs of the eligible pool for $type */
+    public static function eligibleIds(int $eventId, string $type): array
     {
-        $statement = Database::connection()->prepare('SELECT a.id ' . self::ELIGIBLE_FROM . ' ORDER BY a.id');
+        $statement = Database::connection()->prepare('SELECT a.id ' . self::fromFor($type) . ' ORDER BY a.id');
         $statement->execute(['event_id' => $eventId]);
 
         return array_map('intval', $statement->fetchAll(\PDO::FETCH_COLUMN));
+    }
+
+    private static function fromFor(string $type): string
+    {
+        return $type === self::TYPE_MAJOR ? self::MAJOR_ELIGIBLE_FROM : self::ELIGIBLE_FROM;
     }
 
     /**

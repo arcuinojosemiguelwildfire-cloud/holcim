@@ -1,5 +1,6 @@
 import {
   CalendarDays,
+  ClipboardCheck,
   ChartColumn,
   Dices,
   LayoutDashboard,
@@ -33,7 +34,8 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'QR / ID Generator', path: '/qr-codes', icon: QrCode, roles: ['admin', 'registration_staff'] },
   { label: 'Registration', path: '/registration', icon: ScanLine, roles: ['admin', 'registration_staff'] },
   { label: 'Minor Randomizer', path: '/minor-randomizer', icon: Dices, roles: ['admin', 'event_operator'] },
-  { label: 'Major Randomizer', path: '/major-randomizer', icon: Trophy, comingSoon: true },
+  { label: 'Major Eligibility', path: '/major-eligibility', icon: ClipboardCheck, roles: ['admin', 'event_operator'] },
+  { label: 'Major Randomizer', path: '/major-randomizer', icon: Trophy, roles: ['admin', 'event_operator'] },
   { label: 'Reports', path: '/reports', icon: ChartColumn, comingSoon: true },
   { label: 'Settings', path: '/settings', icon: Settings, comingSoon: true },
 ]

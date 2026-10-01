@@ -7,13 +7,15 @@ export interface RecentWinner extends DrawWinner {
   drawnBy: string | null
 }
 
-export interface MinorSummary {
+export type RandomizerType = 'minor' | 'major'
+
+export interface RandomizerSummary {
   event: { id: number; name: string }
   eligibleCount: number
   recentWinners: RecentWinner[]
 }
 
-export interface MinorDrawResult {
+export interface DrawResult {
   drawId: number
   selectedAt: string
   eligibleCount: number
@@ -23,6 +25,6 @@ export interface MinorDrawResult {
 }
 
 export const randomizerService = {
-  minorSummary: () => apiClient.get<MinorSummary>('/randomizers/minor'),
-  minorDraw: () => apiClient.post<MinorDrawResult>('/randomizers/minor/draw'),
+  summary: (type: RandomizerType) => apiClient.get<RandomizerSummary>(`/randomizers/${type}`),
+  draw: (type: RandomizerType) => apiClient.post<DrawResult>(`/randomizers/${type}/draw`),
 }

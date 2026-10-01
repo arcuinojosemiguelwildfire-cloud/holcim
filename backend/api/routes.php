@@ -17,6 +17,7 @@ use App\Controllers\AuthController;
 use App\Controllers\DashboardController;
 use App\Controllers\EventController;
 use App\Controllers\HealthController;
+use App\Controllers\MajorEligibilityController;
 use App\Controllers\QrCodeController;
 use App\Controllers\RandomizerController;
 use App\Controllers\RegistrationController;
@@ -76,4 +77,14 @@ return static function (Router $router): void {
     $randomizerOperators = AuthMiddleware::roles(User::ROLE_ADMIN, User::ROLE_EVENT_OPERATOR);
     $router->get('/randomizers/minor', [RandomizerController::class, 'minorSummary'], [$randomizerOperators]);
     $router->post('/randomizers/minor/draw', [RandomizerController::class, 'minorDraw'], [$randomizerOperators]);
+    $router->get('/randomizers/major', [RandomizerController::class, 'majorSummary'], [$randomizerOperators]);
+    $router->post('/randomizers/major/draw', [RandomizerController::class, 'majorDraw'], [$randomizerOperators]);
+
+    // Major eligibility (imported form responses). View: admin + event operator.
+    // Import: admin only.
+    $router->get('/major-eligibility', [MajorEligibilityController::class, 'index'], [$randomizerOperators]);
+    $router->get('/major-eligibility/imports', [MajorEligibilityController::class, 'imports'], [$randomizerOperators]);
+    $router->post('/major-eligibility/import/parse', [MajorEligibilityController::class, 'parseImport'], [$adminOnly]);
+    $router->post('/major-eligibility/import/preview', [MajorEligibilityController::class, 'previewImport'], [$adminOnly]);
+    $router->post('/major-eligibility/import', [MajorEligibilityController::class, 'import'], [$adminOnly]);
 };
