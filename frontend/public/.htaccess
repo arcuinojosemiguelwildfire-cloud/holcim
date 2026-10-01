@@ -1,0 +1,9 @@
+# SPA fallback for Apache: serve index.html for client-side routes
+# (e.g. /events) so a page refresh does not 404. Copied into dist/ on build.
+Options -Indexes
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule . index.html [L]
+</IfModule>
