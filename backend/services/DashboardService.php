@@ -14,8 +14,8 @@ use App\Models\RegistrationScan;
  * Every metric reports whether it is backed by a working module:
  *   available = true  -> value comes from real database rows
  *   available = false -> the module that defines it is not built yet; value is 0
- * Minor/Major eligibility rules are defined in later phases, so they report
- * available = false instead of guessing.
+ * Minor eligible = registered active attendees. Major eligibility arrives
+ * with the Major response import, so it reports available = false.
  */
 final class DashboardService
 {
@@ -49,7 +49,11 @@ final class DashboardService
                 'value' => $eventId !== null ? RegistrationScan::countRegisteredForEvent($eventId) : 0,
                 'available' => true,
             ],
-            'minorEligible' => ['value' => 0, 'available' => false],
+            // Minor eligible = successfully registered active attendees (Phase 4).
+            'minorEligible' => [
+                'value' => $eventId !== null ? RegistrationScan::countRegisteredForEvent($eventId) : 0,
+                'available' => true,
+            ],
             'majorEligible' => ['value' => 0, 'available' => false],
         ];
     }

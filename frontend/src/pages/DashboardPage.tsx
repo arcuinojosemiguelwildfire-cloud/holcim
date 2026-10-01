@@ -88,8 +88,8 @@ function DashboardContent({ summary }: { summary: DashboardSummary }) {
       <section aria-label="Event statistics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Total Attendees" metric={metrics.totalAttendees} icon={Users} hint="Imported for the active event" />
         <StatCard label="Registered" metric={metrics.registered} icon={UserCheck} hint="Checked in by QR scan" />
-        <StatCard label="Minor Eligible" metric={metrics.minorEligible} icon={Dices} pendingNote="Available when the Minor Randomizer is built" />
-        <StatCard label="Major Eligible" metric={metrics.majorEligible} icon={Trophy} pendingNote="Available when the Major Randomizer is built" />
+        <StatCard label="Minor Eligible" metric={metrics.minorEligible} icon={Dices} hint="Registered attendees in the minor draw" />
+        <StatCard label="Major Eligible" metric={metrics.majorEligible} icon={Trophy} pendingNote="Available after the Major response import" />
       </section>
     </div>
   )

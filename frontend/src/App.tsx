@@ -11,14 +11,10 @@ import { LoginPage } from './pages/LoginPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { QrGeneratorPage } from './pages/QrGeneratorPage'
 import { QrPrintPage } from './pages/QrPrintPage'
+import { RegistrationPage } from './pages/RegistrationPage'
 
 /** Placeholder routes for modules scheduled in later phases. */
 const COMING_SOON_ROUTES = [
-  {
-    path: 'registration',
-    title: 'Registration',
-    plannedFeatures: ['Camera-based QR scanner for check-in', 'Duplicate-scan protection', 'Live registration count'],
-  },
   {
     path: 'minor-randomizer',
     title: 'Minor Randomizer',
@@ -60,6 +56,7 @@ const router = createBrowserRouter(
             { path: 'attendees', element: <AttendeesPage /> },
             { path: 'attendees/import', element: <AttendeeImportPage /> },
             { path: 'qr-codes', element: <QrGeneratorPage /> },
+            { path: 'registration', element: <RegistrationPage /> },
             ...COMING_SOON_ROUTES.map(({ path, title, plannedFeatures }) => ({
               path,
               element: <ComingSoonPage title={title} plannedFeatures={plannedFeatures} />,

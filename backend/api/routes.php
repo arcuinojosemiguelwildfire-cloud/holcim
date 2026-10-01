@@ -18,6 +18,7 @@ use App\Controllers\DashboardController;
 use App\Controllers\EventController;
 use App\Controllers\HealthController;
 use App\Controllers\QrCodeController;
+use App\Controllers\RegistrationController;
 use App\Core\Router;
 use App\Middleware\AuthMiddleware;
 use App\Models\User;
@@ -65,4 +66,8 @@ return static function (Router $router): void {
     $router->get('/attendees/{id}/qr', [QrCodeController::class, 'show'], [$qrViewers]);
     $router->post('/attendees/{id}/qr', [QrCodeController::class, 'generate'], [$adminOnly]);
     $router->post('/attendees/{id}/qr/regenerate', [QrCodeController::class, 'regenerate'], [$adminOnly]);
+
+    // Registration (QR check-in) for the active event: admin + registration staff.
+    $router->get('/registration/summary', [RegistrationController::class, 'summary'], [$qrViewers]);
+    $router->post('/registration/scan', [RegistrationController::class, 'scan'], [$qrViewers]);
 };

@@ -4,7 +4,9 @@ An online event management and prize-draw system: attendee import, QR-based
 registration, minor and major randomizers, winner management, reports and an
 audit trail.
 
-> **Current status: Phase 3 (QR codes).** Phase 3 adds attendee QR generation, the QR / ID Generator page, regeneration and A4 bulk printing.
+> **Current status: Phase 4 (Registration).** Phase 4 adds the camera QR scanner, check-in, duplicate protection and Minor draw eligibility.
+>
+> Phase 3 (QR codes): Phase 3 adds attendee QR generation, the QR / ID Generator page, regeneration and A4 bulk printing.
 >
 > Phase 2 (Attendees): Phase 1 delivered the foundation
 > (schema, API, auth, admin UI, dashboard, events). Phase 2 adds attendee
@@ -48,7 +50,7 @@ The finished system will support a corporate event from start to finish:
 | 2 | Attendee import (Excel/CSV, dynamic column mapping) | **Built** (Phase 2) |
 | 3 | Automatic attendee QR generation (opaque tokens) | **Built** (Phase 3) |
 | 4 | Printable attendee QR/ID | **Built** (Phase 3, A4 label sheets) |
-| 5 | Registration QR scanner | Schema ready |
+| 5 | Registration QR scanner | **Built** (Phase 4) |
 | 6 | Minor randomizer | Planned |
 | 7 | Major randomizer | Planned |
 | 8 | Google Form / Google Sheet response import | Schema ready |
@@ -373,6 +375,8 @@ Error codes: `BAD_REQUEST` (400), `UNAUTHENTICATED` / `INVALID_CREDENTIALS` (401
 | GET | `/api/qr-codes/print?ids=` | Admin, registration staff | Print data (all, or selected IDs) |
 | GET / POST | `/api/attendees/{id}/qr` | Viewers / Admin | QR state / generate if missing |
 | POST | `/api/attendees/{id}/qr/regenerate` | Admin | Replace token (old QR becomes invalid) |
+| GET | `/api/registration/summary` | Admin, registration staff | Total / registered / remaining + latest 20 check-ins |
+| POST | `/api/registration/scan` | Admin, registration staff | `{token}` (token or full QR URL) → `registered` / `already_registered`, or 422 `INVALID_QR` / `WRONG_EVENT` / `ATTENDEE_INACTIVE` |
 
 Full request/response examples: [docs/API.md](docs/API.md).
 
@@ -424,6 +428,14 @@ Full request/response examples: [docs/API.md](docs/API.md).
 - Archived attendees get no new QR and are excluded from counts and printing; their existing QR records are kept.
 - Images are rendered in the browser with the `qrcode` npm package (error correction Q, 4-module quiet zone): SVG for screen/print, 1200 px PNG for download. No image files are stored on the server.
 - Print sheet (`/print/qr`, opens in a new tab): A4, Standard 12 labels/page (44 mm QR) or Large 6/page (64 mm QR), dashed cut guides, explicit page breaks. Print at 100% / actual size.
+
+## 9c. Registration and Minor eligibility (Phase 4)
+
+- **Registration page** (admin, registration staff): camera scanner (`qr-scanner` npm package), large result screen for ~2.5 s, then back to "Ready to scan". The same QR is ignored for 4 s after its result to avoid repeat reads. A text box accepts USB/Bluetooth handheld scanners (they type the QR value + Enter).
+- **The camera requires HTTPS** (or `localhost`). Phones/tablets opening `http://192.168.x.x` will be blocked by the browser; deploy on HTTPS for the event.
+- The server resolves the token → attendee, checks the active event and the attendee status, then inserts into `registration_scans`. The existing UNIQUE (event_id, attendee_id) key guarantees one check-in per attendee even with several scanners; a second scan returns `already_registered` and inserts nothing. Regenerated (old) tokens no longer exist and return `INVALID_QR`.
+- **Minor eligible = attendee has a `registration_scans` row for the active event and is still active.** No separate eligibility table. Phase 5 will draw from this pool.
+- Successful check-ins are audit-logged (`registration.checked_in`, with the staff member). Invalid and duplicate scans are not logged.
 
 ## 10. Creating the first admin
 
