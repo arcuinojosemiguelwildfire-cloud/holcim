@@ -88,6 +88,41 @@ final class RandomizerService
         ];
     }
 
+    /**
+     * Marks a draw of the ACTIVE event as VOID (e.g. winner not present).
+     * The record stays in history; eligibility is not touched.
+     *
+     * @return array<string, mixed>
+     */
+    public static function void(Request $request, int $drawId, ?string $reason): array
+    {
+        $event = AttendeeService::activeEventOrFail();
+        $eventId = (int) $event['id'];
+
+        $draw = RandomizerDraw::findInEvent($drawId, $eventId);
+        if ($draw === null) {
+            throw HttpException::notFound('Draw not found in the active event.');
+        }
+        if (!RandomizerDraw::void($drawId, AuthService::currentUserId(), $reason)) {
+            throw HttpException::conflict('This draw has already been voided.');
+        }
+
+        AuditLogger::log(
+            $request,
+            "randomizer.{$draw['randomizer_type']}_draw_voided",
+            ucfirst((string) $draw['randomizer_type']) . " draw #{$drawId} voided: {$draw['attendee_code']} ({$draw['full_name']})"
+                . ($reason !== null && $reason !== '' ? " - {$reason}" : '') . '.',
+            $eventId,
+            ['draw_id' => $drawId, 'attendee_id' => (int) $draw['attendee_id'], 'reason' => $reason]
+        );
+
+        return [
+            'drawId' => $drawId,
+            'status' => 'void',
+            'recentWinners' => self::recentWinners($eventId, (string) $draw['randomizer_type']),
+        ];
+    }
+
     /** @return list<array<string, mixed>> */
     private static function recentWinners(int $eventId, string $type): array
     {
@@ -98,6 +133,9 @@ final class RandomizerService
             'fullName' => $row['full_name'],
             'department' => $row['department'],
             'drawnBy' => $row['drawn_by_name'],
+            'status' => $row['voided_at'] !== null ? 'void' : 'valid',
+            'voidReason' => $row['void_reason'],
+            'voidedBy' => $row['voided_by_name'],
         ], RandomizerDraw::recent($eventId, $type, 10));
     }
 

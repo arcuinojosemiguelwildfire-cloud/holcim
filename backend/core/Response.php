@@ -18,8 +18,20 @@ final class Response
     private function __construct(
         private readonly int $status,
         private readonly array $payload,
-        private array $headers = []
+        private array $headers = [],
+        private readonly ?string $rawBody = null,
+        private readonly string $contentType = 'application/json; charset=utf-8'
     ) {
+    }
+
+    /**
+     * Non-JSON response (CSV download, redirect, small HTML page).
+     *
+     * @param array<string, string> $headers
+     */
+    public static function raw(int $status, string $body, string $contentType, array $headers = []): self
+    {
+        return new self($status, [], $headers, $body, $contentType);
     }
 
     public static function success(mixed $data = null, int $status = 200, ?string $message = null): self
@@ -71,10 +83,16 @@ final class Response
     {
         if (!headers_sent()) {
             http_response_code($this->status);
-            header('Content-Type: application/json; charset=utf-8');
+            header('Content-Type: ' . $this->contentType);
             foreach ($this->headers as $name => $value) {
                 header("{$name}: {$value}");
             }
+        }
+
+        if ($this->rawBody !== null) {
+            echo $this->rawBody;
+
+            return;
         }
 
         echo json_encode(

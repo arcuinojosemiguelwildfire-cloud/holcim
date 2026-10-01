@@ -28,10 +28,12 @@ final class AuthService
 
     /**
      * @return array<string, mixed> the authenticated public user
-     * @throws HttpException 401 on bad credentials or inactive account
+     * @throws HttpException 401 on bad credentials or inactive account, 429 when locked out
      */
     public static function attempt(Request $request, string $email, string $password): array
     {
+        LoginThrottle::assertNotLocked($email, $request->ip());
+
         $user = User::findByEmailWithPassword($email);
 
         // Always run password_verify so response time doesn't reveal whether
@@ -40,6 +42,7 @@ final class AuthService
         $passwordMatches = password_verify($password, $hash);
 
         if ($user === null || !$passwordMatches || $user['status'] !== User::STATUS_ACTIVE) {
+            LoginThrottle::recordFailure($email, $request->ip());
             AuditLogger::log(
                 $request,
                 AuditLogger::AUTH_LOGIN_FAILED,
@@ -55,6 +58,7 @@ final class AuthService
         }
 
         $userId = (int) $user['id'];
+        LoginThrottle::clear($email);
 
         if (password_needs_rehash($hash, PASSWORD_DEFAULT)) {
             User::updatePasswordHash($userId, password_hash($password, PASSWORD_DEFAULT));

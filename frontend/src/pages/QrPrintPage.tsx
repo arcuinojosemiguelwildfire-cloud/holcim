@@ -77,6 +77,11 @@ export function QrPrintPage() {
             No active attendees with a generated QR code match this selection. Generate QR codes on the QR / ID Generator page first.
           </Alert>
         )}
+        {data && data.items.length > 0 && !/^https:\/\//i.test(data.items[0]?.qrPayload ?? '') && (
+          <Alert tone="error" className="mx-auto mb-4 max-w-[210mm] print:hidden" title="Test labels only">
+            These QR codes do not use a public HTTPS address (APP_URL). Set APP_URL before printing labels for the event.
+          </Alert>
+        )}
         {data && data.items.length > 0 && (
           <p className="mx-auto mb-4 max-w-[210mm] text-sm text-slate-600 print:hidden">
             Print at <b>100% / Actual size</b> (not “Fit to page”) on A4 paper. Dashed lines are cutting guides.

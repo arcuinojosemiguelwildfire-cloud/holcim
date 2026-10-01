@@ -5,6 +5,7 @@ import {
   Dices,
   LayoutDashboard,
   QrCode,
+  Presentation,
   ScanLine,
   Settings,
   Trophy,
@@ -35,7 +36,8 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Registration', path: '/registration', icon: ScanLine, roles: ['admin', 'registration_staff'] },
   { label: 'Minor Randomizer', path: '/minor-randomizer', icon: Dices, roles: ['admin', 'event_operator'] },
   { label: 'Major Eligibility', path: '/major-eligibility', icon: ClipboardCheck, roles: ['admin', 'event_operator'] },
+  { label: 'Major QR', path: '/major-qr', icon: Presentation, roles: ['admin', 'event_operator'] },
   { label: 'Major Randomizer', path: '/major-randomizer', icon: Trophy, roles: ['admin', 'event_operator'] },
-  { label: 'Reports', path: '/reports', icon: ChartColumn, comingSoon: true },
+  { label: 'Reports', path: '/reports', icon: ChartColumn, roles: ['admin'] },
   { label: 'Settings', path: '/settings', icon: Settings, comingSoon: true },
 ]

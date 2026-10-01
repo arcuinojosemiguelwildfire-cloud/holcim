@@ -17,10 +17,12 @@ use App\Controllers\AuthController;
 use App\Controllers\DashboardController;
 use App\Controllers\EventController;
 use App\Controllers\HealthController;
+use App\Controllers\MajorFormController;
 use App\Controllers\MajorEligibilityController;
 use App\Controllers\QrCodeController;
 use App\Controllers\RandomizerController;
 use App\Controllers\RegistrationController;
+use App\Controllers\ReportController;
 use App\Core\Router;
 use App\Middleware\AuthMiddleware;
 use App\Models\User;
@@ -87,4 +89,16 @@ return static function (Router $router): void {
     $router->post('/major-eligibility/import/parse', [MajorEligibilityController::class, 'parseImport'], [$adminOnly]);
     $router->post('/major-eligibility/import/preview', [MajorEligibilityController::class, 'previewImport'], [$adminOnly]);
     $router->post('/major-eligibility/import', [MajorEligibilityController::class, 'import'], [$adminOnly]);
+
+    // Draw voiding (Phase 7): admin + event operator. Never deletes the draw.
+    $router->post('/randomizers/draws/{id}/void', [RandomizerController::class, 'voidDraw'], [$randomizerOperators]);
+
+    // Major QR (Phase 7): public redirect to MAJOR_FORM_URL; info for the display page.
+    $router->get('/major-form', [MajorFormController::class, 'redirect']);
+    $router->get('/major-form/info', [MajorFormController::class, 'info'], [$randomizerOperators]);
+
+    // CSV reports for the active event (Phase 7): admin only.
+    $router->get('/reports/registration.csv', [ReportController::class, 'registration'], [$adminOnly]);
+    $router->get('/reports/major-eligibility.csv', [ReportController::class, 'majorEligibility'], [$adminOnly]);
+    $router->get('/reports/draws.csv', [ReportController::class, 'draws'], [$adminOnly]);
 };

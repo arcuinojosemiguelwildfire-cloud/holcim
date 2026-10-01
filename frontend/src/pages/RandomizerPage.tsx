@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { RandomizerStage, type DrawOutcome } from '../components/randomizer/RandomizerStage'
 import { Alert } from '../components/ui/Alert'
+import { Badge } from '../components/ui/Badge'
 import { Card, CardHeader } from '../components/ui/Card'
 import { errorMessage } from '../services/apiClient'
 import { randomizerService, type RandomizerSummary, type RandomizerType, type RecentWinner } from '../services/randomizerService'
@@ -52,8 +53,14 @@ export function RandomizerPage({ type }: { type: RandomizerType }) {
     setSummary((current) => (current ? { ...current, eligibleCount: result.eligibleCount } : current))
     // Reveal the new history row only after the animation has landed.
     setPendingWinners(result.recentWinners)
-    return { winner: result.winner, rollNames: result.rollNames }
+    return { drawId: result.drawId, winner: result.winner, rollNames: result.rollNames }
   }, [type])
+
+  const voidDraw = useCallback(async (drawId: number, reason: string) => {
+    const result = await randomizerService.voidDraw(drawId, reason)
+    setPendingWinners(null)
+    setSummary((current) => (current ? { ...current, recentWinners: result.recentWinners } : current))
+  }, [])
 
   useEffect(() => {
     if (!pendingWinners) return
@@ -80,6 +87,7 @@ export function RandomizerPage({ type }: { type: RandomizerType }) {
         eventName={summary?.event.name ?? null}
         eligibleCount={summary ? summary.eligibleCount : null}
         onDraw={draw}
+        onVoid={voidDraw}
       />
 
       <Card className="overflow-hidden">
@@ -96,16 +104,27 @@ export function RandomizerPage({ type }: { type: RandomizerType }) {
                   <th scope="col" className="px-5 py-3">Name</th>
                   <th scope="col" className="px-5 py-3">Department</th>
                   <th scope="col" className="px-5 py-3">Drawn by</th>
+                  <th scope="col" className="px-5 py-3">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {summary?.recentWinners.map((row) => (
-                  <tr key={row.drawId}>
+                  <tr key={row.drawId} className={row.status === 'void' ? 'bg-red-50/40 text-slate-400' : undefined}>
                     <td className="whitespace-nowrap px-5 py-3 tabular-nums text-slate-500">{formatTime(row.selectedAt)}</td>
                     <td className="whitespace-nowrap px-5 py-3 font-mono text-xs text-slate-700">{row.attendeeCode}</td>
-                    <td className="px-5 py-3 font-medium text-slate-900">{row.fullName}</td>
+                    <td className={`px-5 py-3 font-medium ${row.status === 'void' ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{row.fullName}</td>
                     <td className="px-5 py-3 text-slate-600">{row.department ?? '—'}</td>
                     <td className="px-5 py-3 text-slate-500">{row.drawnBy ?? '—'}</td>
+                    <td className="px-5 py-3">
+                      {row.status === 'void' ? (
+                        <span title={row.voidReason ?? undefined}>
+                          <Badge tone="danger">VOID</Badge>
+                          {row.voidReason && <span className="ml-2 text-xs text-slate-500">{row.voidReason}</span>}
+                        </span>
+                      ) : (
+                        <Badge tone="success">Valid</Badge>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

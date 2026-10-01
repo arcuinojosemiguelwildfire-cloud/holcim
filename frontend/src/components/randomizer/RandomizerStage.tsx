@@ -12,6 +12,8 @@ export interface DrawWinner {
 }
 
 export interface DrawOutcome {
+  /** Server ID of the recorded draw (used for voiding). */
+  drawId: number
   winner: DrawWinner
   /** Other eligible names shown while rolling (a sample, not the full pool). */
   rollNames: string[]
@@ -24,6 +26,8 @@ interface RandomizerStageProps {
   eligibleCount: number | null
   /** Performs the server-side draw. */
   onDraw: () => Promise<DrawOutcome>
+  /** Marks a draw VOID (record is kept). Omit to hide the control. */
+  onVoid?: (drawId: number, reason: string) => Promise<void>
 }
 
 type Phase = 'ready' | 'rolling' | 'winner'
@@ -50,12 +54,17 @@ function scramble(name: string): string {
  * The winner is decided by the server; this component only animates it.
  * The stage element itself goes fullscreen, so the admin chrome disappears.
  */
-export function RandomizerStage({ title, eventName, eligibleCount, onDraw }: RandomizerStageProps) {
+export function RandomizerStage({ title, eventName, eligibleCount, onDraw, onVoid }: RandomizerStageProps) {
   const stageRef = useRef<HTMLDivElement>(null)
   const { isFullscreen, supported, enter, exit } = useFullscreen(stageRef)
   const [phase, setPhase] = useState<Phase>('ready')
   const [rollingName, setRollingName] = useState('')
   const [winner, setWinner] = useState<DrawWinner | null>(null)
+  const [drawId, setDrawId] = useState<number | null>(null)
+  const [voided, setVoided] = useState<string | null>(null)
+  const [voidOpen, setVoidOpen] = useState(false)
+  const [voidReason, setVoidReason] = useState('Winner not present')
+  const [voiding, setVoiding] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const timers = useRef<number[]>([])
 
@@ -64,9 +73,11 @@ export function RandomizerStage({ title, eventName, eligibleCount, onDraw }: Ran
   const empty = eligibleCount === 0
 
   const start = useCallback(async () => {
-    if (phase === 'rolling' || empty) return
+    if (phase === 'rolling' || empty || voidOpen) return
     setError(null)
     setWinner(null)
+    setDrawId(null)
+    setVoided(null)
     setPhase('rolling')
     setRollingName('• • •')
 
@@ -100,18 +111,36 @@ export function RandomizerStage({ title, eventName, eligibleCount, onDraw }: Ran
         timers.current.push(
           window.setTimeout(() => {
             setWinner(outcome.winner)
+            setDrawId(outcome.drawId)
             setPhase('winner')
           }, delay),
         )
       }
     }
     tick()
-  }, [empty, onDraw, phase])
+  }, [empty, onDraw, phase, voidOpen])
+
+  const confirmVoid = async () => {
+    if (!onVoid || drawId === null) return
+    setVoiding(true)
+    setError(null)
+    try {
+      const reason = voidReason.trim()
+      await onVoid(drawId, reason)
+      setVoided(reason || 'Voided')
+      setVoidOpen(false)
+    } catch (caught) {
+      setError(errorMessage(caught))
+    } finally {
+      setVoiding(false)
+    }
+  }
 
   // Presenter remote / keyboard: Space or Enter draws while fullscreen.
   useEffect(() => {
     if (!isFullscreen) return
     const onKey = (event: KeyboardEvent) => {
+      if (voidOpen) return
       if (event.key === ' ' || event.key === 'Enter') {
         event.preventDefault()
         void start()
@@ -119,7 +148,7 @@ export function RandomizerStage({ title, eventName, eligibleCount, onDraw }: Ran
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [isFullscreen, start])
+  }, [isFullscreen, start, voidOpen])
 
   return (
     <div
@@ -175,17 +204,29 @@ export function RandomizerStage({ title, eventName, eligibleCount, onDraw }: Ran
           </p>
         ) : phase === 'winner' && winner ? (
           <div className="flex max-w-full flex-col items-center">
-            <span
-              className={cn(
-                'inline-flex items-center gap-3 rounded-full bg-amber-400 px-6 py-2 font-black uppercase tracking-[0.25em] text-slate-950 shadow-lg shadow-amber-500/30',
-                isFullscreen ? 'text-[2.2vw]' : 'text-lg sm:text-xl',
-              )}
-            >
-              <Trophy className={isFullscreen ? 'size-[2.4vw]' : 'size-6'} aria-hidden /> Winner
-            </span>
+            {voided ? (
+              <span
+                className={cn(
+                  'inline-flex items-center gap-3 rounded-full bg-red-500 px-6 py-2 font-black uppercase tracking-[0.25em] text-white',
+                  isFullscreen ? 'text-[2.2vw]' : 'text-lg sm:text-xl',
+                )}
+              >
+                Void
+              </span>
+            ) : (
+              <span
+                className={cn(
+                  'inline-flex items-center gap-3 rounded-full bg-amber-400 px-6 py-2 font-black uppercase tracking-[0.25em] text-slate-950 shadow-lg shadow-amber-500/30',
+                  isFullscreen ? 'text-[2.2vw]' : 'text-lg sm:text-xl',
+                )}
+              >
+                <Trophy className={isFullscreen ? 'size-[2.4vw]' : 'size-6'} aria-hidden /> Winner
+              </span>
+            )}
             <p
               className={cn(
                 'mt-[3vh] max-w-full break-words font-black uppercase leading-[1.05] tracking-tight',
+                voided && 'text-white/40 line-through decoration-red-500',
                 isFullscreen ? 'text-[7.5vw]' : 'text-5xl sm:text-7xl',
               )}
             >
@@ -199,6 +240,7 @@ export function RandomizerStage({ title, eventName, eligibleCount, onDraw }: Ran
             <p className={cn('mt-[1.5vh] font-mono font-bold text-slate-300', isFullscreen ? 'text-[2.6vw]' : 'text-xl sm:text-2xl')}>
               {winner.attendeeCode}
             </p>
+            {voided && <p className={cn('mt-[1.5vh] text-red-200', isFullscreen ? 'text-[1.6vw]' : 'text-base')}>Draw voided: {voided}</p>}
           </div>
         ) : (
           <p className={cn('font-bold uppercase tracking-[0.2em] text-slate-400', isFullscreen ? 'text-[3vw]' : 'text-2xl sm:text-4xl')}>
@@ -207,6 +249,43 @@ export function RandomizerStage({ title, eventName, eligibleCount, onDraw }: Ran
         )}
         {error && <p className="mt-6 rounded-lg bg-red-500/20 px-4 py-2 text-base text-red-100">{error}</p>}
       </div>
+
+      {/* Void (operator control, kept small) */}
+      {onVoid && phase === 'winner' && drawId !== null && !voided && (
+        <div className={cn('absolute left-4 z-10', isFullscreen ? 'bottom-[3vh]' : 'bottom-6 sm:left-6')}>
+          {voidOpen ? (
+            <div className="w-72 rounded-xl bg-slate-900/95 p-4 text-left shadow-xl ring-1 ring-white/10">
+              <p className="text-sm font-semibold text-white">Void this draw?</p>
+              <p className="mt-1 text-xs text-slate-400">The draw stays in history marked VOID. Eligibility is not changed.</p>
+              <label htmlFor="void-reason" className="mt-3 block text-xs font-medium text-slate-300">Reason (optional)</label>
+              <input
+                id="void-reason"
+                value={voidReason}
+                maxLength={200}
+                onChange={(e) => setVoidReason(e.target.value)}
+                onKeyDown={(e) => e.stopPropagation()}
+                className="mt-1 h-9 w-full rounded-md border-0 bg-white/10 px-2 text-sm text-white ring-1 ring-inset ring-white/20 focus:ring-2 focus:ring-brand-500"
+              />
+              <div className="mt-3 flex justify-end gap-2">
+                <button key="void-cancel" type="button" onClick={() => setVoidOpen(false)} disabled={voiding}
+                  className="rounded-md px-3 py-1.5 text-sm text-slate-300 hover:bg-white/10">Cancel</button>
+                <button key="void-confirm" type="button" onClick={() => void confirmVoid()} disabled={voiding}
+                  className="rounded-md bg-red-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-60">
+                  {voiding ? 'Voiding…' : 'Void draw'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setVoidOpen(true)}
+              className="rounded-full px-3 py-1.5 text-sm font-medium text-white/40 ring-1 ring-white/15 hover:bg-white/10 hover:text-white"
+            >
+              Void draw
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Controls */}
       <div className={cn('flex justify-center', isFullscreen ? 'pb-[5vh]' : 'pb-8')}>

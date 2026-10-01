@@ -4,7 +4,9 @@ An online event management and prize-draw system: attendee import, QR-based
 registration, minor and major randomizers, winner management, reports and an
 audit trail.
 
-> **Current status: Phase 6 (Major).** Phase 6 adds Major eligibility import (exported Google Sheet CSV/XLSX), the Major Eligibility page and the Major Randomizer.
+> **Current status: Phase 7 (event-day readiness).** Login rate limiting, CSV reports, draw voiding, the Major QR (`/major-form` → `MAJOR_FORM_URL`), a readiness check and the [deployment guide](docs/DEPLOYMENT.md) and [event-day checklist](docs/EVENT_DAY_CHECKLIST.md).
+>
+> Phase 6 (Major): Phase 6 adds Major eligibility import (exported Google Sheet CSV/XLSX), the Major Eligibility page and the Major Randomizer.
 >
 > Phase 5 (Minor Randomizer): Phase 5 adds the server-side Minor draw, draw history and Event Fullscreen Mode.
 >
@@ -59,7 +61,7 @@ The finished system will support a corporate event from start to finish:
 | 7 | Major randomizer | **Built** (Phase 6) |
 | 8 | Google Form / Google Sheet response import | Schema ready |
 | 9 | Winner management | Planned |
-| 10 | Reports | Planned |
+| 10 | Reports | **Built** (Phase 7, CSV exports) |
 | 11 | Audit logs | **Recording** logins, logouts and event changes |
 | 12 | Fullscreen event mode | **Built** for the Minor Randomizer (reusable stage) |
 
@@ -260,6 +262,8 @@ environment variables set by the host, which take precedence.
 | `APP_DEBUG` | `true` | **`false`** | `true` puts exception messages in API errors |
 | `APP_TIMEZONE` | `Asia/Manila` | `Asia/Manila` | PHP time zone; the MySQL session time zone is aligned to it |
 | `APP_URL` | `http://localhost:5173` | `https://your-domain` | Public base URL. QR codes contain `{APP_URL}/q/{token}`; empty = token only. **Set before printing QR codes** |
+| `MAJOR_FORM_URL` | *(empty)* | client's form link | Target of `/major-form` (the Major QR). Empty = safe "not available yet" page |
+| `LOGIN_MAX_ATTEMPTS` / `LOGIN_MAX_ATTEMPTS_PER_IP` / `LOGIN_LOCKOUT_MINUTES` | `5` / `30` / `15` | same | Failed logins allowed per email / per IP before a temporary lockout |
 | `DB_HOST` | `127.0.0.1` | host's DB server | Use `127.0.0.1` rather than `localhost` on macOS XAMPP (TCP instead of a socket path) |
 | `DB_PORT` | `3306` | `3306` | |
 | `DB_DATABASE` | `holcim_event` | your DB name | |
@@ -385,6 +389,10 @@ Error codes: `BAD_REQUEST` (400), `UNAUTHENTICATED` / `INVALID_CREDENTIALS` (401
 | GET | `/api/randomizers/major` · POST `/api/randomizers/major/draw` | Admin, event operator | Same as Minor, drawing from Major Eligible attendees |
 | GET | `/api/major-eligibility` · `/api/major-eligibility/imports` | Admin, event operator | Major Eligible list (search/department/pages) and import history |
 | POST | `/api/major-eligibility/import/parse` · `/preview` · `/import` | Admin | Upload → match preview → commit |
+| POST | `/api/randomizers/draws/{id}/void` | Admin, event operator | Mark a draw VOID `{reason?}` (kept in history; eligibility unchanged) |
+| GET | `/api/reports/registration.csv` · `major-eligibility.csv` · `draws.csv` | Admin | CSV exports for the active event |
+| GET | `/api/major-form` | Public | 302 redirect to `MAJOR_FORM_URL` (or a safe "not available yet" page) |
+| GET | `/api/major-form/info` | Admin, event operator | Whether the form is configured + the QR target URL |
 | POST | `/api/registration/scan` | Admin, registration staff | `{token}` (token or full QR URL) → `registered` / `already_registered`, or 422 `INVALID_QR` / `WRONG_EVENT` / `ATTENDEE_INACTIVE` |
 
 Full request/response examples: [docs/API.md](docs/API.md).
@@ -466,6 +474,14 @@ Full request/response examples: [docs/API.md](docs/API.md).
   - Names may be spelled differently in the form; when a code, external ID or email matches, the name is not used to reject the row.
 - **Major eligible = a `major_eligibility` row for the active event AND the attendee is active.** Unique per (event, attendee), so re-imports never duplicate. Attendee data and `registration_scans` are never modified. Spreadsheet contents are not stored; only counts, row numbers and reasons go into `import_batches` (type `major_entries`) and the audit log.
 - **Major Randomizer:** same stage, fullscreen and server-side `random_int()` draw as Minor, using `randomizer_draws.randomizer_type = 'major'`. Winners stay eligible (no repeat rule).
+
+## 9f. Event-day features (Phase 7)
+
+- **Login rate limiting:** failed logins are counted per email (stored hashed) and per IP within `LOGIN_LOCKOUT_MINUTES`; reaching `LOGIN_MAX_ATTEMPTS` (email) or `LOGIN_MAX_ATTEMPTS_PER_IP` returns a generic 429 until the window passes. A successful login clears that email's failures. Same response whether or not the account exists.
+- **Reports** (admin): Registration, Major eligibility and Draw winners CSVs for the active event only (UTF-8 for Excel; cells starting with `= + - @` are neutralised).
+- **Void draw** (admin, event operator): marks a draw VOID with time, user and an optional reason. The record stays in history and reports; registration and Minor/Major eligibility are untouched (no repeat rule).
+- **Major QR** (`/major-qr`, admin, event operator): large high-contrast QR for the LED screen, with fullscreen. It encodes `{APP_URL}/major-form`; that route redirects to `MAJOR_FORM_URL` (server config only), so the client can change the form link without a new QR. Scanning only opens the form; eligibility still comes from the Major import.
+- **Readiness:** `php backend/cli/check-readiness.php`, the QR Generator and print sheet warn when `APP_URL` is blank or local. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and [docs/EVENT_DAY_CHECKLIST.md](docs/EVENT_DAY_CHECKLIST.md).
 
 ## 10. Creating the first admin
 

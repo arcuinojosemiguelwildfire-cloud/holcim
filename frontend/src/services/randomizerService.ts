@@ -5,6 +5,9 @@ export interface RecentWinner extends DrawWinner {
   drawId: number
   selectedAt: string
   drawnBy: string | null
+  status: 'valid' | 'void'
+  voidReason: string | null
+  voidedBy: string | null
 }
 
 export type RandomizerType = 'minor' | 'major'
@@ -27,4 +30,6 @@ export interface DrawResult {
 export const randomizerService = {
   summary: (type: RandomizerType) => apiClient.get<RandomizerSummary>(`/randomizers/${type}`),
   draw: (type: RandomizerType) => apiClient.post<DrawResult>(`/randomizers/${type}/draw`),
+  voidDraw: (drawId: number, reason: string) =>
+    apiClient.post<{ drawId: number; status: 'void'; recentWinners: RecentWinner[] }>(`/randomizers/draws/${drawId}/void`, { reason }),
 }

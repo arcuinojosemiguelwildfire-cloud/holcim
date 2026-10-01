@@ -9,7 +9,7 @@ import type { ApiEnvelope, ApiErrorPayload } from '../types/api'
  * - Retries once with a fresh CSRF token if the server says it expired
  */
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/+$/, '')
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/+$/, '')
 
 const CSRF_HEADER = 'X-CSRF-Token'
 const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])

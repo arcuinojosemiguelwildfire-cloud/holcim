@@ -8,6 +8,7 @@ use App\Core\Request;
 use App\Core\Response;
 use App\Models\RandomizerDraw;
 use App\Services\RandomizerService;
+use App\Utils\Validator;
 
 final class RandomizerController
 {
@@ -33,5 +34,14 @@ final class RandomizerController
     public static function majorDraw(Request $request): Response
     {
         return Response::success(RandomizerService::draw($request, RandomizerDraw::TYPE_MAJOR));
+    }
+
+    /** POST /randomizers/draws/{id}/void {reason?} - admin + event operator */
+    public static function voidDraw(Request $request): Response
+    {
+        $id = Validator::id($request->param('id'), 'Draw');
+        $data = Validator::make($request->body())->string('reason', max: 200)->validate();
+
+        return Response::success(RandomizerService::void($request, $id, $data['reason'] ?? null), message: 'Draw voided.');
     }
 }

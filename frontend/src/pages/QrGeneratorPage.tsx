@@ -112,6 +112,14 @@ export function QrGeneratorPage() {
         }
       />
 
+      {s && (!s.qrBaseUrl || /localhost|127\.0\.0\.1|\/\/192\.168\.|\/\/10\./i.test(s.qrBaseUrl)) && (
+        <Alert tone="error" className="mb-4" title="Do not print event QR codes yet">
+          {s.qrBaseUrl
+            ? `QR codes point to ${s.qrBaseUrl}, a local address.`
+            : 'APP_URL is not set, so QR codes contain only the token.'}{' '}
+          Set APP_URL in backend/.env to the public HTTPS address before printing labels for the event.
+        </Alert>
+      )}
       {(summary.error || list.error) && (
         <Alert tone="error" className="mb-4">{summary.error ?? list.error}</Alert>
       )}

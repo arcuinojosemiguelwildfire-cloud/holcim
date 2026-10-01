@@ -143,3 +143,9 @@ One row per draw: `event_id`, `attendee_id`, `randomizer_type` (`minor`/`major`)
 
 ### `major_eligibility` (migration 011, Phase 6)
 `event_id`, `attendee_id` (composite FK to attendees(id, event_id)), `import_batch_id` (SET NULL), `imported_at`. UNIQUE (event_id, attendee_id). Major eligible = row here + attendee active. The Phase 1 `major_entries` table (full responses) is intentionally not used, so client spreadsheet contents are not stored.
+
+### `login_attempts` (migration 012, Phase 7)
+Failed logins only: `email_hash` (SHA-256), `ip_address`, `attempted_at`. Cleared for an email on successful login; rows older than a day are purged.
+
+### `randomizer_draws` void columns (migration 013, Phase 7)
+`voided_at`, `voided_by` (user, SET NULL), `void_reason` (≤200 chars). A voided draw is never deleted.
