@@ -9,6 +9,8 @@ import { DashboardPage } from './pages/DashboardPage'
 import { EventsPage } from './pages/EventsPage'
 import { LoginPage } from './pages/LoginPage'
 import { NotFoundPage } from './pages/NotFoundPage'
+import { QrGeneratorPage } from './pages/QrGeneratorPage'
+import { QrPrintPage } from './pages/QrPrintPage'
 
 /** Placeholder routes for modules scheduled in later phases. */
 const COMING_SOON_ROUTES = [
@@ -48,6 +50,8 @@ const router = createBrowserRouter(
     {
       element: <RequireAuth />,
       children: [
+        // Print sheet: full page, no sidebar/top bar.
+        { path: '/print/qr', element: <QrPrintPage /> },
         {
           element: <AdminLayout />,
           children: [
@@ -55,6 +59,7 @@ const router = createBrowserRouter(
             { path: 'events', element: <EventsPage /> },
             { path: 'attendees', element: <AttendeesPage /> },
             { path: 'attendees/import', element: <AttendeeImportPage /> },
+            { path: 'qr-codes', element: <QrGeneratorPage /> },
             ...COMING_SOON_ROUTES.map(({ path, title, plannedFeatures }) => ({
               path,
               element: <ComingSoonPage title={title} plannedFeatures={plannedFeatures} />,

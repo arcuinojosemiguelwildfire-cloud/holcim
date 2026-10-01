@@ -17,6 +17,7 @@ use App\Controllers\AuthController;
 use App\Controllers\DashboardController;
 use App\Controllers\EventController;
 use App\Controllers\HealthController;
+use App\Controllers\QrCodeController;
 use App\Core\Router;
 use App\Middleware\AuthMiddleware;
 use App\Models\User;
@@ -53,4 +54,15 @@ return static function (Router $router): void {
     $router->get('/attendees/{id}', [AttendeeController::class, 'show'], [$authenticated]);
     $router->put('/attendees/{id}', [AttendeeController::class, 'update'], [$adminOnly]);
     $router->patch('/attendees/{id}/status', [AttendeeController::class, 'updateStatus'], [$adminOnly]);
+
+    // Attendee QR codes (active event). Viewing/printing: admin + registration
+    // staff. Generating/regenerating: admin only.
+    $qrViewers = AuthMiddleware::roles(User::ROLE_ADMIN, User::ROLE_REGISTRATION_STAFF);
+    $router->get('/qr-codes/summary', [QrCodeController::class, 'summary'], [$qrViewers]);
+    $router->get('/qr-codes', [QrCodeController::class, 'index'], [$qrViewers]);
+    $router->get('/qr-codes/print', [QrCodeController::class, 'print'], [$qrViewers]);
+    $router->post('/qr-codes/generate-missing', [QrCodeController::class, 'generateMissing'], [$adminOnly]);
+    $router->get('/attendees/{id}/qr', [QrCodeController::class, 'show'], [$qrViewers]);
+    $router->post('/attendees/{id}/qr', [QrCodeController::class, 'generate'], [$adminOnly]);
+    $router->post('/attendees/{id}/qr/regenerate', [QrCodeController::class, 'regenerate'], [$adminOnly]);
 };

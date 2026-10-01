@@ -1,5 +1,6 @@
 import { useCallback, useState, type FormEvent, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, Pencil, QrCode } from 'lucide-react'
+import { Archive, ArchiveRestore, Pencil } from 'lucide-react'
+import { AttendeeQrPanel } from '../qr/AttendeeQrPanel'
 import { Alert } from '../ui/Alert'
 import { Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
@@ -139,11 +140,7 @@ export function AttendeeDetailModal({ attendeeId, onClose, onChanged }: Attendee
               <Detail label="Email">{attendee.email ?? '—'}</Detail>
               <Detail label="External identifier">{attendee.externalIdentifier ?? '—'}</Detail>
               <Detail label="Created">{attendee.createdAt}</Detail>
-              <Detail label="QR code">
-                <span className="inline-flex items-center gap-1.5 text-slate-500">
-                  <QrCode className="size-4" aria-hidden /> Not generated yet
-                </span>
-              </Detail>
+
               {Object.keys(attendee.extraData).length > 0 && (
                 <div className="sm:col-span-2">
                   <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Other imported columns</dt>
@@ -158,6 +155,7 @@ export function AttendeeDetailModal({ attendeeId, onClose, onChanged }: Attendee
               )}
             </dl>
           )}
+          {!editing && <AttendeeQrPanel attendeeId={attendee.id} attendeeStatus={attendee.status} />}
         </div>
       ) : null}
     </Modal>

@@ -82,7 +82,7 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
           </ul>
         </nav>
 
-        <div className="border-t border-slate-800 px-5 py-4 text-xs text-slate-500">Phase 2 · Attendees</div>
+        <div className="border-t border-slate-800 px-5 py-4 text-xs text-slate-500">Phase 3 · QR codes</div>
       </aside>
     </>
   )

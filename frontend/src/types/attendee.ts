@@ -11,6 +11,8 @@ export interface Attendee {
   externalIdentifier: string | null
   status: AttendeeStatus
   createdAt: string
+  /** When the current QR was issued; null = no QR. Present on list results. */
+  qrGeneratedAt?: string | null
 }
 
 export interface AttendeeDetail extends Attendee {

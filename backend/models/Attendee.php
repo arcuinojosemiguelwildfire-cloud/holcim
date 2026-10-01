@@ -36,41 +36,49 @@ final class Attendee
     }
 
     /**
-     * Paginated search. $search matches code, name, department and email.
+     * Paginated search. $search matches code, name, department, email and
+     * external ID. $qrStatus (generated|missing) filters on the QR record;
+     * every row carries qr_generated_at (NULL when no QR exists).
      *
      * @return array{items: list<array<string, mixed>>, total: int}
      */
-    public static function search(int $eventId, string $search, ?string $department, ?string $status, int $limit, int $offset): array
+    public static function search(int $eventId, string $search, ?string $department, ?string $status, int $limit, int $offset, ?string $qrStatus = null): array
     {
-        $where = ['event_id = :event_id'];
+        $where = ['a.event_id = :event_id'];
         $params = ['event_id' => $eventId];
 
         if ($status !== null) {
-            $where[] = 'status = :status';
+            $where[] = 'a.status = :status';
             $params['status'] = $status;
         }
         if ($department !== null && $department !== '') {
-            $where[] = 'department = :department';
+            $where[] = 'a.department = :department';
             $params['department'] = $department;
+        }
+        if ($qrStatus === 'generated') {
+            $where[] = 'q.id IS NOT NULL';
+        } elseif ($qrStatus === 'missing') {
+            $where[] = 'q.id IS NULL';
         }
         if ($search !== '') {
             $like = '%' . addcslashes($search, '%_\\') . '%';
-            $where[] = '(attendee_code LIKE :s1 OR full_name LIKE :s2 OR department LIKE :s3 OR email LIKE :s4 OR external_identifier LIKE :s5)';
+            $where[] = '(a.attendee_code LIKE :s1 OR a.full_name LIKE :s2 OR a.department LIKE :s3 OR a.email LIKE :s4 OR a.external_identifier LIKE :s5)';
             foreach (['s1', 's2', 's3', 's4', 's5'] as $key) {
                 $params[$key] = $like;
             }
         }
 
-        $whereSql = implode(' AND ', $where);
+        $from = 'FROM attendees a LEFT JOIN attendee_qr_codes q ON q.attendee_id = a.id WHERE ' . implode(' AND ', $where);
         $pdo = Database::connection();
 
-        $count = $pdo->prepare("SELECT COUNT(*) FROM attendees WHERE {$whereSql}");
+        $count = $pdo->prepare("SELECT COUNT(*) {$from}");
         $count->execute($params);
         $total = (int) $count->fetchColumn();
 
+        $columns = implode(', ', array_map(static fn (string $c): string => 'a.' . trim($c), explode(',', self::COLUMNS)));
         $statement = $pdo->prepare(
-            'SELECT ' . self::COLUMNS . " FROM attendees WHERE {$whereSql}
-             ORDER BY attendee_code ASC LIMIT {$limit} OFFSET {$offset}"
+            "SELECT {$columns}, q.updated_at AS qr_generated_at {$from}
+             ORDER BY a.attendee_code ASC LIMIT {$limit} OFFSET {$offset}"
         );
         $statement->execute($params);
 
@@ -212,6 +220,9 @@ final class Attendee
             'status' => $row['status'],
             'createdAt' => $row['created_at'],
         ];
+        if (array_key_exists('qr_generated_at', $row)) {
+            $public['qrGeneratedAt'] = $row['qr_generated_at'];
+        }
 
         if ($withDetails) {
             $extra = $row['extra_data'] !== null ? json_decode((string) $row['extra_data'], true) : null;

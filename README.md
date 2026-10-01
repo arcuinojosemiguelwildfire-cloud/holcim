@@ -4,7 +4,9 @@ An online event management and prize-draw system: attendee import, QR-based
 registration, minor and major randomizers, winner management, reports and an
 audit trail.
 
-> **Current status: Phase 2 (Attendees).** Phase 1 delivered the foundation
+> **Current status: Phase 3 (QR codes).** Phase 3 adds attendee QR generation, the QR / ID Generator page, regeneration and A4 bulk printing.
+>
+> Phase 2 (Attendees): Phase 1 delivered the foundation
 > (schema, API, auth, admin UI, dashboard, events). Phase 2 adds attendee
 > import (CSV/XLSX with dynamic column mapping, validation and duplicate
 > detection) and attendee management (search, filter, pagination, view, edit,
@@ -44,8 +46,8 @@ The finished system will support a corporate event from start to finish:
 |---|--------|----------------|
 | 1 | Event management | **Built** (create, view, edit, set status) |
 | 2 | Attendee import (Excel/CSV, dynamic column mapping) | **Built** (Phase 2) |
-| 3 | Automatic attendee QR generation (opaque tokens) | Schema ready |
-| 4 | Printable attendee QR/ID | Planned |
+| 3 | Automatic attendee QR generation (opaque tokens) | **Built** (Phase 3) |
+| 4 | Printable attendee QR/ID | **Built** (Phase 3, A4 label sheets) |
 | 5 | Registration QR scanner | Schema ready |
 | 6 | Minor randomizer | Planned |
 | 7 | Major randomizer | Planned |
@@ -251,6 +253,7 @@ environment variables set by the host, which take precedence.
 | `APP_ENV` | `local` | `production` | Environment name |
 | `APP_DEBUG` | `true` | **`false`** | `true` puts exception messages in API errors |
 | `APP_TIMEZONE` | `Asia/Manila` | `Asia/Manila` | PHP time zone; the MySQL session time zone is aligned to it |
+| `APP_URL` | `http://localhost:5173` | `https://your-domain` | Public base URL. QR codes contain `{APP_URL}/q/{token}`; empty = token only. **Set before printing QR codes** |
 | `DB_HOST` | `127.0.0.1` | host's DB server | Use `127.0.0.1` rather than `localhost` on macOS XAMPP (TCP instead of a socket path) |
 | `DB_PORT` | `3306` | `3306` | |
 | `DB_DATABASE` | `holcim_event` | your DB name | |
@@ -364,6 +367,12 @@ Error codes: `BAD_REQUEST` (400), `UNAUTHENTICATED` / `INVALID_CREDENTIALS` (401
 | POST | `/api/attendees/import/parse` | Admin | Upload CSV/XLSX (multipart `file`, ≤ 5 MB) → headers, rows, suggested mapping |
 | POST | `/api/attendees/import/preview` | Admin | Validate + duplicate check, no writes |
 | POST | `/api/attendees/import` | Admin | Import only new valid rows |
+| GET | `/api/qr-codes/summary` | Admin, registration staff | Active / generated / missing counts |
+| GET | `/api/qr-codes` | Admin, registration staff | Active attendees with QR status (`qr_status=generated\|missing`) |
+| POST | `/api/qr-codes/generate-missing` | Admin | Create QR only for active attendees without one |
+| GET | `/api/qr-codes/print?ids=` | Admin, registration staff | Print data (all, or selected IDs) |
+| GET / POST | `/api/attendees/{id}/qr` | Viewers / Admin | QR state / generate if missing |
+| POST | `/api/attendees/{id}/qr/regenerate` | Admin | Replace token (old QR becomes invalid) |
 
 Full request/response examples: [docs/API.md](docs/API.md).
 
@@ -406,6 +415,15 @@ Full request/response examples: [docs/API.md](docs/API.md).
 - Duplicates (inside the file and against existing attendees of the event, archived included), checked in order: External Identifier → Email → normalised Full Name + Department (trimmed, spaces collapsed, case-insensitive). A match is ignored when both sides have *different* external IDs (or emails), so two different people are never merged. No fuzzy matching.
 - Duplicates and invalid rows are skipped and listed; existing attendees are never modified. New attendees get the next code `ATT-0001`, `ATT-0002`, … per event. Codes are never reassigned or editable.
 - Unmapped columns are saved in `attendees.extra_data`. Each import is recorded in `import_batches` and `audit_logs`.
+
+## 9b. Attendee QR codes (Phase 3)
+
+- One QR record per attendee (`attendee_qr_codes`). Token = 24 random bytes, base64url (32 chars, 192 bits), unique index. No personal data in the QR.
+- QR content: `{APP_URL}/q/{token}` (or just the token if `APP_URL` is empty). The Phase 4 scanner reads the last path segment, so both work.
+- Tokens never change on edits or re-imports. **Generate missing** only creates codes for active attendees without one. Only **Regenerate** (with confirmation) replaces a token; the old one is gone immediately and the change is audit-logged.
+- Archived attendees get no new QR and are excluded from counts and printing; their existing QR records are kept.
+- Images are rendered in the browser with the `qrcode` npm package (error correction Q, 4-module quiet zone): SVG for screen/print, 1200 px PNG for download. No image files are stored on the server.
+- Print sheet (`/print/qr`, opens in a new tab): A4, Standard 12 labels/page (44 mm QR) or Large 6/page (64 mm QR), dashed cut guides, explicit page breaks. Print at 100% / actual size.
 
 ## 10. Creating the first admin
 

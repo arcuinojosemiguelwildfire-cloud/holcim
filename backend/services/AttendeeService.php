@@ -29,14 +29,14 @@ final class AttendeeService
     }
 
     /** @return array<string, mixed> */
-    public static function list(string $search, ?string $department, ?string $status, int $page, int $perPage): array
+    public static function list(string $search, ?string $department, ?string $status, int $page, int $perPage, ?string $qrStatus = null): array
     {
         $event = self::activeEventOrFail();
         $eventId = (int) $event['id'];
 
         $perPage = in_array($perPage, self::PAGE_SIZES, true) ? $perPage : 25;
         $page = max(1, $page);
-        $result = Attendee::search($eventId, mb_substr(trim($search), 0, 100), $department, $status, $perPage, ($page - 1) * $perPage);
+        $result = Attendee::search($eventId, mb_substr(trim($search), 0, 100), $department, $status, $perPage, ($page - 1) * $perPage, $qrStatus);
         $totalPages = max(1, (int) ceil($result['total'] / $perPage));
 
         return [

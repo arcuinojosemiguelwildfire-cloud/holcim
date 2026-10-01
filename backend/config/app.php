@@ -11,6 +11,10 @@ return [
     // Never enable in production: exposes exception messages in API errors.
     'debug' => Env::bool('APP_DEBUG', false),
     'timezone' => Env::get('APP_TIMEZONE', 'Asia/Manila'),
+    // Public base URL of the app (no trailing slash), e.g. https://events.example.com.
+    // Printed attendee QR codes contain "{APP_URL}/q/{token}". If empty, the
+    // QR contains only the token. Set it BEFORE printing QR codes.
+    'url' => Env::get('APP_URL', ''),
     // Comma-separated list of origins allowed to call the API with cookies.
     // Leave empty when the frontend is served from the same origin (default)
     // or through the Vite dev proxy.
