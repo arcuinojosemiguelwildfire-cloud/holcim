@@ -109,11 +109,10 @@ export function QrPrintPage() {
 function QrLabel({ item, cardClass, qrClass, nameClass, deptClass }: { item: QrPrintItem; cardClass: string; qrClass: string; nameClass: string; deptClass: string }) {
   return (
     <div className={cn('flex break-inside-avoid flex-col items-center justify-center overflow-hidden border border-dashed border-slate-400 px-[3mm] text-center text-black', cardClass)}>
-      <QrImage payload={item.qrPayload} label={`QR code for ${item.attendeeCode}`} className={cn('shrink-0', qrClass)} />
-      {/* Name (bold), department, then the attendee code in small type. */}
+      <QrImage payload={item.qrPayload} label={`QR code for ${cleanText(item.fullName) || 'attendee'}`} className={cn('shrink-0', qrClass)} />
+      {/* Name (bold), then department if any. No attendee code or token on the card. */}
       {cleanText(item.fullName) && <p className={cn('mt-[0.5mm] line-clamp-2 w-full font-bold leading-tight', nameClass)}>{cleanText(item.fullName)}</p>}
       {cleanText(item.department) && <p className={cn('w-full truncate leading-tight text-neutral-800', deptClass)}>{cleanText(item.department)}</p>}
-      <p className="mt-[0.5mm] font-mono text-[7.5pt] leading-tight text-neutral-600">{item.attendeeCode}</p>
     </div>
   )
 }

@@ -12,7 +12,7 @@ audit trail.
 >
 > Phase 5 (Minor Randomizer): Phase 5 adds the server-side Minor draw, draw history and Event Fullscreen Mode.
 >
-> Phase 4 (Registration): Phase 4 adds the camera QR scanner, check-in, duplicate protection and Minor draw eligibility.
+> Phase 4 (Registration): Phase 4 adds the QR scanner page (hardware USB/Bluetooth scanner since Phase 9.1), check-in, duplicate protection and Minor draw eligibility.
 >
 > Phase 3 (QR codes): Phase 3 adds attendee QR generation, the QR / ID Generator page, regeneration and A4 bulk printing.
 >
@@ -446,8 +446,8 @@ Full request/response examples: [docs/API.md](docs/API.md).
 - Workflow: upload → preview → map columns → validate → duplicate check → confirm → database. The server re-validates everything; spreadsheet contents are never trusted.
 - Accepted: `.csv` (comma, semicolon, tab or pipe; UTF-8 or Windows-1252) and `.xlsx` (first sheet), up to 5 MB / 5,000 rows. `.xls` is rejected with instructions to re-save as `.xlsx`/CSV.
 - The first non-empty row is the header row. Column names can be anything; mappings are suggested from common names (Name, Employee Name, Dept, Email Address, Employee No., …) and the admin can change them.
-- Required: Full Name, Department. Optional: Email (must be valid if present), External Identifier.
-- Duplicates (inside the file and against existing attendees of the event, archived included), checked in order: External Identifier → Email → normalised Full Name + Department (trimmed, spaces collapsed, case-insensitive). A match is ignored when both sides have *different* external IDs (or emails), so two different people are never merged. No fuzzy matching.
+- Required: **Full Name only** (Phase 9.1). Optional: Department, Email (must be valid if present), Employee ID / External Identifier. Rows without a department or employee ID are imported normally and still get an internal attendee code (`ATT-0001`…), a QR code, registration and draw eligibility. The internal attendee code is always system-generated and separate from the client's Employee ID.
+- Duplicates (inside the file and against existing attendees of the event, archived included), checked in order: External Identifier → Email → normalised Full Name + Department (trimmed, spaces collapsed, case-insensitive; a blank department only matches another blank department, so “Juan Delacruz / HR” and “Juan Delacruz / (blank)” are different rows). A match is ignored when both sides have *different* external IDs (or emails), so two different people are never merged. No fuzzy matching.
 - Duplicates and invalid rows are skipped and listed; existing attendees are never modified. New attendees get the next code `ATT-0001`, `ATT-0002`, … per event. Codes are never reassigned or editable.
 - Unmapped columns are saved in `attendees.extra_data`. Each import is recorded in `import_batches` and `audit_logs`.
 
@@ -458,13 +458,13 @@ Full request/response examples: [docs/API.md](docs/API.md).
 - Tokens never change on edits or re-imports. **Generate missing** only creates codes for active attendees without one. Only **Regenerate** (with confirmation) replaces a token; the old one is gone immediately and the change is audit-logged.
 - Archived attendees get no new QR and are excluded from counts and printing; their existing QR records are kept.
 - Images are rendered in the browser with the `qrcode` npm package (error correction Q, 4-module quiet zone): SVG for screen/print, 1200 px PNG for download. No image files are stored on the server.
-- Every QR is shown, printed and downloaded as a card: QR, then the attendee's **full name** (bold) and **department** centred underneath, with the attendee code in small type. Empty values are left out. **Download QR** saves a 1200 px-wide PNG card named `ATT-0001-Juan-Dela-Cruz.png` (ASCII letters, digits and hyphens only; never the token).
+- Every QR is shown, printed and downloaded as a card: QR, then the attendee's **full name** (bold) and **department** (only if present) centred underneath. The attendee code, token and internal IDs are not printed on the card (Phase 9.1). **Download QR** saves a 1200 px-wide PNG card named `ATT-0001-Juan-Dela-Cruz.png` (ASCII letters, digits and hyphens only; never the token).
 - Print sheet (`/print/qr`, opens in a new tab): A4, Standard 12 labels/page (44 mm QR) or Large 6/page (64 mm QR), dashed cut guides, explicit page breaks. Print at 100% / actual size.
 
 ## 9c. Registration and Minor eligibility (Phase 4)
 
-- **Registration page** (admin, registration staff): camera scanner (`qr-scanner` npm package), large result screen for ~2.5 s, then back to "Ready to scan". The same QR is ignored for 4 s after its result to avoid repeat reads. A text box accepts USB/Bluetooth handheld scanners (they type the QR value + Enter).
-- **The camera requires HTTPS** (or `localhost`). Phones/tablets opening `http://192.168.x.x` will be blocked by the browser; deploy on HTTPS for the event.
+- **Registration page** (admin, registration staff, scanner operators) uses a **physical QR scanner** in keyboard mode (USB or Bluetooth HID; no driver or SDK). The scanner types the QR value into the focused **Scan Attendee QR** box and presses Enter; the page submits it, clears and refocuses the box, and shows the result (Registration Successful / Already Registered / Invalid QR Code / Invalid Event / Attendee Inactive) for ~3.5 s. Typing anywhere on the page outside a text field sends focus back to the box, so no mouse is needed between attendees. Scans that arrive while one is being checked are queued in order. **The device camera is not used** (the `qr-scanner` package was removed in Phase 9.1).
+- The box accepts whatever the QR contains (`{APP_URL}/q/{token}` or the bare token); the server validates it exactly as before.
 - The server resolves the token → attendee, checks the active event and the attendee status, then inserts into `registration_scans`. The existing UNIQUE (event_id, attendee_id) key guarantees one check-in per attendee even with several scanners; a second scan returns `already_registered` and inserts nothing. Regenerated (old) tokens no longer exist and return `INVALID_QR`.
 - **Minor eligible = attendee has a `registration_scans` row for the active event and is still active.** No separate eligibility table. Phase 5 will draw from this pool.
 - Successful check-ins are audit-logged (`registration.checked_in`, with the staff member). Invalid and duplicate scans are not logged.
@@ -506,7 +506,7 @@ Full request/response examples: [docs/API.md](docs/API.md).
 - **Major pool (per day)** = active attendees with a `major_eligibility` row for today. A response import grants eligibility for the current day only (`source = import`); earlier days' rows and import history are kept.
 - **+ Add Participant** (Minor and Major Randomizer pages; admin + event operator): search by code, name, department or email, optional reason. Creates a day-specific `source = manual` record with the user and time. It never changes the attendee, QR code or registration and never creates a check-in. Duplicates (already registered/added/imported today) return 409 "already eligible". Archived attendees and attendees of other events are refused.
 - **Draws per day:** `randomizer_draws.event_day_id`; recent winners show today's draws; only draws of the current day can be voided.
-- **Scanner Operator role** (`scanner_operator`): created by an admin in **Settings › Scanner Operators** (display name, username, password + confirmation, status; enable/disable; reset password). Passwords are hashed with `password_hash()` and never returned. Scanner operators sign in with their **username** (the login field accepts email or username), land on the scanner dashboard and can only: scan (camera or USB scanner), see **My scans today** / **All scans today**, browse Recent Scans (My Scans / All Scans, filter All / Successful / Already registered / Invalid, paginated, current day only) and use the read-only attendee lookup. Every other endpoint returns 403. Disabling an account or resetting its password ends its open sessions on the next request (`users.session_version`, migration 030).
+- **Scanner Operator role** (`scanner_operator`): created by an admin in **Settings › Scanner Operators** (display name, username, password + confirmation, status; enable/disable; reset password). Passwords are hashed with `password_hash()` and never returned. Scanner operators sign in with their **username** (the login field accepts email or username), land on the scanner dashboard and can only: scan (USB/Bluetooth QR scanner), see **My scans today** / **All scans today**, browse Recent Scans (My Scans / All Scans, filter All / Successful / Already registered / Invalid, paginated, current day only) and use the read-only attendee lookup. Every other endpoint returns 403. Disabling an account or resetting its password ends its open sessions on the next request (`users.session_version`, migration 030).
 - **Reports** have a scope toggle: current day or all days (Event Day column on every row).
 
 Permission matrix (enforced in `backend/api/routes.php`):

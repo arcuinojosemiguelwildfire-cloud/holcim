@@ -77,7 +77,9 @@ function fitWidth(context: CanvasRenderingContext2D, text: string, maxWidth: num
 /**
  * Downloads a print-quality QR card PNG: the 1200px QR (about 10 cm at
  * 300 dpi, same rendering as before) with the attendee's full name (bold)
- * and department centred underneath, plus the attendee code in small type.
+ * and, if present, department centred underneath. Nothing else is drawn
+ * (no attendee code, token or internal ID); the code is only used in the
+ * file name.
  * Drawn on its own canvas, not a screenshot of the page.
  */
 export async function downloadQrPng(payload: string, details: QrCardDetails): Promise<void> {
@@ -94,19 +96,17 @@ export async function downloadQrPng(payload: string, details: QrCardDetails): Pr
   const nameLines = cleanText(details.fullName) ? wrapText(measure, cleanText(details.fullName), textWidth, 2) : []
   measure.font = `56px ${sans}`
   const departmentLines = cleanText(details.department) ? wrapText(measure, cleanText(details.department), textWidth, 2) : []
-  const code = cleanText(details.attendeeCode)
 
   // Layout (y = baseline): QR, then name lines, department lines, code.
   const rows: Array<{ text: string; font: string; color: string; advance: number }> = [
     ...nameLines.map((text) => ({ text, font: `bold 80px ${sans}`, color: '#000000', advance: 96 })),
     ...departmentLines.map((text, index) => ({ text, font: `56px ${sans}`, color: '#1f2937', advance: index === 0 ? 84 : 68 })),
-    ...(code ? [{ text: code, font: '40px ui-monospace, Menlo, Consolas, monospace', color: '#4b5563', advance: 76 }] : []),
   ]
   const textHeight = rows.reduce((sum, row) => sum + row.advance, 0)
 
   const canvas = document.createElement('canvas')
   canvas.width = size
-  canvas.height = size + textHeight + (rows.length > 0 ? 40 : 0)
+  canvas.height = size + textHeight + (rows.length > 0 ? 60 : 0)
   const context = canvas.getContext('2d')
   if (!context) throw new Error('Your browser cannot create images.')
 

@@ -24,13 +24,13 @@ const PREVIEW_ROWS = 8
 
 const FIELD_INFO: Record<ImportField, { label: string; required: boolean; hint: string }> = {
   full_name: { label: 'Full Name', required: true, hint: 'Required' },
-  department: { label: 'Department', required: true, hint: 'Required' },
+  department: { label: 'Department', required: false, hint: 'Optional' },
   email: { label: 'Email', required: false, hint: 'Optional' },
-  external_identifier: { label: 'External Identifier', required: false, hint: 'Optional, e.g. Employee ID' },
+  external_identifier: { label: 'Employee ID / External ID', required: false, hint: 'Optional' },
 }
 
 const MATCH_LABELS: Record<DuplicateRow['matchedBy'], string> = {
-  external_identifier: 'same External Identifier',
+  external_identifier: 'same Employee ID / External ID',
   email: 'same email',
   name_department: 'same name and department',
 }
@@ -244,7 +244,7 @@ export function AttendeeImportPage() {
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4">
               <p className="text-sm text-slate-500">Columns that are not mapped are kept with each attendee as extra information.</p>
-              <Button onClick={validate} loading={busy} disabled={mapping.full_name === null || mapping.department === null}>
+              <Button onClick={validate} loading={busy} disabled={mapping.full_name === null}>
                 Validate and check duplicates
               </Button>
             </div>
@@ -398,7 +398,7 @@ function ReviewStep({ preview, filename, busy, onBack, onCancel, onImport }: Rev
               <tr key={row.rowNumber}>
                 <Td mono>{row.rowNumber}</Td>
                 <Td>{row.fullName}</Td>
-                <Td>{row.department}</Td>
+                <Td>{row.department || <Empty />}</Td>
                 <Td>
                   {row.matches.type === 'existing' ? (
                     <>
@@ -427,7 +427,7 @@ function ReviewStep({ preview, filename, busy, onBack, onCancel, onImport }: Rev
               <tr key={row.rowNumber}>
                 <Td mono>{row.rowNumber}</Td>
                 <Td>{row.fullName}</Td>
-                <Td>{row.department}</Td>
+                <Td>{row.department || <Empty />}</Td>
                 <Td>{row.email ?? '—'}</Td>
                 <Td>{row.externalIdentifier ?? '—'}</Td>
               </tr>

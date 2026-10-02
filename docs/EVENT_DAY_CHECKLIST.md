@@ -11,7 +11,7 @@
 - [ ] QR / ID Generator: **Generate missing QR codes** → QR missing = 0 (no "Do not print" warning shown).
 - [ ] Print labels (Print all, 100% / actual size). **Scan one printed label** on the Registration page.
 - [ ] `MAJOR_FORM_URL` set; open **Major QR**, scan it with a phone → the client's form opens.
-- [ ] Registration: camera works on each scanning device (laptop/Android), and a test scan succeeds.
+- [ ] Registration: each USB/Bluetooth QR scanner is connected, sends Enter after the code, and a test scan of a printed label shows "Registration Successful".
 - [ ] Minor and Major Randomizer: test draw, **Void draw** it, test fullscreen on the LED/projector laptop.
   (Test draws stay in history as VOID; that is expected.)
 
@@ -24,9 +24,8 @@
 - [ ] Major: import today's form responses only after today's form closes (imports apply to the current day).
 
 ## During registration
-- [ ] Open **Registration**, allow the camera.
-- [ ] Scan the attendee's QR → green "Registration successful".
-- [ ] Move the ID away after each scan (the same QR shows "Already registered" if held in view).
+- [ ] Open **Registration**; the **Scan Attendee QR** box must show "Ready to scan" (amber warning = click the box once).
+- [ ] Scan the attendee's QR with the scanner → green "Registration Successful". No mouse needed between attendees.
 - [ ] Watch Registered / Remaining (current day). Red result = invalid/other event/archived: check the attendee at the desk.
 - [ ] "Already registered for Day N" = this attendee already checked in **today**; no action needed.
 - [ ] Use **Attendee lookup** on the scanner page to check whether someone is registered today.

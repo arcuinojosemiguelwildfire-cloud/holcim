@@ -24,7 +24,9 @@ use App\Utils\SpreadsheetReader;
  *   1. External identifier (case-insensitive)
  *   2. Email (case-insensitive) unless both sides have different external IDs
  *   3. Normalised full name + department unless both sides have different
- *      external IDs or different emails
+ *      external IDs or different emails. Department is optional: a blank
+ *      department only matches another blank department (same name), so
+ *      "Juan Delacruz / HR" and "Juan Delacruz / (blank)" are different rows.
  * Duplicates are skipped: existing attendees are never modified, and their
  * attendee codes stay stable.
  */
@@ -32,12 +34,13 @@ final class AttendeeImportService
 {
     public const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
     public const FIELDS = ['full_name', 'department', 'email', 'external_identifier'];
-    private const REQUIRED = ['full_name', 'department'];
+    /** Full Name is the only required attendee field; everything else is optional. */
+    private const REQUIRED = ['full_name'];
     private const LABELS = [
         'full_name' => 'Full Name',
         'department' => 'Department',
         'email' => 'Email',
-        'external_identifier' => 'External Identifier',
+        'external_identifier' => 'Employee ID / External Identifier',
     ];
     private const MAX_LENGTHS = ['full_name' => 200, 'department' => 150, 'email' => 190, 'external_identifier' => 190];
 
@@ -311,7 +314,7 @@ final class AttendeeImportService
             $newRecords[] = [
                 'rowNumber' => $row['rowNumber'],
                 'full_name' => $values['full_name'],
-                'department' => $values['department'],
+                'department' => $values['department'] !== '' ? $values['department'] : null,
                 'email' => $values['email'] !== '' ? mb_strtolower($values['email']) : null,
                 'external_identifier' => $values['external_identifier'] !== '' ? $values['external_identifier'] : null,
                 'extra_data' => $extra,

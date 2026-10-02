@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import QrScanner from 'qr-scanner'
-import { CircleAlert, CircleCheck, CircleX, Keyboard, RefreshCw, Video, Volume2, VolumeX } from 'lucide-react'
+import { CircleAlert, CircleCheck, CircleX, ScanBarcode, Volume2, VolumeX } from 'lucide-react'
 import { Alert } from '../components/ui/Alert'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -17,68 +16,62 @@ import {
 import { beep } from '../utils/beep'
 import { cn } from '../utils/cn'
 import { formatNumber, formatTime } from '../utils/format'
+import { cleanText } from '../utils/qr'
 
-/** How long a result stays on screen before the scanner is ready again. */
-const RESULT_MS = 2500
-/** The same QR is ignored for this long after its result closes (still in front of the camera). */
-const SAME_CODE_COOLDOWN_MS = 4000
+/**
+ * Registration with a physical QR scanner (Phase 9.1).
+ *
+ * USB / Bluetooth scanners in keyboard (HID) mode "type" the decoded QR
+ * value into the focused input and press Enter. No camera is used. The
+ * input keeps focus between scans, so the operator never needs the mouse:
+ * scan -> result -> input cleared and focused -> next scan.
+ */
 
-type CameraState = 'starting' | 'running' | 'error'
+/** How long a result stays large on screen before the panel returns to "Ready". */
+const RESULT_MS = 3500
 
 type ScanResult =
   | { kind: 'registered' | 'already_registered'; data: ScanSuccess }
   | { kind: 'error'; code: string; title: string; message: string }
 
 const ERROR_TITLES: Record<string, string> = {
-  INVALID_QR: 'Invalid QR',
-  WRONG_EVENT: 'Invalid for this event',
-  ATTENDEE_INACTIVE: 'Attendee inactive',
+  INVALID_QR: 'Invalid QR Code',
+  WRONG_EVENT: 'Invalid Event',
+  ATTENDEE_INACTIVE: 'Attendee Inactive',
   NO_ACTIVE_EVENT: 'No active event',
   NO_ACTIVE_DAY: 'No active event day',
 }
 
-function cameraErrorMessage(error: unknown): string {
-  if (!window.isSecureContext) {
-    return 'The camera only works over HTTPS (or on localhost). Open the system through its https:// address.'
-  }
-  const text = String(error instanceof Error ? `${error.name} ${error.message}` : error)
-  if (/NotAllowed|Permission|denied/i.test(text)) {
-    return 'Camera access is required for QR scanning. Allow camera access for this site in the browser settings, then try again.'
-  }
-  if (/not ?found|NotFound|Overconstrained|no camera/i.test(text)) {
-    return 'No camera was found on this device. Connect a camera, or use a handheld scanner with the input below.'
-  }
-  if (/NotSupported/i.test(text)) {
-    return 'This browser cannot use the camera on this page. Use an up-to-date Chrome, Edge or Safari over HTTPS, or a handheld scanner with the input below.'
-  }
-  if (/NotReadable|in use|TrackStart/i.test(text)) {
-    return 'The camera is being used by another app or tab. Close it, then try again.'
-  }
-  return 'The camera could not be started. Try again, or use a handheld scanner with the input below.'
+/** True when keystrokes already go to a control that needs them. */
+function isTypingTarget(element: Element | null): boolean {
+  if (!element) return false
+  const tag = element.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (element as HTMLElement).isContentEditable
 }
 
 export function RegistrationPage() {
-  const videoHostRef = useRef<HTMLDivElement>(null)
-  const scannerRef = useRef<QrScanner | null>(null)
-  const busyRef = useRef(false)
-  const lastRef = useRef<{ value: string; until: number }>({ value: '', until: 0 })
+  const inputRef = useRef<HTMLInputElement>(null)
+  const queueRef = useRef<string[]>([])
+  const processingRef = useRef(false)
   const resultTimer = useRef<number | undefined>(undefined)
 
-  const [camera, setCamera] = useState<CameraState>('starting')
-  const [cameraError, setCameraError] = useState<string | null>(null)
-  const [cameraAttempt, setCameraAttempt] = useState(0)
   const [result, setResult] = useState<ScanResult | null>(null)
   const [processing, setProcessing] = useState(false)
+  const [focused, setFocused] = useState(false)
   const [summary, setSummary] = useState<RegistrationSummary | null>(null)
   const [summaryError, setSummaryError] = useState<string | null>(null)
   const [sound, setSound] = useState(true)
   const soundRef = useRef(sound)
-  const [manualValue, setManualValue] = useState('')
+  const [value, setValue] = useState('')
   const [scansVersion, setScansVersion] = useState(0)
 
   useEffect(() => {
     soundRef.current = sound
   }, [sound])
+
+  const focusInput = useCallback(() => {
+    inputRef.current?.focus({ preventScroll: true })
+  }, [])
 
   const loadSummary = useCallback(() => {
     registrationService.summary().then(
@@ -97,135 +90,86 @@ export function RegistrationPage() {
     return () => window.clearInterval(interval)
   }, [loadSummary])
 
-  const showResult = useCallback((next: ScanResult, value: string) => {
+  // Keep the scanner input ready: when a scanner (or keyboard) types while
+  // focus is on a button or the page itself, move focus back to the input
+  // before the character arrives. Other text fields (attendee lookup) keep
+  // their focus.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey || event.altKey) return
+      if (isTypingTarget(document.activeElement)) return
+      if (event.key.length === 1 || event.key === 'Enter') {
+        if (event.key === 'Enter') event.preventDefault() // never "click" a focused button
+        focusInput()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [focusInput])
+
+  const showResult = useCallback((next: ScanResult) => {
     setResult(next)
     window.clearTimeout(resultTimer.current)
-    resultTimer.current = window.setTimeout(() => {
-      setResult(null)
-      lastRef.current = { value, until: Date.now() + SAME_CODE_COOLDOWN_MS }
-      busyRef.current = false
-    }, RESULT_MS)
+    resultTimer.current = window.setTimeout(() => setResult(null), RESULT_MS)
   }, [])
+
+  useEffect(() => () => window.clearTimeout(resultTimer.current), [])
 
   const updateCounts = useCallback((counts: RegistrationCounts, scanCounts: ScanCounts) => {
     setSummary((current) => (current ? { ...current, counts, scanCounts } : current))
   }, [])
 
-  /** Scan lock: one request at a time, results shown, then resume. */
-  const handleScan = useCallback(
-    async (value: string) => {
-      const trimmed = value.trim()
-      if (!trimmed || busyRef.current) return
-      if (trimmed === lastRef.current.value && Date.now() < lastRef.current.until) return
-      busyRef.current = true
-      setProcessing(true)
-
+  /** One scan through the existing registration API (server validates everything). */
+  const submitScan = useCallback(
+    async (scanned: string) => {
       try {
-        const data = await registrationService.scan(trimmed)
+        const data = await registrationService.scan(scanned)
         if (soundRef.current) beep(data.status === 'registered' ? 'success' : 'warning')
         updateCounts(data.counts, data.scanCounts)
-        if (data.status === 'registered') loadSummary()
-        showResult({ kind: data.status, data }, trimmed)
+        showResult({ kind: data.status, data })
       } catch (error) {
         if (soundRef.current) beep('error')
         const code = error instanceof ApiError ? error.code : 'ERROR'
-        showResult(
-          {
-            kind: 'error',
-            code,
-            title: ERROR_TITLES[code] ?? 'Scan failed',
-            message: error instanceof ApiError && ERROR_TITLES[code] ? error.message : `${errorMessage(error)} Please scan again.`,
-          },
-          trimmed,
-        )
-      } finally {
-        setProcessing(false)
-        setScansVersion((n) => n + 1)
+        showResult({
+          kind: 'error',
+          code,
+          title: ERROR_TITLES[code] ?? 'Scan failed',
+          message: error instanceof ApiError && ERROR_TITLES[code] ? error.message : `${errorMessage(error)} Please scan again.`,
+        })
       }
     },
-    [loadSummary, showResult, updateCounts],
+    [showResult, updateCounts],
   )
 
-  const handleScanRef = useRef(handleScan)
-  useEffect(() => {
-    handleScanRef.current = handleScan
-  }, [handleScan])
-
-  // Camera lifecycle. Each start gets its own <video> element so a previous
-  // scanner instance being torn down can never stop the new stream.
-  useEffect(() => {
-    const host = videoHostRef.current
-    if (!host) return
-    let disposed = false
-    const video = document.createElement('video')
-    video.className = 'absolute inset-0 h-full w-full object-cover'
-    video.muted = true
-    video.playsInline = true
-    host.appendChild(video)
-
-    const scanner = new QrScanner(video, (decoded) => void handleScanRef.current(decoded.data), {
-      preferredCamera: 'environment',
-      highlightScanRegion: false,
-      highlightCodeOutline: false,
-      maxScansPerSecond: 8,
-      returnDetailedScanResult: true,
-      // Scan the whole frame (the default only scans a small centre square,
-      // which misses QR codes held close to the camera).
-      calculateScanRegion: (v) => {
-        const scale = Math.min(1, 800 / Math.max(v.videoWidth, v.videoHeight, 1))
-        return {
-          x: 0,
-          y: 0,
-          width: v.videoWidth,
-          height: v.videoHeight,
-          downScaledWidth: Math.round(v.videoWidth * scale),
-          downScaledHeight: Math.round(v.videoHeight * scale),
-        }
-      },
-    })
-    scannerRef.current = scanner
-
-    scanner.start().then(
-      () => {
-        if (!disposed) setCamera('running')
-      },
-      async (error: unknown) => {
-        // qr-scanner reports most failures as "Camera not found"; ask the
-        // browser directly once to get the real reason (e.g. permission denied).
-        let reason: unknown = error
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: true })
-          stream.getTracks().forEach((track) => track.stop())
-        } catch (probeError) {
-          reason = probeError
-        }
-        if (disposed) return
-        setCamera('error')
-        setCameraError(cameraErrorMessage(reason))
-      },
-    )
-
-    return () => {
-      disposed = true
-      scanner.destroy()
-      video.remove()
-      scannerRef.current = null
+  /**
+   * Scans are processed one at a time in arrival order, so a fast second
+   * scan while the first request is in flight is queued, not lost.
+   */
+  const drainQueue = useCallback(async () => {
+    if (processingRef.current) return
+    processingRef.current = true
+    setProcessing(true)
+    try {
+      while (queueRef.current.length > 0) {
+        const next = queueRef.current.shift() as string
+        await submitScan(next)
+      }
+    } finally {
+      processingRef.current = false
+      setProcessing(false)
+      setScansVersion((n) => n + 1)
+      loadSummary()
     }
-  }, [cameraAttempt])
+  }, [loadSummary, submitScan])
 
-  useEffect(() => () => window.clearTimeout(resultTimer.current), [])
-
-  const retryCamera = () => {
-    setCamera('starting')
-    setCameraError(null)
-    setCameraAttempt((n) => n + 1)
-  }
-
-  const submitManual = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const value = manualValue
-    setManualValue('')
-    void handleScan(value)
+    const scanned = value.trim()
+    setValue('')
+    focusInput()
+    if (!scanned) return
+    queueRef.current.push(scanned)
+    void drainQueue()
   }
 
   const counts = summary?.counts
@@ -242,14 +186,17 @@ export function RegistrationPage() {
                 {summary.event.name} — <span className="font-medium text-slate-700" data-testid="scanner-day">{summary.eventDay.displayName}</span>
               </>
             ) : (
-              'Scan attendee QR codes to check them in.'
+              'Scan attendee QR codes with the QR scanner to check them in.'
             )}
           </p>
         </div>
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => setSound((value) => !value)}
+          onClick={() => {
+            setSound((on) => !on)
+            focusInput()
+          }}
           icon={sound ? <Volume2 className="size-4" aria-hidden /> : <VolumeX className="size-4" aria-hidden />}
         >
           Sound {sound ? 'on' : 'off'}
@@ -267,64 +214,52 @@ export function RegistrationPage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <Card className="overflow-hidden">
-          <div className="relative aspect-[4/3] w-full bg-slate-900 sm:aspect-video lg:aspect-[4/3]">
-            <div ref={videoHostRef} className="absolute inset-0" />
-
-            {camera === 'running' && !result && (
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <div className="relative aspect-square w-[min(60%,320px)] rounded-2xl shadow-[0_0_0_9999px_rgba(15,23,42,0.45)]">
-                  <span className="absolute -left-0.5 -top-0.5 size-10 rounded-tl-2xl border-l-4 border-t-4 border-white" />
-                  <span className="absolute -right-0.5 -top-0.5 size-10 rounded-tr-2xl border-r-4 border-t-4 border-white" />
-                  <span className="absolute -bottom-0.5 -left-0.5 size-10 rounded-bl-2xl border-b-4 border-l-4 border-white" />
-                  <span className="absolute -bottom-0.5 -right-0.5 size-10 rounded-br-2xl border-b-4 border-r-4 border-white" />
-                </div>
-              </div>
-            )}
-
-            {camera === 'starting' && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-300">
-                <Video className="size-8" aria-hidden />
-                <p className="text-sm">Starting camera… allow camera access if your browser asks.</p>
-              </div>
-            )}
-
-            {camera === 'error' && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-slate-900 p-6 text-center">
-                <CircleAlert className="size-10 text-amber-400" aria-hidden />
-                <p className="max-w-md text-base text-white">{cameraError}</p>
-                <Button variant="secondary" onClick={retryCamera} icon={<RefreshCw className="size-4" aria-hidden />}>
-                  Try again
-                </Button>
-              </div>
-            )}
-
-            {result && <ResultOverlay result={result} />}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3 border-t border-slate-200 px-4 py-3">
+        <Card className="flex flex-col overflow-hidden">
+          <form onSubmit={handleSubmit} className="border-b border-slate-200 px-5 py-4" autoComplete="off">
+            <label htmlFor="scan-input" className="flex items-center gap-2 text-base font-semibold text-slate-900">
+              <ScanBarcode className="size-5 text-brand-700" aria-hidden />
+              Scan Attendee QR
+            </label>
+            <input
+              ref={inputRef}
+              id="scan-input"
+              name="scan"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
+              placeholder="Scan QR here…"
+              autoFocus
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              enterKeyHint="go"
+              className={cn(
+                'mt-2 h-14 w-full rounded-lg border-0 px-4 font-mono text-lg ring-2 ring-inset placeholder:font-sans placeholder:text-slate-400 focus:outline-none',
+                focused ? 'ring-brand-600' : 'ring-amber-400',
+              )}
+            />
             <p
               role="status"
               aria-live="polite"
-              className={cn(
-                'flex-1 text-sm font-medium',
-                processing ? 'text-slate-500' : camera === 'running' && !result ? 'text-emerald-700' : 'text-slate-500',
-              )}
+              className={cn('mt-2 text-sm font-medium', processing ? 'text-slate-500' : focused ? 'text-emerald-700' : 'text-amber-700')}
+              data-testid="scanner-status"
             >
-              {processing ? 'Checking…' : result ? 'Showing result…' : camera === 'running' ? 'Ready to scan' : camera === 'starting' ? 'Starting camera…' : 'Camera unavailable'}
+              {processing ? 'Checking…' : focused ? 'Ready to scan' : 'Scanner input is not selected. Click the box above (or press any key) before scanning.'}
             </p>
-            <form onSubmit={submitManual} className="flex min-w-0 flex-1 basis-64 items-center gap-2">
-              <label htmlFor="manual-scan" className="sr-only">Handheld scanner or manual input</label>
-              <Keyboard className="size-4 shrink-0 text-slate-400" aria-hidden />
-              <input
-                id="manual-scan"
-                value={manualValue}
-                onChange={(e) => setManualValue(e.target.value)}
-                placeholder="Handheld scanner / paste QR value"
-                autoComplete="off"
-                className="h-9 min-w-0 flex-1 rounded-lg border-0 px-3 text-sm ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-brand-600"
-              />
-            </form>
+          </form>
+
+          <div className="relative min-h-[300px] flex-1" onClick={focusInput}>
+            {result ? (
+              <ResultPanel result={result} />
+            ) : (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-50 p-6 text-center text-slate-500">
+                <ScanBarcode className="size-12 text-slate-300" aria-hidden />
+                <p className="text-lg font-medium text-slate-700">Ready for the next attendee</p>
+                <p className="max-w-sm text-sm">Point the QR scanner at the attendee&apos;s QR code. The result appears here.</p>
+              </div>
+            )}
           </div>
         </Card>
 
@@ -347,11 +282,11 @@ function Counter({ label, value, tone, testId }: { label: string; value: number 
   )
 }
 
-function ResultOverlay({ result }: { result: ScanResult }) {
+function ResultPanel({ result }: { result: ScanResult }) {
   if (result.kind === 'error') {
     return (
-      <div role="alert" className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-red-600 p-6 text-center text-white">
-        <CircleX className="size-10 sm:size-16" aria-hidden />
+      <div role="alert" data-testid="scan-result" className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-red-600 p-6 text-center text-white">
+        <CircleX className="size-12 sm:size-16" aria-hidden />
         <p className="text-2xl font-bold uppercase tracking-wide sm:text-3xl">{result.title}</p>
         <p className="max-w-md text-base text-red-50 sm:text-lg">{result.message}</p>
       </div>
@@ -360,29 +295,28 @@ function ResultOverlay({ result }: { result: ScanResult }) {
 
   const { data } = result
   const registered = result.kind === 'registered'
+  const name = cleanText(data.attendee.fullName)
+  const department = cleanText(data.attendee.department)
 
   return (
     <div
       role="alert"
+      data-testid="scan-result"
       className={cn(
         'absolute inset-0 flex flex-col items-center justify-center gap-1 p-4 text-center text-white sm:gap-2 sm:p-6',
         registered ? 'bg-emerald-600' : 'bg-amber-500',
       )}
     >
-      {registered ? <CircleCheck className="hidden size-14 sm:block" aria-hidden /> : <CircleAlert className="hidden size-14 sm:block" aria-hidden />}
-      <p className="text-lg font-bold uppercase tracking-wide sm:text-xl">{registered ? 'Registration successful' : 'Already registered'}</p>
-      <p className="mt-2 text-3xl font-extrabold uppercase leading-tight sm:text-5xl">{data.attendee.fullName}</p>
-      {data.attendee.department && <p className="text-xl font-medium sm:text-2xl">{data.attendee.department}</p>}
-      <p className="font-mono text-lg">{data.attendee.code}</p>
-      <p className="mt-2 text-base">
-        {registered ? 'Registered' : 'First registered'} {formatTime(data.registeredAt)}
-      </p>
+      {registered ? <CircleCheck className="size-12" aria-hidden /> : <CircleAlert className="size-12" aria-hidden />}
+      <p className="text-xl font-bold uppercase tracking-wide">{registered ? 'Registration Successful' : 'Already Registered'}</p>
+      {name && <p className="mt-2 text-3xl font-extrabold uppercase leading-tight sm:text-5xl">{name}</p>}
+      {registered && department && <p className="text-xl font-medium sm:text-2xl">{department}</p>}
       {registered ? (
-        <p className="mt-1 rounded-full bg-white/20 px-4 py-1 text-sm font-bold uppercase tracking-wide">Minor draw: eligible</p>
+        <p className="mt-2 rounded-full bg-white/20 px-4 py-1 text-sm font-bold uppercase tracking-wide">Minor draw: eligible</p>
       ) : (
-        <p className="text-base">
-          Already registered for Day {data.eventDay.dayNumber}
-          {data.registeredBy ? ` (by ${data.registeredBy})` : ''}.
+        <p className="mt-2 text-base">
+          Already registered for Day {data.eventDay.dayNumber} at {formatTime(data.registeredAt)}
+          {data.registeredBy ? ` by ${data.registeredBy}` : ''}.
         </p>
       )}
     </div>

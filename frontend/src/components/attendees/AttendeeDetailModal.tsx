@@ -120,11 +120,11 @@ export function AttendeeDetailModal({ attendeeId, onClose, onChanged }: Attendee
               <TextField label="Attendee code" value={attendee.attendeeCode} disabled hint="Attendee codes never change." />
               <TextField label="Full name" required autoFocus maxLength={200} value={form.full_name}
                 onChange={(e) => setForm({ ...form, full_name: e.target.value })} error={apiError?.fieldError('full_name')} />
-              <TextField label="Department" required maxLength={150} value={form.department}
+              <TextField label="Department" maxLength={150} hint="Optional" value={form.department}
                 onChange={(e) => setForm({ ...form, department: e.target.value })} error={apiError?.fieldError('department')} />
               <TextField label="Email" type="email" maxLength={190} value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })} error={apiError?.fieldError('email')} />
-              <TextField label="External identifier" maxLength={190} value={form.external_identifier} hint="e.g. Employee ID"
+              <TextField label="Employee ID / External ID" maxLength={190} value={form.external_identifier} hint="Optional"
                 onChange={(e) => setForm({ ...form, external_identifier: e.target.value })} error={apiError?.fieldError('external_identifier')} />
             </form>
           ) : (
@@ -138,7 +138,7 @@ export function AttendeeDetailModal({ attendeeId, onClose, onChanged }: Attendee
               <Detail label="Full name">{attendee.fullName}</Detail>
               <Detail label="Department">{attendee.department ?? '—'}</Detail>
               <Detail label="Email">{attendee.email ?? '—'}</Detail>
-              <Detail label="External identifier">{attendee.externalIdentifier ?? '—'}</Detail>
+              <Detail label="Employee ID / External ID">{attendee.externalIdentifier ?? '—'}</Detail>
               <Detail label="Created">{attendee.createdAt}</Detail>
 
               {Object.keys(attendee.extraData).length > 0 && (

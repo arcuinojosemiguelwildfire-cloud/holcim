@@ -43,9 +43,9 @@ final class AttendeeController
         $id = Validator::id($request->param('id'), 'Attendee');
         $data = Validator::make($request->body())
             ->string('full_name', required: true, max: 200, label: 'Full name')
-            ->string('department', required: true, max: 150)
+            ->string('department', max: 150)
             ->email('email')
-            ->string('external_identifier', max: 190, label: 'External identifier')
+            ->string('external_identifier', max: 190, label: 'Employee ID / External identifier')
             ->validate();
 
         return Response::success(['attendee' => AttendeeService::update($request, $id, $data)], message: 'Attendee updated.');

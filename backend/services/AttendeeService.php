@@ -68,6 +68,7 @@ final class AttendeeService
         $eventId = (int) $before['event_id'];
 
         $data['email'] = isset($data['email']) && $data['email'] !== '' ? mb_strtolower((string) $data['email']) : null;
+        $data['department'] = isset($data['department']) && $data['department'] !== '' ? $data['department'] : null;
         $data['external_identifier'] = isset($data['external_identifier']) && $data['external_identifier'] !== '' ? $data['external_identifier'] : null;
 
         if ($data['external_identifier'] !== null && Attendee::externalIdentifierTaken($eventId, $data['external_identifier'], $id)) {

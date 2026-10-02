@@ -16,10 +16,9 @@ Copy `backend/.env.production.example` to `backend/.env` on the server (never co
 | `MAJOR_FORM_URL` | the client's form link (e.g. Google Form) | Target of the Major QR. Can be changed at any time without changing the QR. Empty = scanners see "form not available yet". |
 | `LOGIN_MAX_ATTEMPTS` / `LOGIN_MAX_ATTEMPTS_PER_IP` / `LOGIN_LOCKOUT_MINUTES` | `5` / `30` / `15` | Login brute-force protection (defaults shown) |
 
-## 2. HTTPS and the registration camera
+## 2. HTTPS and the registration scanners
 
-Browsers only give web pages camera access on **HTTPS** (or `http://localhost` during development).
-A phone or tablet opening `http://192.168.x.x` **will be refused camera access**. There is no safe workaround; serve the system over HTTPS (most hosts provide free Let's Encrypt certificates). Handheld USB/Bluetooth QR scanners work without the camera, through the input box on the Registration page.
+Registration uses **physical QR scanners** (USB or Bluetooth, keyboard/HID mode) on the Registration page; the device camera is not used. Configure each scanner to send **Enter** after the code (the usual default) and to read QR codes. Still serve the system over **HTTPS** (secure login cookies; most hosts provide free Let's Encrypt certificates).
 
 ## 3. Install / update steps
 
@@ -54,7 +53,7 @@ Nothing is deleted. After migrating, open **Events › Days** to add Day 2, 3…
 | URL | Who | Purpose |
 |-----|-----|---------|
 | `https://domain/` | Staff | Admin app (login) |
-| `https://domain/registration` | Registration staff, scanner operators | Camera scanner + scanner dashboard (scanner operators land here after login) |
+| `https://domain/registration` | Registration staff, scanner operators | Hardware QR scanner input + scanner dashboard (scanner operators land here after login) |
 | `https://domain/major-qr` | Event operator | LED screen with the Major QR (fullscreen) |
 | `https://domain/minor-randomizer`, `/major-randomizer` | Event operator | Draw stages (fullscreen), + Add Participant |
 | `https://domain/settings` | Admin | Scanner Operators (add, enable/disable, reset password) |
