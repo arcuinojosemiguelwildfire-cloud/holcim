@@ -37,6 +37,25 @@ final class AttendeeController
         return Response::success(['attendee' => AttendeeService::get($id)]);
     }
 
+    /**
+     * POST /attendees (admin, event operator) - manual Add Attendee.
+     * {full_name, company?, department? (Cluster), email?, external_identifier? (Employee ID)}
+     * The attendee code is generated server-side; any client-sent code is ignored.
+     */
+    public static function create(Request $request): Response
+    {
+        $data = Validator::make($request->body())
+            ->string('full_name', required: true, max: 200, label: 'Full name')
+            ->string('company', max: 200, label: 'Company')
+            ->string('department', max: 150, label: 'Cluster')
+            ->email('email')
+            ->string('external_identifier', max: 190, label: 'Employee ID')
+            ->validate();
+        $result = AttendeeService::create($request, $data);
+
+        return Response::created($result, "Attendee {$result['attendee']['attendeeCode']} added.");
+    }
+
     /** PUT /attendees/{id} (admin). attendee_code is not editable. */
     public static function update(Request $request): Response
     {

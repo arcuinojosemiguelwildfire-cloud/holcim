@@ -51,6 +51,10 @@ Migration 031 adds the optional `attendees.company` column (no data changes). Ma
 
 Nothing is deleted. After migrating, open **Events › Days** to add Day 2, 3… and check the current day.
 
+### Phase 9.3 (no migration)
+
+Adds manual **Add Attendee** and **Settings › System Reset**. No database change. If the production server was used for testing, an admin can run System Reset **once, before the real event** (take a backup first). It removes all events, attendees, registrations, draws, imports and non-admin accounts and keeps the admin account(s). Afterwards recreate staff, event operator and scanner operator accounts.
+
 ## 4. URLs at the event
 
 | URL | Who | Purpose |

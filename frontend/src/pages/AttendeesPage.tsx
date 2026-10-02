@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import { FileUp, Search, Users } from 'lucide-react'
+import { FileUp, Search, UserPlus, Users } from 'lucide-react'
+import { AddAttendeeModal } from '../components/attendees/AddAttendeeModal'
 import { AttendeeDetailModal } from '../components/attendees/AttendeeDetailModal'
 import { Alert } from '../components/ui/Alert'
 import { Badge } from '../components/ui/Badge'
-import { ButtonLink } from '../components/ui/Button'
+import { Button, ButtonLink } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { EmptyState } from '../components/ui/EmptyState'
 import { PageHeader } from '../components/ui/PageHeader'
@@ -13,7 +14,6 @@ import { useApiQuery } from '../hooks/useApiQuery'
 import { useAuth } from '../hooks/useAuth'
 import { attendeeService } from '../services/attendeeService'
 import type { AttendeeListQuery } from '../types/attendee'
-import { formatShortDate } from '../utils/format'
 
 const PAGE_SIZES = [25, 50, 100]
 const SELECT_CLASS =
@@ -22,6 +22,9 @@ const SELECT_CLASS =
 export function AttendeesPage() {
   const { hasRole } = useAuth()
   const canManage = hasRole('admin')
+  // Manual Add Attendee: admin + event operator (the server enforces the same rule).
+  const canAdd = hasRole('admin', 'event_operator')
+  const [adding, setAdding] = useState(false)
 
   const [query, setQuery] = useState<AttendeeListQuery>({ search: '', department: '', status: 'active', page: 1, perPage: 25 })
   const [searchInput, setSearchInput] = useState('')
@@ -47,10 +50,19 @@ export function AttendeesPage() {
         title="Attendees"
         description={data ? `Attendees of ${data.event.name}` : 'Attendees of the active event'}
         actions={
-          canManage && (
-            <ButtonLink to="/attendees/import" icon={<FileUp className="size-4" aria-hidden />}>
-              Import attendees
-            </ButtonLink>
+          (canAdd || canManage) && (
+            <div className="flex flex-wrap gap-2">
+              {canManage && (
+                <ButtonLink to="/attendees/import" variant="secondary" icon={<FileUp className="size-4" aria-hidden />}>
+                  Import attendees
+                </ButtonLink>
+              )}
+              {canAdd && (
+                <Button onClick={() => setAdding(true)} icon={<UserPlus className="size-4" aria-hidden />}>
+                  Add attendee
+                </Button>
+              )}
+            </div>
           )
         }
       />
@@ -70,7 +82,7 @@ export function AttendeesPage() {
               type="search"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search code, name, cluster or email"
+              placeholder="Search code, name, company, cluster, employee ID or email"
               className="h-10 w-full rounded-lg border-0 bg-white pl-9 pr-3 text-sm shadow-sm ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-brand-600"
             />
           </label>
@@ -100,7 +112,7 @@ export function AttendeesPage() {
           <EmptyState
             icon={<Users className="size-6" aria-hidden />}
             title={filtered ? 'No matching attendees' : 'No attendees yet'}
-            description={filtered ? 'Try a different search or filter.' : 'Import the attendee list from an Excel or CSV file.'}
+            description={filtered ? 'Try a different search or filter.' : 'Import the attendee list from an Excel or CSV file, or add attendees one by one.'}
             action={
               !filtered && canManage && (
                 <ButtonLink to="/attendees/import" icon={<FileUp className="size-4" aria-hidden />}>
@@ -115,13 +127,13 @@ export function AttendeesPage() {
               <table className="min-w-full divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                   <tr>
-                    <th scope="col" className="px-5 py-3">Code</th>
+                    <th scope="col" className="px-5 py-3">Attendee code</th>
                     <th scope="col" className="px-5 py-3">Full name</th>
                     <th scope="col" className="px-5 py-3">Company</th>
                     <th scope="col" className="px-5 py-3">Cluster</th>
+                    <th scope="col" className="px-5 py-3">Employee ID</th>
                     <th scope="col" className="px-5 py-3">Email</th>
                     <th scope="col" className="px-5 py-3">Status</th>
-                    <th scope="col" className="px-5 py-3">Created</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -139,13 +151,13 @@ export function AttendeesPage() {
                       <td className="px-5 py-3 font-medium text-slate-900">{attendee.fullName}</td>
                       <td className="px-5 py-3 text-slate-600">{attendee.company ?? '—'}</td>
                       <td className="px-5 py-3 text-slate-600">{attendee.department ?? '—'}</td>
+                      <td className="whitespace-nowrap px-5 py-3 text-slate-600">{attendee.externalIdentifier ?? '—'}</td>
                       <td className="px-5 py-3 text-slate-600">{attendee.email ?? '—'}</td>
                       <td className="whitespace-nowrap px-5 py-3">
                         <Badge tone={attendee.status === 'active' ? 'success' : 'muted'} dot>
                           {attendee.status === 'active' ? 'Active' : 'Archived'}
                         </Badge>
                       </td>
-                      <td className="whitespace-nowrap px-5 py-3 text-slate-500">{formatShortDate(attendee.createdAt.slice(0, 10))}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -160,6 +172,17 @@ export function AttendeesPage() {
           </>
         ) : null}
       </Card>
+
+      {adding && (
+        <AddAttendeeModal
+          onClose={() => setAdding(false)}
+          onCreated={reload}
+          onView={(id) => {
+            setAdding(false)
+            setOpenId(id)
+          }}
+        />
+      )}
 
       {openId !== null && (
         <AttendeeDetailModal key={openId} attendeeId={openId} onClose={() => setOpenId(null)} onChanged={reload} />

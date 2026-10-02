@@ -168,7 +168,8 @@ final class QrCodeService
         return $attendee;
     }
 
-    private static function insertWithUniqueToken(int $attendeeId): void
+    /** Creates the attendee's first QR token (callers ensure none exists). Used by generate and by manual Add Attendee. */
+    public static function insertWithUniqueToken(int $attendeeId): void
     {
         self::withUniqueToken(static fn (string $token) => AttendeeQrCode::create($attendeeId, $token));
     }

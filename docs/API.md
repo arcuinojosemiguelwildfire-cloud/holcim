@@ -150,6 +150,18 @@ and the role matrix is in README §9g. Phase 8 notes:
   `External Attendees` sheet when present and, for the
   `Cluster | Name 1 | Attendee 1..N` layout, returns one row per attendee
   (`layout: "external_attendees"`, headers Full Name / Company / Cluster).
+- Phase 9.3: `POST /attendees` (admin, event operator) creates one attendee
+  `{full_name, company?, department?, external_identifier?, email?}` and their
+  QR; returns `201 {attendee, qr}`. Duplicates return
+  `409 DUPLICATE_ATTENDEE` with `details.fields` (`external_identifier`,
+  `email` or `full_name`). `GET /attendees/{id}/qr` and
+  `GET /qr-codes/print?ids=` are also open to event operators (print: selected
+  IDs only, ≤ 50). `GET /settings/system-reset` (admin) returns
+  `{counts, confirmationPhrase}`; `POST /settings/system-reset` (admin)
+  `{confirmation: "RESET EVENT DATA", password}` deletes all event/test data and
+  non-admin accounts (422 with `fields.confirmation` / `fields.password` when
+  refused, `500 RESET_FAILED` with a generic message if the transaction rolled
+  back).
 - `EventDay`: `{ id, eventId, dayNumber, eventDate, label, status, displayName }`,
   status `upcoming` / `active` / `completed`.
 

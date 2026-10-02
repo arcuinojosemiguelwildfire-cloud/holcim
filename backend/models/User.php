@@ -80,6 +80,16 @@ final class User
         return $statement->fetch() ?: null;
     }
 
+    /** Password hash for re-authentication checks only; never return it to clients. */
+    public static function passwordHashFor(int $id): ?string
+    {
+        $statement = Database::connection()->prepare('SELECT password_hash FROM users WHERE id = :id LIMIT 1');
+        $statement->execute(['id' => $id]);
+        $hash = $statement->fetchColumn();
+
+        return is_string($hash) ? $hash : null;
+    }
+
     public static function usernameTaken(string $username): bool
     {
         $statement = Database::connection()->prepare('SELECT COUNT(*) FROM users WHERE username = :username');

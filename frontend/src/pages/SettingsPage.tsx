@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { KeyRound, ScanLine, UserPlus } from 'lucide-react'
+import { RESET_SUCCESS, SystemResetCard } from '../components/settings/SystemResetCard'
 import { Alert } from '../components/ui/Alert'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -18,7 +19,7 @@ const fetchOperators = () => settingsService.scannerOperators()
 
 const EMPTY: ScannerOperatorInput = { name: '', username: '', password: '', password_confirmation: '', status: 'active' }
 
-/** Settings (admin). Phase 8: Scanner Operators. */
+/** Settings (admin). Scanner Operators and System Reset. */
 export function SettingsPage() {
   const { data, error, loading, reload } = useApiQuery(fetchOperators)
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
@@ -114,6 +115,14 @@ export function SettingsPage() {
           </div>
         ) : null}
       </Card>
+
+      <SystemResetCard
+        onReset={() => {
+          setNotice({ tone: 'success', text: RESET_SUCCESS })
+          reload()
+          window.scrollTo({ top: 0, behavior: 'smooth' })
+        }}
+      />
 
       {creating && (
         <CreateOperatorModal

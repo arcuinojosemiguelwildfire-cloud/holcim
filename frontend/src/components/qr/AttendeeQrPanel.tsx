@@ -19,7 +19,7 @@ function formatIssued(value: string): string {
 /** QR section of the attendee detail view: show, download, print, generate, regenerate. */
 export function AttendeeQrPanel({ attendeeId, attendeeStatus }: { attendeeId: number; attendeeStatus: string }) {
   const { hasRole } = useAuth()
-  const canView = hasRole('admin', 'registration_staff')
+  const canView = hasRole('admin', 'registration_staff', 'event_operator')
   const canManage = hasRole('admin')
   const fetcher = useCallback(() => qrService.forAttendee(attendeeId), [attendeeId])
   const { data, error: loadError } = useApiQuery(canView ? fetcher : noop)

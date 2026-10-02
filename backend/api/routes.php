@@ -65,6 +65,9 @@ return static function (Router $router): void {
     // Attendees (scoped to the active event). Import is a 3-step flow:
     // parse (upload) -> preview (validate + duplicates) -> import (commit).
     $router->get('/attendees', [AttendeeController::class, 'index'], [$staff]);
+    // Manual Add Attendee (Phase 9.3): admin + event operator only.
+    $attendeeCreators = AuthMiddleware::roles(User::ROLE_ADMIN, User::ROLE_EVENT_OPERATOR);
+    $router->post('/attendees', [AttendeeController::class, 'create'], [$attendeeCreators]);
     $router->post('/attendees/import/parse', [AttendeeController::class, 'parseImport'], [$adminOnly]);
     $router->post('/attendees/import/preview', [AttendeeController::class, 'previewImport'], [$adminOnly]);
     $router->post('/attendees/import', [AttendeeController::class, 'import'], [$adminOnly]);
@@ -75,11 +78,14 @@ return static function (Router $router): void {
     // Attendee QR codes (active event). Viewing/printing: admin + registration
     // staff. Generating/regenerating: admin only.
     $qrViewers = AuthMiddleware::roles(User::ROLE_ADMIN, User::ROLE_REGISTRATION_STAFF);
+    // Event operators may view / print a single attendee's QR (needed after
+    // manual Add Attendee). Listing, generate and regenerate are unchanged.
+    $qrCardViewers = AuthMiddleware::roles(User::ROLE_ADMIN, User::ROLE_REGISTRATION_STAFF, User::ROLE_EVENT_OPERATOR);
     $router->get('/qr-codes/summary', [QrCodeController::class, 'summary'], [$qrViewers]);
     $router->get('/qr-codes', [QrCodeController::class, 'index'], [$qrViewers]);
-    $router->get('/qr-codes/print', [QrCodeController::class, 'print'], [$qrViewers]);
+    $router->get('/qr-codes/print', [QrCodeController::class, 'print'], [$qrCardViewers]);
     $router->post('/qr-codes/generate-missing', [QrCodeController::class, 'generateMissing'], [$adminOnly]);
-    $router->get('/attendees/{id}/qr', [QrCodeController::class, 'show'], [$qrViewers]);
+    $router->get('/attendees/{id}/qr', [QrCodeController::class, 'show'], [$qrCardViewers]);
     $router->post('/attendees/{id}/qr', [QrCodeController::class, 'generate'], [$adminOnly]);
     $router->post('/attendees/{id}/qr/regenerate', [QrCodeController::class, 'regenerate'], [$adminOnly]);
 
@@ -124,4 +130,9 @@ return static function (Router $router): void {
     $router->post('/settings/scanner-operators', [SettingsController::class, 'createScannerOperator'], [$adminOnly]);
     $router->patch('/settings/scanner-operators/{id}', [SettingsController::class, 'updateScannerOperator'], [$adminOnly]);
     $router->post('/settings/scanner-operators/{id}/password', [SettingsController::class, 'resetScannerOperatorPassword'], [$adminOnly]);
+
+    // Settings > System Reset (Phase 9.3): admin only, CSRF-protected POST,
+    // requires the phrase RESET EVENT DATA and the admin's current password.
+    $router->get('/settings/system-reset', [SettingsController::class, 'resetSummary'], [$adminOnly]);
+    $router->post('/settings/system-reset', [SettingsController::class, 'reset'], [$adminOnly]);
 };

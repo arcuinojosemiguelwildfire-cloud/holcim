@@ -27,7 +27,7 @@ const router = createBrowserRouter(
       children: [
         // Print sheet: full page, no sidebar/top bar.
         {
-          element: <RequireRole roles={['admin', 'registration_staff']} />,
+          element: <RequireRole roles={['admin', 'registration_staff', 'event_operator']} />,
           children: [{ path: '/print/qr', element: <QrPrintPage /> }],
         },
         {

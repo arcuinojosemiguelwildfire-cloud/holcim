@@ -314,7 +314,7 @@ function ResultPanel({ result }: { result: ScanResult }) {
       {registered && company && <p className="text-xl font-semibold sm:text-2xl">{company}</p>}
       {registered && department && <p className="text-lg font-medium text-white/90 sm:text-xl">{department}</p>}
       {registered ? (
-        <p className="mt-2 rounded-full bg-white/20 px-4 py-1 text-sm font-bold uppercase tracking-wide">Minor draw: eligible</p>
+        <p className="mt-2 rounded-full bg-white/20 px-4 py-1 text-sm font-bold uppercase tracking-wide">Minor &amp; Major draws: eligible</p>
       ) : (
         <p className="mt-2 text-base">
           Already registered for Day {data.eventDay.dayNumber} at {formatTime(data.registeredAt)}

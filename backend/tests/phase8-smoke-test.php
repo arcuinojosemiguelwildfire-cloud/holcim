@@ -117,6 +117,14 @@ final class ApiClient
         return $results;
     }
 
+    /** Swap the CSRF token (null = send none); returns the previous one. */
+    public function swapCsrf(?string $token): ?string
+    {
+        [$previous, $this->csrf] = [$this->csrf, $token];
+
+        return $previous;
+    }
+
     public function login(string $login, string $password): int
     {
         $response = $this->request('POST', '/auth/login', ['login' => $login, 'password' => $password]);
@@ -574,7 +582,8 @@ try {
         ['PATCH', "/events/{$eventId}/status"], ['GET', '/attendees'], ['PUT', "/attendees/{$ids['A']}"], ['PATCH', "/attendees/{$ids['A']}/status"],
         ['POST', '/attendees/import/parse'], ['POST', '/attendees/import/preview'], ['POST', '/attendees/import'],
         ['GET', '/reports/registration.csv'], ['GET', '/reports/eligibility.csv'], ['GET', '/reports/draws.csv'],
-        ['GET', '/reports/day-attendees.xlsx'], ['GET', '/reports/winners.xlsx'],
+        ['GET', '/reports/day-attendees.xlsx'], ['GET', '/reports/winners.xlsx'], ['POST', '/attendees'],
+        ['GET', '/settings/system-reset'], ['POST', '/settings/system-reset'],
         ['GET', '/randomizers/minor'], ['POST', '/randomizers/minor/draw'], ['GET', '/randomizers/major'], ['POST', '/randomizers/major/draw'],
         ['POST', '/randomizers/minor/participants'], ['POST', '/randomizers/major/participants'], ['GET', '/randomizers/minor/candidates'],
         ['POST', "/randomizers/draws/{$day2Draws['minor'][0]}/void"], ['GET', '/qr-codes'], ['POST', '/qr-codes/generate-missing'], ['GET', '/dashboard/summary'],
@@ -618,6 +627,125 @@ try {
     check('Same name in two companies -> two attendees with their own Company/Cluster', count($juans) === 2
         && $juans[0]['company'] === "Café Ñiño {$stamp}" && $juans[0]['department'] === 'Visayas' && $juans[1]['company'] === "Delta {$stamp}" && $juans[1]['department'] === 'Mindanao', $juans);
     check('Company stored separately from Cluster', (int) $pdo->query("SELECT COUNT(*) FROM attendees WHERE event_id = {$eventId} AND company = 'AB Casiano {$stamp}' AND department = 'North Luzon'")->fetchColumn() === 6);
+
+    section('Manual Add Attendee (Day 2 is current)');
+    $addAttendee = static fn (ApiClient $c, array $body) => $c->request('POST', '/attendees', $body);
+    $maxBefore = Attendee::maxCodeNumber($eventId);
+    $r = $addAttendee($admin, ['full_name' => "  Manual  Person {$stamp} ", 'company' => 'Manual Co', 'department' => 'North Luzon',
+        'external_identifier' => "EMP-{$stamp}", 'email' => "Manual-{$stamp}@Example.invalid", 'attendee_code' => 'HACK-1', 'status' => 'archived']);
+    check('Admin adds an attendee (201)', $r['status'] === 201, $r['raw']);
+    $m = $r['body']['data']['attendee'] ?? [];
+    $mQr = $r['body']['data']['qr'] ?? [];
+    $mId = (int) ($m['id'] ?? 0);
+    check('Code generated as the next ATT-#### (client code ignored)', ($m['attendeeCode'] ?? '') === Attendee::formatCode($maxBefore + 1), $m['attendeeCode'] ?? null);
+    check('Fields stored (name trimmed, email lower-cased, Company/Cluster separate)', ($m['fullName'] ?? '') === "Manual Person {$stamp}"
+        && ($m['company'] ?? '') === 'Manual Co' && ($m['department'] ?? '') === 'North Luzon' && ($m['email'] ?? '') === "manual-{$stamp}@example.invalid"
+        && ($m['externalIdentifier'] ?? '') === "EMP-{$stamp}", $m);
+    check('New attendee is active, not archived', ($m['status'] ?? '') === 'active' && array_key_exists('archivedAt', $m) && $m['archivedAt'] === null);
+    check('QR generated with the existing QR system', ($mQr['status'] ?? '') === 'generated' && is_string($mQr['qrPayload'] ?? null)
+        && (int) $pdo->query("SELECT COUNT(*) FROM attendee_qr_codes WHERE attendee_id = {$mId}")->fetchColumn() === 1);
+    $mToken = (string) $pdo->query("SELECT token FROM attendee_qr_codes WHERE attendee_id = {$mId}")->fetchColumn();
+    check('QR payload holds only the opaque token (no attendee code, name or id)', str_ends_with((string) ($mQr['qrPayload'] ?? ''), $mToken)
+        && !str_contains((string) $mQr['qrPayload'], (string) $m['attendeeCode']) && !str_contains((string) $mQr['qrPayload'], 'Manual'));
+    check('Adding does not register the attendee (no registration scan)', (int) $pdo->query("SELECT COUNT(*) FROM registration_scans WHERE attendee_id = {$mId}")->fetchColumn() === 0);
+    check('Adding does not make them Minor or Major eligible', !in_array($m['attendeeCode'], $poolCodes('minor'), true) && !in_array($m['attendeeCode'], $poolCodes('major'), true));
+    check('Audit log records attendee.created', (int) $pdo->query("SELECT COUNT(*) FROM audit_logs WHERE action = 'attendee.created' AND event_id = {$eventId}")->fetchColumn() === 1);
+
+    $r = $addAttendee($operator, ['full_name' => "Operator Added {$stamp}"]);
+    $opA = $r['body']['data']['attendee'] ?? [];
+    check('Event Operator adds an attendee with Full Name only (201; Company/Cluster/Employee ID/Email optional)', $r['status'] === 201
+        && array_intersect_key($opA, array_flip(['company', 'department', 'email', 'externalIdentifier'])) === ['company' => null, 'department' => null, 'email' => null, 'externalIdentifier' => null], $r['raw']);
+    $opCode = (string) ($r['body']['data']['attendee']['attendeeCode'] ?? '');
+    check('Codes are sequential and never reused', $opCode === Attendee::formatCode($maxBefore + 2), $opCode);
+    $r = $addAttendee($staff, ['full_name' => "Staff Added {$stamp}"]);
+    check('Registration Staff cannot add attendees (403)', $r['status'] === 403);
+    check('Scanner Operator cannot add attendees (403)', $addAttendee($sc1, ['full_name' => "Scanner Added {$stamp}"])['status'] === 403);
+    $r = $addAttendee($admin, ['full_name' => '   ', 'company' => 'X']);
+    check('Full Name required (422 with field error)', $r['status'] === 422 && isset($r['body']['error']['details']['fields']['full_name']));
+    check('Invalid email rejected (422)', $addAttendee($admin, ['full_name' => "Bad Email {$stamp}", 'email' => 'not-an-email'])['status'] === 422);
+
+    $r = $addAttendee($admin, ['full_name' => "Someone Else {$stamp}", 'external_identifier' => "emp-{$stamp}"]);
+    check('Duplicate Employee ID -> 409 "An attendee with this Employee ID already exists."', $r['status'] === 409
+        && str_starts_with($r['body']['error']['message'] ?? '', 'An attendee with this Employee ID already exists.')
+        && isset($r['body']['error']['details']['fields']['external_identifier']), $r['raw']);
+    $r = $addAttendee($operator, ['full_name' => "Someone Else {$stamp}", 'email' => "MANUAL-{$stamp}@example.invalid"]);
+    check('Duplicate email (any case) -> 409 "An attendee with this email already exists."', $r['status'] === 409
+        && str_starts_with($r['body']['error']['message'] ?? '', 'An attendee with this email already exists.'), $r['raw']);
+    $r = $addAttendee($admin, ['full_name' => "manual person   {$stamp}", 'company' => ' MANUAL CO', 'department' => 'north luzon']);
+    check('Exact Full Name + Company + Cluster duplicate -> 409 (case/space-insensitive)', $r['status'] === 409 && ($r['body']['error']['code'] ?? '') === 'DUPLICATE_ATTENDEE', $r['raw']);
+    $r = $addAttendee($admin, ['full_name' => "Juan {$stamp}", 'company' => "Café Ñiño {$stamp}", 'department' => 'Visayas']);
+    check('Duplicate of an imported attendee (name + company + cluster) -> 409', $r['status'] === 409);
+    $r = $addAttendee($admin, ['full_name' => "Manual Person {$stamp}", 'company' => 'Other Co', 'department' => 'South Luzon']);
+    check('Same name in a different Company/Cluster is allowed (201)', $r['status'] === 201, $r['raw']);
+    $r = $addAttendee($operator, ['full_name' => "Juan {$stamp}", 'company' => "Café Ñiño {$stamp}", 'department' => 'Mindanao']);
+    check('Same name + company in a different Cluster is allowed (201)', $r['status'] === 201, $r['raw']);
+    Attendee::setStatus((int) ($r['body']['data']['attendee']['id'] ?? 0), Attendee::STATUS_ARCHIVED);
+    $r = $addAttendee($admin, ['full_name' => "Juan {$stamp}", 'company' => "Café Ñiño {$stamp}", 'department' => 'Mindanao']);
+    check('Duplicate of an ARCHIVED attendee is also blocked (409, says archived)', $r['status'] === 409 && str_contains($r['body']['error']['message'] ?? '', 'archived'), $r['raw']);
+    check('No attendee was created by any rejected request', (int) $pdo->query("SELECT COUNT(*) FROM attendees WHERE event_id = {$eventId} AND full_name IN ('Someone Else {$stamp}', 'Staff Added {$stamp}', 'Scanner Added {$stamp}', 'Bad Email {$stamp}')")->fetchColumn() === 0);
+
+    $q = $operator->request('GET', "/attendees/{$mId}/qr");
+    check('Event Operator can view the new QR (200)', $q['status'] === 200 && ($q['body']['data']['qr']['qrPayload'] ?? null) === $mQr['qrPayload'], $q['raw']);
+    check('Event Operator can load the print sheet for it (200)', ($operator->request('GET', "/qr-codes/print?ids={$mId}")['body']['data']['items'][0]['id'] ?? 0) === $mId);
+    check('Event Operator cannot print the whole QR list (403)', $operator->request('GET', '/qr-codes/print')['status'] === 403);
+    check('Event Operator cannot list QR codes (403)', $operator->request('GET', '/qr-codes')['status'] === 403);
+    check('Event Operator still cannot regenerate QR (403)', $operator->request('POST', "/attendees/{$mId}/qr/regenerate")['status'] === 403);
+    $scanned = $scan($sc1, (string) $mQr['qrPayload']);
+    check('Scanning the new QR payload (as the keyboard-wedge scanner sends it) registers on Day 2', ($scanned['body']['data']['status'] ?? null) === 'registered', $scanned['raw']);
+    check('Scan result shows Company and Cluster', ($scanned['body']['data']['attendee']['company'] ?? '') === 'Manual Co');
+    check('After the scan: in the Day 2 Minor AND Major pools (source registration)', in_array($m['attendeeCode'], $poolCodes('minor'), true) && in_array($m['attendeeCode'], $poolCodes('major'), true));
+    $minorWins = [];
+    while (($d = $draw($operator, 'minor'))['status'] === 201 || $d['status'] === 200) {
+        $minorWins[] = $d['body']['data']['winner']['attendeeCode'] ?? '';
+        if (count($minorWins) > 10) { break; }
+    }
+    check('Minor: the new attendee wins exactly once, then leaves the Minor pool', count(array_keys($minorWins, $m['attendeeCode'], true)) === 1 && !in_array($m['attendeeCode'], $poolCodes('minor'), true), $minorWins);
+    check('Minor win does not remove them from the Major pool', in_array($m['attendeeCode'], $poolCodes('major'), true));
+    $majorWins = [];
+    while (($d = $draw($operator, 'major'))['status'] === 201 || $d['status'] === 200) {
+        $majorWins[] = $d['body']['data']['winner']['attendeeCode'] ?? '';
+        if (count($majorWins) > 10) { break; }
+    }
+    check('Major: the new attendee also wins Major once (independent randomizers)', count(array_keys($majorWins, $m['attendeeCode'], true)) === 1, $majorWins);
+    $x1 = $sheet($admin, "/reports/day-attendees.xlsx?day_id={$day1}");
+    $x2 = $sheet($admin, "/reports/day-attendees.xlsx?day_id={$day2}");
+    $mRow1 = array_column($x1['rows'], null, 'Attendee Code')[$m['attendeeCode']] ?? [];
+    $mRow2 = array_column($x2['rows'], null, 'Attendee Code')[$m['attendeeCode']] ?? [];
+    check('Day 1 Attendees.xlsx lists the new attendee as Not registered (Day 2 scan does not register Day 1)', ($mRow1['Registration Status'] ?? '') === 'Not registered', $mRow1);
+    check('Day 2 Attendees.xlsx: Registered, with Company, Cluster, Employee ID, Email', ($mRow2['Registration Status'] ?? '') === 'Registered'
+        && ($mRow2['Company'] ?? '') === 'Manual Co' && ($mRow2['Cluster'] ?? '') === 'North Luzon' && ($mRow2['Employee ID'] ?? '') === "EMP-{$stamp}"
+        && ($mRow2['Email'] ?? '') === "manual-{$stamp}@example.invalid" && ($mRow2['Registered At'] ?? '') !== '', $mRow2);
+    check('Day attendee exports still have no QR tokens', !str_contains($x1['raw'] . $x2['raw'], $mToken));
+    $list = array_column($operator->data('GET', '/attendees?search=' . urlencode("Manual Person {$stamp}"))['items'] ?? [], null, 'attendeeCode');
+    check('Attendee list returns the new attendees with Company/Cluster/Employee ID/Email (no token)', isset($list[$m['attendeeCode']])
+        && ($list[$m['attendeeCode']]['externalIdentifier'] ?? '') === "EMP-{$stamp}" && !str_contains(json_encode($list), $mToken));
+
+    section('System Reset endpoint (validation and permissions only - never executed here)');
+    $eventsBefore = (int) $pdo->query('SELECT COUNT(*) FROM events')->fetchColumn();
+    $attendeesBefore = (int) $pdo->query('SELECT COUNT(*) FROM attendees')->fetchColumn();
+    $summary = $admin->request('GET', '/settings/system-reset');
+    check('Admin GET summary (200) with counts and the phrase', $summary['status'] === 200 && ($summary['body']['data']['confirmationPhrase'] ?? '') === 'RESET EVENT DATA'
+        && ($summary['body']['data']['counts']['attendees'] ?? -1) === $attendeesBefore, $summary['raw']);
+    check('GET with reset-looking query string changes nothing', $admin->request('GET', '/settings/system-reset?confirmation=RESET+EVENT+DATA&password=x')['status'] === 200
+        && (int) $pdo->query('SELECT COUNT(*) FROM events')->fetchColumn() === $eventsBefore);
+    foreach (['Event Operator' => $operator, 'Registration Staff' => $staff] as $label => $client) {
+        check("{$label} cannot view the reset page (403)", $client->request('GET', '/settings/system-reset')['status'] === 403);
+        check("{$label} cannot reset even with the right phrase (403)", $client->request('POST', '/settings/system-reset', ['confirmation' => 'RESET EVENT DATA', 'password' => $adminPassword])['status'] === 403);
+    }
+    $r = $admin->request('POST', '/settings/system-reset', ['confirmation' => 'reset event data', 'password' => $adminPassword]);
+    check('Wrong phrase (lower case) -> 422 on confirmation', $r['status'] === 422 && isset($r['body']['error']['details']['fields']['confirmation']), $r['raw']);
+    $r = $admin->request('POST', '/settings/system-reset', ['confirmation' => 'RESET EVENT DATA', 'password' => $adminPassword . '-wrong']);
+    check('Right phrase + wrong password -> 422 on password', $r['status'] === 422 && isset($r['body']['error']['details']['fields']['password'])
+        && !isset($r['body']['error']['details']['fields']['confirmation']), $r['raw']);
+    check('Missing password -> 422', $admin->request('POST', '/settings/system-reset', ['confirmation' => 'RESET EVENT DATA'])['status'] === 422);
+    $savedCsrf = $admin->swapCsrf(null);
+    $r = $admin->request('POST', '/settings/system-reset', ['confirmation' => 'RESET EVENT DATA', 'password' => $adminPassword]);
+    $admin->swapCsrf($savedCsrf);
+    check('POST without the CSRF token is rejected (403/419)', in_array($r['status'], [403, 419], true), (string) $r['status']);
+    check('Refused attempts deleted nothing', (int) $pdo->query('SELECT COUNT(*) FROM events')->fetchColumn() === $eventsBefore
+        && (int) $pdo->query('SELECT COUNT(*) FROM attendees')->fetchColumn() === $attendeesBefore);
+    check('Refused attempts are audited (system.reset_refused)', (int) $pdo->query("SELECT COUNT(*) FROM audit_logs WHERE action = 'system.reset_refused' AND created_at >= NOW() - INTERVAL 5 MINUTE")->fetchColumn() >= 3);
+    check('Reset errors never echo SQL details', !preg_match('/SQLSTATE|PDO|DELETE FROM/i', $r['raw'] . $summary['raw']));
 
     section('Password reset and disable sign-out');
     check('Scanner 1 session active before reset', $sc1->request('GET', '/registration/summary')['status'] === 200);

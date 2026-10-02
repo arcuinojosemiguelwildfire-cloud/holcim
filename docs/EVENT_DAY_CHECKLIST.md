@@ -4,6 +4,7 @@
 - [ ] Production URL opens over **HTTPS** (padlock shown) and you can sign in.
 - [ ] `php backend/cli/check-readiness.php` → "No blocking problems found."
 - [ ] Database backup taken.
+- [ ] If this server was used for testing: Settings › **System Reset** (type `RESET EVENT DATA` + your password) **once, before** setting up the real event. Then recreate staff / event operator / scanner operator accounts. Never use it during or after the event.
 - [ ] Events page: the correct event is **Active**.
 - [ ] Events › **Days**: every event day is listed with the right date (Day 1, Day 2, …).
 - [ ] Settings › **Scanner Operators**: one enabled account per scanning device/person; each one can sign in with its username.
@@ -30,6 +31,9 @@
 - [ ] Use **Attendee lookup** on the scanner page to check whether someone is registered today.
 - [ ] Recent Scans: **My Scans** / **All Scans** and the result filter help find problem scans.
 
+## Walk-ins not on the list
+- [ ] Attendees › **Add attendee** (admin or event operator): Full Name required; Company, Cluster, Employee ID, Email optional. Print or download the QR from the success screen, then **scan it** at registration — adding a person does not register them or make them raffle eligible.
+
 ## During event (manual participants)
 - [ ] Attendee present but could not be scanned (lost QR, etc.) and should join today's draw: Minor/Major Randomizer › **+ Add Participant** → search → reason → add. This does **not** register them.
 - [ ] Check **Today's participants** (Source: Registration / Manual) before the draw.
@@ -51,9 +55,11 @@
 ## After each day (do NOT delete or reset records)
 - [ ] **Reports** › Excel lists: download **Day N Attendees.xlsx** and **Winners.xlsx**; CSVs ("Day N only") if needed.
 - [ ] Database backup taken.
+- [ ] If this server was used for testing: Settings › **System Reset** (type `RESET EVENT DATA` + your password) **once, before** setting up the real event. Then recreate staff / event operator / scanner operator accounts. Never use it during or after the event.
 - [ ] Do **not** delete, archive or re-import anything to "clear" the day. The next day starts empty automatically when an admin sets it as the current day.
 
 ## After the event
 - [ ] **Reports**: download **Winners.xlsx** (all days) and every **Day N Attendees.xlsx**; "All days" CSVs if needed.
 - [ ] Database backup taken.
+- [ ] If this server was used for testing: Settings › **System Reset** (type `RESET EVENT DATA` + your password) **once, before** setting up the real event. Then recreate staff / event operator / scanner operator accounts. Never use it during or after the event.
 - [ ] Disable scanner operator accounts that are no longer needed (Settings › Scanner Operators).

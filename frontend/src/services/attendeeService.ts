@@ -1,4 +1,6 @@
+import type { AttendeeQr } from '../types/qr'
 import type {
+  AttendeeCreateInput,
   AttendeeDetail,
   AttendeeListQuery,
   AttendeeListResponse,
@@ -32,6 +34,11 @@ export const attendeeService = {
 
   async get(id: number): Promise<AttendeeDetail> {
     return (await apiClient.get<{ attendee: AttendeeDetail }>(`/attendees/${id}`)).attendee
+  },
+
+  /** Manual Add Attendee (admin / event operator): creates the attendee and their QR. */
+  create(input: AttendeeCreateInput): Promise<{ attendee: AttendeeDetail; qr: AttendeeQr }> {
+    return apiClient.post<{ attendee: AttendeeDetail; qr: AttendeeQr }>('/attendees', input)
   },
 
   async update(id: number, input: AttendeeUpdateInput): Promise<AttendeeDetail> {

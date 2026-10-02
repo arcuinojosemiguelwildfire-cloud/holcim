@@ -7,7 +7,9 @@ namespace App\Controllers;
 use App\Core\HttpException;
 use App\Core\Request;
 use App\Core\Response;
+use App\Models\User;
 use App\Services\AttendeeService;
+use App\Services\AuthService;
 use App\Services\QrCodeService;
 use App\Utils\Validator;
 
@@ -55,6 +57,10 @@ final class QrCodeController
                 throw HttpException::badRequest('Too many attendees selected.');
             }
             $ids = array_values(array_unique(array_map('intval', array_filter($parts, 'ctype_digit'))));
+        }
+        // Event operators may only print specific attendees (e.g. one they just added), not the whole list.
+        if ((AuthService::currentUser()['role'] ?? '') === User::ROLE_EVENT_OPERATOR && ($ids === null || count($ids) > 50)) {
+            throw HttpException::forbidden('Event operators can print QR cards for selected attendees only.');
         }
 
         return Response::success(QrCodeService::printData($ids));
