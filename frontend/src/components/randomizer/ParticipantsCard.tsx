@@ -9,7 +9,6 @@ import { formatTime } from '../../utils/format'
 
 const SOURCES: Record<ParticipantSource, { label: string; tone: BadgeTone }> = {
   registration: { label: 'Registration', tone: 'brand' },
-  import: { label: 'Import', tone: 'neutral' },
   manual: { label: 'Manual', tone: 'warning' },
 }
 
@@ -50,7 +49,7 @@ export function ParticipantsCard({ type, refreshKey }: { type: RandomizerType; r
     <Card className="overflow-hidden">
       <CardHeader
         title="Today’s participants"
-        description={data ? `${data.eventDay.displayName} · ${data.eligibleCount} eligible` : 'Eligible pool for the current event day'}
+        description={data ? `${data.eventDay.displayName} · ${data.eligibleCount} in the draw pool (today's winners of this draw are not listed)` : 'Draw pool for the current event day'}
         actions={
           <input
             type="search"
@@ -72,7 +71,8 @@ export function ParticipantsCard({ type, refreshKey }: { type: RandomizerType; r
               <tr>
                 <th scope="col" className="px-5 py-3">Code</th>
                 <th scope="col" className="px-5 py-3">Name</th>
-                <th scope="col" className="px-5 py-3">Department</th>
+                <th scope="col" className="px-5 py-3">Company</th>
+                <th scope="col" className="px-5 py-3">Cluster</th>
                 <th scope="col" className="px-5 py-3">Source</th>
                 <th scope="col" className="px-5 py-3">Added</th>
               </tr>
@@ -82,6 +82,7 @@ export function ParticipantsCard({ type, refreshKey }: { type: RandomizerType; r
                 <tr key={`${row.id}-${row.source}`}>
                   <td className="whitespace-nowrap px-5 py-2.5 font-mono text-xs text-slate-700">{row.attendeeCode}</td>
                   <td className="px-5 py-2.5 font-medium text-slate-900">{row.fullName}</td>
+                  <td className="px-5 py-2.5 text-slate-600">{row.company ?? '—'}</td>
                   <td className="px-5 py-2.5 text-slate-600">{row.department ?? '—'}</td>
                   <td className="px-5 py-2.5">
                     <Badge tone={SOURCES[row.source].tone}>{SOURCES[row.source].label}</Badge>

@@ -7,11 +7,19 @@ namespace App\Models;
 use App\Core\Database;
 
 /**
- * Day-specific eligible pools (read-only) and the randomizer_draws history.
+ * Day-specific draw pools (read-only) and the randomizer_draws history.
  *
- * Phase 8 pools, always for ONE event day and ACTIVE attendees only:
- *   minor = registered that day  UNION  manually added to that day's Minor pool
- *   major = major_eligibility rows of that day (imported or manually added)
+ * Phase 9.2 rules, always for ONE event day and ACTIVE attendees only:
+ *   base pool (type)  = registered that day (registration_scans)
+ *                       UNION manual additions for that type and day
+ *                       (minor: minor_manual_entries; major: major_eligibility
+ *                       rows with source = 'manual')
+ *   draw pool (type)  = base pool MINUS attendees with a valid (not void)
+ *                       draw of the same type on the same day
+ * Registration is the single source of eligibility for BOTH raffles. A
+ * Minor win excludes from Minor only; a Major win from Major only. Voiding a
+ * draw returns the attendee to that pool. Imported Major rows from earlier
+ * phases (source = 'import') are kept as history but no longer count.
  */
 final class RandomizerDraw
 {
@@ -19,54 +27,88 @@ final class RandomizerDraw
     public const TYPE_MAJOR = 'major';
     public const TYPES = [self::TYPE_MINOR, self::TYPE_MAJOR];
 
-    /** Active attendees in the day's Minor pool (:d1, :d2 = day id). */
-    private const MINOR_FROM = "FROM (
-            SELECT attendee_id FROM registration_scans WHERE event_day_id = :d1
-            UNION
-            SELECT attendee_id FROM minor_manual_entries WHERE event_day_id = :d2
-        ) p
-        JOIN attendees a ON a.id = p.attendee_id
-        WHERE a.status = 'active'";
+    /** Attendee ids of a type's manual additions for day :d2. */
+    private const MANUAL_SQL = [
+        self::TYPE_MINOR => 'SELECT attendee_id FROM minor_manual_entries WHERE event_day_id = :d2',
+        self::TYPE_MAJOR => "SELECT attendee_id FROM major_eligibility WHERE event_day_id = :d2 AND source = 'manual'",
+    ];
 
-    /** Active attendees in the day's Major pool (:d1 = day id). */
-    private const MAJOR_FROM = "FROM major_eligibility m
-        JOIN attendees a ON a.id = m.attendee_id AND a.event_id = m.event_id
-        WHERE m.event_day_id = :d1 AND a.status = 'active'";
+    /**
+     * FROM/WHERE fragment for the draw pool of $type (alias `a` = attendee).
+     * Params: d1, d2, d3 = day id, wtype = type.
+     */
+    private static function poolFrom(string $type): string
+    {
+        return 'FROM (
+                SELECT attendee_id FROM registration_scans WHERE event_day_id = :d1
+                UNION ' . self::MANUAL_SQL[self::normalise($type)] . '
+            ) p
+            JOIN attendees a ON a.id = p.attendee_id
+            WHERE a.status = \'active\'
+              AND NOT EXISTS (
+                SELECT 1 FROM randomizer_draws w
+                WHERE w.event_day_id = :d3 AND w.randomizer_type = :wtype
+                  AND w.attendee_id = a.id AND w.voided_at IS NULL
+              )';
+    }
 
+    /** @return array<string, int|string> */
+    private static function poolParams(int $dayId, string $type): array
+    {
+        return ['d1' => $dayId, 'd2' => $dayId, 'd3' => $dayId, 'wtype' => self::normalise($type)];
+    }
+
+    private static function normalise(string $type): string
+    {
+        return $type === self::TYPE_MAJOR ? self::TYPE_MAJOR : self::TYPE_MINOR;
+    }
+
+    /** Size of the current draw pool (winners of this type today excluded). */
     public static function countEligible(int $dayId, string $type): int
     {
-        $statement = Database::connection()->prepare('SELECT COUNT(*) ' . self::fromFor($type));
-        $statement->execute(self::dayParams($dayId, $type));
+        $statement = Database::connection()->prepare('SELECT COUNT(*) ' . self::poolFrom($type));
+        $statement->execute(self::poolParams($dayId, $type));
 
         return (int) $statement->fetchColumn();
     }
 
-    /** @return list<int> attendee IDs of the day's eligible pool for $type */
+    /** @return list<int> attendee IDs of the current draw pool for $type */
     public static function eligibleIds(int $dayId, string $type): array
     {
-        $statement = Database::connection()->prepare('SELECT a.id ' . self::fromFor($type) . ' ORDER BY a.id');
-        $statement->execute(self::dayParams($dayId, $type));
+        $statement = Database::connection()->prepare('SELECT a.id ' . self::poolFrom($type) . ' ORDER BY a.id');
+        $statement->execute(self::poolParams($dayId, $type));
 
         return array_map('intval', $statement->fetchAll(\PDO::FETCH_COLUMN));
     }
 
-    public static function isEligible(int $dayId, string $type, int $attendeeId): bool
+    /** Registered today, or already manually added to this type's pool today. */
+    public static function inBasePool(int $dayId, string $type, int $attendeeId): bool
     {
-        $statement = Database::connection()->prepare('SELECT COUNT(*) ' . self::fromFor($type) . ' AND a.id = :attendee_id');
-        $statement->execute(self::dayParams($dayId, $type) + ['attendee_id' => $attendeeId]);
+        $statement = Database::connection()->prepare(
+            'SELECT (EXISTS (SELECT 1 FROM registration_scans WHERE event_day_id = :d1 AND attendee_id = :a1)
+                 OR EXISTS (SELECT 1 FROM (' . self::MANUAL_SQL[self::normalise($type)] . ') m WHERE m.attendee_id = :a2))'
+        );
+        $statement->execute(['d1' => $dayId, 'd2' => $dayId, 'a1' => $attendeeId, 'a2' => $attendeeId]);
+
+        return (bool) $statement->fetchColumn();
+    }
+
+    /** Has a valid (not void) draw of $type today. */
+    public static function hasValidWin(int $dayId, string $type, int $attendeeId): bool
+    {
+        $statement = Database::connection()->prepare(
+            'SELECT COUNT(*) FROM randomizer_draws
+             WHERE event_day_id = :day_id AND randomizer_type = :type AND attendee_id = :attendee_id AND voided_at IS NULL'
+        );
+        $statement->execute(['day_id' => $dayId, 'type' => self::normalise($type), 'attendee_id' => $attendeeId]);
 
         return (int) $statement->fetchColumn() > 0;
     }
 
-    private static function fromFor(string $type): string
+    /** Serialises draws of one event day (call inside a transaction). */
+    public static function lockDay(int $dayId): void
     {
-        return $type === self::TYPE_MAJOR ? self::MAJOR_FROM : self::MINOR_FROM;
-    }
-
-    /** @return array<string, int> */
-    private static function dayParams(int $dayId, string $type): array
-    {
-        return $type === self::TYPE_MAJOR ? ['d1' => $dayId] : ['d1' => $dayId, 'd2' => $dayId];
+        Database::connection()->prepare('SELECT id FROM event_days WHERE id = :id FOR UPDATE')->execute(['id' => $dayId]);
     }
 
     /**
@@ -79,7 +121,7 @@ final class RandomizerDraw
             return [];
         }
         $statement = Database::connection()->prepare(
-            'SELECT id, attendee_code, full_name, department FROM attendees WHERE id IN ('
+            'SELECT id, attendee_code, full_name, company, department FROM attendees WHERE id IN ('
             . implode(',', array_fill(0, count($attendeeIds), '?')) . ')'
         );
         $statement->execute($attendeeIds);
@@ -111,7 +153,7 @@ final class RandomizerDraw
     {
         $limit = max(1, min(50, $limit));
         $statement = Database::connection()->prepare(
-            "SELECT d.id, d.selected_at, d.voided_at, d.void_reason, a.attendee_code, a.full_name, a.department,
+            "SELECT d.id, d.selected_at, d.voided_at, d.void_reason, a.attendee_code, a.full_name, a.company, a.department,
                     u.name AS drawn_by_name, v.name AS voided_by_name
              FROM randomizer_draws d
              JOIN attendees a ON a.id = d.attendee_id
@@ -160,7 +202,7 @@ final class RandomizerDraw
     public static function allForEvent(int $eventId, ?int $dayId = null): array
     {
         $sql = 'SELECT d.id, d.randomizer_type, d.selected_at, d.voided_at, d.void_reason,
-                    a.attendee_code, a.full_name, a.department, u.name AS drawn_by_name, v.name AS voided_by_name,
+                    a.attendee_code, a.full_name, a.company, a.department, u.name AS drawn_by_name, v.name AS voided_by_name,
                     ed.day_number, ed.event_date AS day_date
              FROM randomizer_draws d
              JOIN event_days ed ON ed.id = d.event_day_id

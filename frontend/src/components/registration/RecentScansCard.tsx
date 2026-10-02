@@ -107,7 +107,7 @@ export function RecentScansCard({ refreshKey }: RecentScansCardProps) {
                   <span className="block truncate font-medium text-slate-900">{row.fullName ?? 'Unknown QR'}</span>
                   <span className="block truncate text-xs text-slate-500">
                     {row.attendeeCode && <span className="font-mono">{row.attendeeCode}</span>}
-                    {row.department && ` · ${row.department}`}
+                    {row.company && ` · ${row.company}`}{row.department && ` · ${row.department}`}
                     {view === 'all' && row.scannedBy && ` · by ${row.scannedBy}`}
                   </span>
                 </span>

@@ -67,7 +67,7 @@ final class ScanLog
         $count->execute($params);
 
         $statement = $pdo->prepare(
-            "SELECT l.id, l.result, l.scanned_at, a.attendee_code, a.full_name, a.department, u.name AS scanned_by
+            "SELECT l.id, l.result, l.scanned_at, a.attendee_code, a.full_name, a.company, a.department, u.name AS scanned_by
              FROM scan_logs l
              LEFT JOIN attendees a ON a.id = l.attendee_id
              LEFT JOIN users u ON u.id = l.user_id

@@ -69,6 +69,7 @@ final class AttendeeService
 
         $data['email'] = isset($data['email']) && $data['email'] !== '' ? mb_strtolower((string) $data['email']) : null;
         $data['department'] = isset($data['department']) && $data['department'] !== '' ? $data['department'] : null;
+        $data['company'] = isset($data['company']) && $data['company'] !== '' ? $data['company'] : null;
         $data['external_identifier'] = isset($data['external_identifier']) && $data['external_identifier'] !== '' ? $data['external_identifier'] : null;
 
         if ($data['external_identifier'] !== null && Attendee::externalIdentifierTaken($eventId, $data['external_identifier'], $id)) {
@@ -79,7 +80,7 @@ final class AttendeeService
         $after = self::findOrFail($id);
 
         $changes = [];
-        foreach (['full_name', 'department', 'email', 'external_identifier'] as $field) {
+        foreach (['full_name', 'company', 'department', 'email', 'external_identifier'] as $field) {
             if ($before[$field] !== $after[$field]) {
                 $changes[$field] = ['from' => $before[$field], 'to' => $after[$field]];
             }

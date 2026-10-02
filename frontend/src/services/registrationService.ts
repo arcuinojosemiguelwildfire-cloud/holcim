@@ -17,7 +17,7 @@ export interface ScanCounts {
 export interface ScanSuccess {
   status: 'registered' | 'already_registered'
   eventDay: EventDay
-  attendee: { code: string; fullName: string; department: string | null }
+  attendee: { code: string; fullName: string; company: string | null; department: string | null }
   registeredAt: string | null
   registeredBy: string | null
   minorEligible: boolean
@@ -29,6 +29,7 @@ export interface RecentRegistration {
   registeredAt: string
   attendeeCode: string
   fullName: string
+  company: string | null
   department: string | null
   scannedBy: string | null
 }
@@ -51,6 +52,7 @@ export interface ScanLogRow {
   scannedAt: string
   attendeeCode: string | null
   fullName: string | null
+  company: string | null
   department: string | null
   scannedBy: string | null
 }
@@ -66,6 +68,7 @@ export interface ScanLogPage {
 export interface AttendeeStatusRow {
   attendeeCode: string
   fullName: string
+  company: string | null
   department: string | null
   attendeeStatus: 'active' | 'archived'
   registeredToday: boolean

@@ -7,10 +7,9 @@
 - [ ] Events page: the correct event is **Active**.
 - [ ] Events › **Days**: every event day is listed with the right date (Day 1, Day 2, …).
 - [ ] Settings › **Scanner Operators**: one enabled account per scanning device/person; each one can sign in with its username.
-- [ ] Attendees imported (Attendees › Import attendees); review invalid/duplicate rows.
+- [ ] Attendees imported (Attendees › Import attendees). For the client's workbook, the `External Attendees` sheet is detected automatically (Name 1 = Company, Cluster = location, one attendee per Attendee column); review invalid/duplicate rows.
 - [ ] QR / ID Generator: **Generate missing QR codes** → QR missing = 0 (no "Do not print" warning shown).
 - [ ] Print labels (Print all, 100% / actual size). **Scan one printed label** on the Registration page.
-- [ ] `MAJOR_FORM_URL` set; open **Major QR**, scan it with a phone → the client's form opens.
 - [ ] Registration: each USB/Bluetooth QR scanner is connected, sends Enter after the code, and a test scan of a printed label shows "Registration Successful".
 - [ ] Minor and Major Randomizer: test draw, **Void draw** it, test fullscreen on the LED/projector laptop.
   (Test draws stay in history as VOID; that is expected.)
@@ -33,29 +32,28 @@
 
 ## During event (manual participants)
 - [ ] Attendee present but could not be scanned (lost QR, etc.) and should join today's draw: Minor/Major Randomizer › **+ Add Participant** → search → reason → add. This does **not** register them.
-- [ ] Check **Today's participants** (Source: Registration / Import / Manual) before the draw.
+- [ ] Check **Today's participants** (Source: Registration / Manual) before the draw.
 
 ## Minor draw
 - [ ] Open **Minor Randomizer** → **Enter fullscreen** (Space/Enter draws, Esc exits).
 - [ ] Draw, confirm the winner is present.
 - [ ] Not present? **Void draw** (reason e.g. "Winner not present") → **Next draw**.
 
-## Major eligibility
-- [ ] Show **Major QR** on the LED screen (fullscreen); attendees complete the client's form.
-- [ ] When the form closes: export the Google Sheet (File › Download › CSV or .xlsx).
-- [ ] **Major Eligibility › Import responses** → map columns → review matched / ambiguous / unmatched → import.
-- [ ] Confirm the Major Eligible count (dashboard / Major Eligibility page).
+## Raffle eligibility (no Major QR, form or import)
+- [ ] Registration is all that is needed: everyone scanned **today** is in both the Minor and the Major pool.
+- [ ] A Minor winner leaves the Minor pool but stays in the Major pool (and vice versa). Voiding a draw puts the person back in that pool.
+- [ ] Check the eligible counts on the Minor / Major Randomizer pages before each draw.
 
 ## Major draw
 - [ ] Open **Major Randomizer** → **Enter fullscreen**.
 - [ ] Draw, confirm the winner; **Void draw** if necessary and draw again.
 
 ## After each day (do NOT delete or reset records)
-- [ ] **Reports** › "Day N only": download Registration, Major eligibility and Draw winners CSVs.
+- [ ] **Reports** › Excel lists: download **Day N Attendees.xlsx** and **Winners.xlsx**; CSVs ("Day N only") if needed.
 - [ ] Database backup taken.
 - [ ] Do **not** delete, archive or re-import anything to "clear" the day. The next day starts empty automatically when an admin sets it as the current day.
 
 ## After the event
-- [ ] **Reports** › "All days": download the three CSVs (Event Day column on every row).
+- [ ] **Reports**: download **Winners.xlsx** (all days) and every **Day N Attendees.xlsx**; "All days" CSVs if needed.
 - [ ] Database backup taken.
 - [ ] Disable scanner operator accounts that are no longer needed (Settings › Scanner Operators).

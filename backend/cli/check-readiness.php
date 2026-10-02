@@ -44,10 +44,6 @@ if ($appUrl === '') {
 $secure = (bool) Config::get('session.secure');
 $add($secure ? 'OK' : ($production ? 'FAIL' : 'WARN'), 'SESSION_SECURE_COOKIE', $secure ? 'true' : 'false (must be true on HTTPS)');
 
-$form = trim((string) Config::get('app.major_form_url', ''));
-$validForm = $form !== '' && filter_var($form, FILTER_VALIDATE_URL) !== false && preg_match('#^https?://#i', $form);
-$add($validForm ? 'OK' : 'WARN', 'MAJOR_FORM_URL', $validForm ? (string) parse_url($form, PHP_URL_HOST) . ' (configured)' : 'not set or invalid - /major-form shows "not available yet"');
-
 foreach (['zip' => 'XLSX imports', 'mbstring' => 'text handling', 'pdo_mysql' => 'database', 'simplexml' => 'XLSX imports'] as $ext => $why) {
     $add(extension_loaded($ext) ? 'OK' : 'FAIL', "PHP extension {$ext}", extension_loaded($ext) ? '' : "missing ({$why})");
 }

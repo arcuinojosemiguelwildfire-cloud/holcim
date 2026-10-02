@@ -24,7 +24,8 @@ const PREVIEW_ROWS = 8
 
 const FIELD_INFO: Record<ImportField, { label: string; required: boolean; hint: string }> = {
   full_name: { label: 'Full Name', required: true, hint: 'Required' },
-  department: { label: 'Department', required: false, hint: 'Optional' },
+  company: { label: 'Company', required: false, hint: 'Optional ("Name 1" in External Attendees)' },
+  department: { label: 'Cluster', required: false, hint: 'Optional (location / region)' },
   email: { label: 'Email', required: false, hint: 'Optional' },
   external_identifier: { label: 'Employee ID / External ID', required: false, hint: 'Optional' },
 }
@@ -32,7 +33,7 @@ const FIELD_INFO: Record<ImportField, { label: string; required: boolean; hint: 
 const MATCH_LABELS: Record<DuplicateRow['matchedBy'], string> = {
   external_identifier: 'same Employee ID / External ID',
   email: 'same email',
-  name_department: 'same name and department',
+  name_department: 'same name, company and cluster',
 }
 
 type Step = 'upload' | 'map' | 'review' | 'done'
@@ -187,7 +188,11 @@ export function AttendeeImportPage() {
           <Card>
             <CardHeader
               title={parsed.filename}
-              description={`${parsed.fileType.toUpperCase()} · ${formatNumber(parsed.totalRows)} data rows · ${parsed.headers.length} columns`}
+              description={
+                parsed.layout === 'external_attendees'
+                  ? `Sheet "${parsed.sheet ?? 'External Attendees'}" · ${formatNumber(parsed.sourceRows ?? 0)} company rows · ${parsed.attendeeColumns ?? 0} Attendee columns → ${formatNumber(parsed.totalRows)} attendees (Name 1 = Company, Cluster = location; Name 1 is not an attendee)`
+                  : `${parsed.fileType.toUpperCase()}${parsed.sheet ? ` · sheet "${parsed.sheet}"` : ''} · ${formatNumber(parsed.totalRows)} data rows · ${parsed.headers.length} columns`
+              }
               actions={<Button variant="secondary" size="sm" onClick={reset}>Choose a different file</Button>}
             />
             <div className="px-5 py-4">
@@ -314,8 +319,8 @@ function PreviewTable({ parsed }: { parsed: ParsedFile }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {parsed.rows.slice(0, PREVIEW_ROWS).map((row) => (
-              <tr key={row.rowNumber}>
+            {parsed.rows.slice(0, PREVIEW_ROWS).map((row, index) => (
+              <tr key={`${row.rowNumber}-${index}`}>
                 <td className="px-5 py-2 tabular-nums text-slate-400">{row.rowNumber}</td>
                 {row.cells.map((cell, i) => (
                   <td key={i} className="max-w-56 truncate whitespace-nowrap px-3 py-2 text-slate-700">{cell}</td>
@@ -375,12 +380,13 @@ function ReviewStep({ preview, filename, busy, onBack, onCancel, onImport }: Rev
 
       {invalid.length > 0 && (
         <RowSection title={`Invalid rows (${formatNumber(invalid.length)})`} description="These rows will not be imported.">
-          <thead><tr><Th>Row</Th><Th>Full name</Th><Th>Department</Th><Th>Email</Th><Th>Reason</Th></tr></thead>
+          <thead><tr><Th>Row</Th><Th>Full name</Th><Th>Company</Th><Th>Cluster</Th><Th>Email</Th><Th>Reason</Th></tr></thead>
           <tbody className="divide-y divide-slate-100">
-            {invalid.map((row) => (
-              <tr key={row.rowNumber}>
+            {invalid.map((row, index) => (
+              <tr key={`${row.rowNumber}-${index}`}>
                 <Td mono>{row.rowNumber}</Td>
                 <Td>{row.fullName || <Empty />}</Td>
+                <Td>{row.company || <Empty />}</Td>
                 <Td>{row.department || <Empty />}</Td>
                 <Td>{row.email || '—'}</Td>
                 <td className="px-5 py-2 text-red-700">{row.reasons.join(' ')}</td>
@@ -392,12 +398,13 @@ function ReviewStep({ preview, filename, busy, onBack, onCancel, onImport }: Rev
 
       {duplicates.length > 0 && (
         <RowSection title={`Duplicate candidates (${formatNumber(duplicates.length)})`} description="These rows will be skipped.">
-          <thead><tr><Th>Row</Th><Th>Full name</Th><Th>Department</Th><Th>Matches</Th><Th>Because of</Th></tr></thead>
+          <thead><tr><Th>Row</Th><Th>Full name</Th><Th>Company</Th><Th>Cluster</Th><Th>Matches</Th><Th>Because of</Th></tr></thead>
           <tbody className="divide-y divide-slate-100">
-            {duplicates.map((row) => (
-              <tr key={row.rowNumber}>
+            {duplicates.map((row, index) => (
+              <tr key={`${row.rowNumber}-${index}`}>
                 <Td mono>{row.rowNumber}</Td>
                 <Td>{row.fullName}</Td>
+                <Td>{row.company || <Empty />}</Td>
                 <Td>{row.department || <Empty />}</Td>
                 <Td>
                   {row.matches.type === 'existing' ? (
@@ -421,12 +428,13 @@ function ReviewStep({ preview, filename, busy, onBack, onCancel, onImport }: Rev
           title={`New attendees (${formatNumber(summary.valid)})`}
           description={summary.valid > newPreview.length ? `Showing the first ${newPreview.length}.` : undefined}
         >
-          <thead><tr><Th>Row</Th><Th>Full name</Th><Th>Department</Th><Th>Email</Th><Th>External ID</Th></tr></thead>
+          <thead><tr><Th>Row</Th><Th>Full name</Th><Th>Company</Th><Th>Cluster</Th><Th>Email</Th><Th>External ID</Th></tr></thead>
           <tbody className="divide-y divide-slate-100">
-            {newPreview.map((row) => (
-              <tr key={row.rowNumber}>
+            {newPreview.map((row, index) => (
+              <tr key={`${row.rowNumber}-${index}`}>
                 <Td mono>{row.rowNumber}</Td>
                 <Td>{row.fullName}</Td>
+                <Td>{row.company || <Empty />}</Td>
                 <Td>{row.department || <Empty />}</Td>
                 <Td>{row.email ?? '—'}</Td>
                 <Td>{row.externalIdentifier ?? '—'}</Td>

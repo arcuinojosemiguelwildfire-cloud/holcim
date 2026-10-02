@@ -8,10 +8,6 @@ import { AttendeesPage } from './pages/AttendeesPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { EventsPage } from './pages/EventsPage'
 import { LoginPage } from './pages/LoginPage'
-import { MajorEligibilityPage } from './pages/MajorEligibilityPage'
-import { MajorFormRedirectPage } from './pages/MajorFormRedirectPage'
-import { MajorImportPage } from './pages/MajorImportPage'
-import { MajorQrPage } from './pages/MajorQrPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { QrGeneratorPage } from './pages/QrGeneratorPage'
 import { QrPrintPage } from './pages/QrPrintPage'
@@ -22,8 +18,6 @@ import { SettingsPage } from './pages/SettingsPage'
 
 const router = createBrowserRouter(
   [
-    // Public: target of the Major QR shown on the LED screen.
-    { path: '/major-form', element: <MajorFormRedirectPage /> },
     {
       element: <GuestOnly />,
       children: [{ path: '/login', element: <LoginPage /> }],
@@ -60,10 +54,7 @@ const router = createBrowserRouter(
               element: <RequireRole roles={RANDOMIZER_ROLES} />,
               children: [
                 { path: 'minor-randomizer', element: <RandomizerPage key="minor" type="minor" /> },
-                { path: 'major-eligibility', element: <MajorEligibilityPage /> },
-                { path: 'major-eligibility/import', element: <MajorImportPage /> },
                 { path: 'major-randomizer', element: <RandomizerPage key="major" type="major" /> },
-                { path: 'major-qr', element: <MajorQrPage /> },
               ],
             },
             {

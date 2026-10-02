@@ -87,6 +87,7 @@ final class RegistrationService
             'attendee' => [
                 'code' => $match['attendee_code'],
                 'fullName' => $match['full_name'],
+                'company' => $match['company'],
                 'department' => $match['department'],
             ],
             'registeredAt' => $registration['scanned_at'] ?? null,
@@ -113,6 +114,7 @@ final class RegistrationService
                 'registeredAt' => $row['scanned_at'],
                 'attendeeCode' => $row['attendee_code'],
                 'fullName' => $row['full_name'],
+                'company' => $row['company'],
                 'department' => $row['department'],
                 'scannedBy' => $row['scanner_name'],
             ], RegistrationScan::recent($dayId, 20)),
@@ -145,6 +147,7 @@ final class RegistrationService
                 'scannedAt' => $row['scanned_at'],
                 'attendeeCode' => $row['attendee_code'],
                 'fullName' => $row['full_name'],
+                'company' => $row['company'],
                 'department' => $row['department'],
                 'scannedBy' => $row['scanned_by'],
             ], $result['items']),
@@ -172,20 +175,21 @@ final class RegistrationService
         if ($search !== '') {
             $like = '%' . addcslashes($search, '%_\\') . '%';
             $statement = Database::connection()->prepare(
-                'SELECT a.attendee_code, a.full_name, a.department, a.status, r.scanned_at, u.name AS scanned_by
+                'SELECT a.attendee_code, a.full_name, a.company, a.department, a.status, r.scanned_at, u.name AS scanned_by
                  FROM attendees a
                  LEFT JOIN registration_scans r ON r.attendee_id = a.id AND r.event_day_id = :day_id
                  LEFT JOIN users u ON u.id = r.scanner_user_id
                  WHERE a.event_id = :event_id
-                   AND (a.attendee_code LIKE :s1 OR a.full_name LIKE :s2 OR a.department LIKE :s3 OR a.email LIKE :s4)
+                   AND (a.attendee_code LIKE :s1 OR a.full_name LIKE :s2 OR a.department LIKE :s3 OR a.email LIKE :s4 OR a.company LIKE :s5)
                  ORDER BY a.full_name, a.attendee_code
                  LIMIT 20'
             );
-            $statement->execute(['day_id' => (int) $day['id'], 'event_id' => (int) $event['id'], 's1' => $like, 's2' => $like, 's3' => $like, 's4' => $like]);
+            $statement->execute(['day_id' => (int) $day['id'], 'event_id' => (int) $event['id'], 's1' => $like, 's2' => $like, 's3' => $like, 's4' => $like, 's5' => $like]);
             foreach ($statement->fetchAll() as $row) {
                 $items[] = [
                     'attendeeCode' => $row['attendee_code'],
                     'fullName' => $row['full_name'],
+                    'company' => $row['company'],
                     'department' => $row['department'],
                     'attendeeStatus' => $row['status'],
                     'registeredToday' => $row['scanned_at'] !== null,
@@ -239,7 +243,7 @@ final class RegistrationService
     private static function findByToken(string $token): ?array
     {
         $statement = Database::connection()->prepare(
-            'SELECT q.id AS qr_id, a.id AS attendee_id, a.event_id, a.status, a.attendee_code, a.full_name, a.department
+            'SELECT q.id AS qr_id, a.id AS attendee_id, a.event_id, a.status, a.attendee_code, a.full_name, a.company, a.department
              FROM attendee_qr_codes q JOIN attendees a ON a.id = q.attendee_id
              WHERE q.token = :token LIMIT 1'
         );

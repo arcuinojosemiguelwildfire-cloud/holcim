@@ -21,6 +21,8 @@ export async function qrSvg(payload: string): Promise<string> {
 export interface QrCardDetails {
   attendeeCode: string
   fullName: string | null | undefined
+  company: string | null | undefined
+  /** Cluster (location / region). */
   department: string | null | undefined
 }
 
@@ -77,7 +79,7 @@ function fitWidth(context: CanvasRenderingContext2D, text: string, maxWidth: num
 /**
  * Downloads a print-quality QR card PNG: the 1200px QR (about 10 cm at
  * 300 dpi, same rendering as before) with the attendee's full name (bold)
- * and, if present, department centred underneath. Nothing else is drawn
+ * and, if present, company and cluster (attendees.department) centred underneath. Nothing else is drawn
  * (no attendee code, token or internal ID); the code is only used in the
  * file name.
  * Drawn on its own canvas, not a screenshot of the page.
@@ -95,12 +97,15 @@ export async function downloadQrPng(payload: string, details: QrCardDetails): Pr
   measure.font = `bold 80px ${sans}`
   const nameLines = cleanText(details.fullName) ? wrapText(measure, cleanText(details.fullName), textWidth, 2) : []
   measure.font = `56px ${sans}`
+  const companyLines = cleanText(details.company) ? wrapText(measure, cleanText(details.company), textWidth, 2) : []
+  measure.font = `48px ${sans}`
   const departmentLines = cleanText(details.department) ? wrapText(measure, cleanText(details.department), textWidth, 2) : []
 
-  // Layout (y = baseline): QR, then name lines, department lines, code.
+  // Layout (y = baseline): QR, then name, company and cluster lines.
   const rows: Array<{ text: string; font: string; color: string; advance: number }> = [
     ...nameLines.map((text) => ({ text, font: `bold 80px ${sans}`, color: '#000000', advance: 96 })),
-    ...departmentLines.map((text, index) => ({ text, font: `56px ${sans}`, color: '#1f2937', advance: index === 0 ? 84 : 68 })),
+    ...companyLines.map((text, index) => ({ text, font: `56px ${sans}`, color: '#1f2937', advance: index === 0 ? 84 : 68 })),
+    ...departmentLines.map((text, index) => ({ text, font: `48px ${sans}`, color: '#4b5563', advance: index === 0 ? 70 : 58 })),
   ]
   const textHeight = rows.reduce((sum, row) => sum + row.advance, 0)
 

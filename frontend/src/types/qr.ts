@@ -2,6 +2,7 @@ export interface AttendeeQr {
   attendeeId: number
   attendeeCode: string
   fullName: string
+  company: string | null
   department: string | null
   attendeeStatus: 'active' | 'archived'
   status: 'generated' | 'missing'
@@ -21,6 +22,7 @@ export interface QrPrintItem {
   id: number
   attendeeCode: string
   fullName: string
+  company: string | null
   department: string | null
   qrPayload: string
 }

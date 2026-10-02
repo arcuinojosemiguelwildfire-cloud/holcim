@@ -16,10 +16,26 @@ final class ReportController
         return ReportService::registration(self::scope($request));
     }
 
-    /** GET /reports/major-eligibility.csv?scope=day|all */
-    public static function majorEligibility(Request $request): Response
+    /** GET /reports/eligibility.csv?scope=day|all - Minor/Major eligibility from registration */
+    public static function eligibility(Request $request): Response
     {
-        return ReportService::majorEligibility(self::scope($request));
+        return ReportService::eligibility(self::scope($request));
+    }
+
+    /** GET /reports/day-attendees.xlsx?day_id= - "Day N Attendees.xlsx" (a day of the active event; default current day) */
+    public static function dayAttendees(Request $request): Response
+    {
+        $dayId = $request->query('day_id');
+
+        return ReportService::dayAttendeesXlsx(is_string($dayId) && ctype_digit($dayId) ? (int) $dayId : null);
+    }
+
+    /** GET /reports/winners.xlsx?scope=all|day - Winners.xlsx (default all days) */
+    public static function winners(Request $request): Response
+    {
+        $scope = $request->query('scope', 'all');
+
+        return ReportService::winnersXlsx(is_string($scope) && $scope === 'day' ? 'day' : 'all');
     }
 
     /** GET /reports/draws.csv?scope=day|all */

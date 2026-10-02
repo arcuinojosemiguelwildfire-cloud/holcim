@@ -43,7 +43,8 @@ final class AttendeeController
         $id = Validator::id($request->param('id'), 'Attendee');
         $data = Validator::make($request->body())
             ->string('full_name', required: true, max: 200, label: 'Full name')
-            ->string('department', max: 150)
+            ->string('company', max: 200, label: 'Company')
+            ->string('department', max: 150, label: 'Cluster')
             ->email('email')
             ->string('external_identifier', max: 190, label: 'Employee ID / External identifier')
             ->validate();

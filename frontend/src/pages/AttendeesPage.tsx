@@ -70,12 +70,12 @@ export function AttendeesPage() {
               type="search"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search code, name, department or email"
+              placeholder="Search code, name, cluster or email"
               className="h-10 w-full rounded-lg border-0 bg-white pl-9 pr-3 text-sm shadow-sm ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-brand-600"
             />
           </label>
-          <select aria-label="Department" value={query.department} onChange={(e) => update({ department: e.target.value })} className={SELECT_CLASS}>
-            <option value="">All departments</option>
+          <select aria-label="Cluster" value={query.department} onChange={(e) => update({ department: e.target.value })} className={SELECT_CLASS}>
+            <option value="">All clusters</option>
             {(data?.departments ?? []).map((department) => (
               <option key={department} value={department}>
                 {department}
@@ -117,7 +117,8 @@ export function AttendeesPage() {
                   <tr>
                     <th scope="col" className="px-5 py-3">Code</th>
                     <th scope="col" className="px-5 py-3">Full name</th>
-                    <th scope="col" className="px-5 py-3">Department</th>
+                    <th scope="col" className="px-5 py-3">Company</th>
+                    <th scope="col" className="px-5 py-3">Cluster</th>
                     <th scope="col" className="px-5 py-3">Email</th>
                     <th scope="col" className="px-5 py-3">Status</th>
                     <th scope="col" className="px-5 py-3">Created</th>
@@ -136,6 +137,7 @@ export function AttendeesPage() {
                         </button>
                       </td>
                       <td className="px-5 py-3 font-medium text-slate-900">{attendee.fullName}</td>
+                      <td className="px-5 py-3 text-slate-600">{attendee.company ?? '—'}</td>
                       <td className="px-5 py-3 text-slate-600">{attendee.department ?? '—'}</td>
                       <td className="px-5 py-3 text-slate-600">{attendee.email ?? '—'}</td>
                       <td className="whitespace-nowrap px-5 py-3">

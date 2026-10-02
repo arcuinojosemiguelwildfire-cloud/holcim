@@ -68,6 +68,7 @@ export function AttendeeQrPanel({ attendeeId, attendeeStatus }: { attendeeId: nu
             payload={qr.qrPayload}
             attendeeCode={qr.attendeeCode}
             fullName={qr.fullName}
+            company={qr.company}
             department={qr.department}
             className="w-48 shrink-0 self-center sm:self-start"
           />

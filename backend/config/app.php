@@ -15,10 +15,6 @@ return [
     // Printed attendee QR codes contain "{APP_URL}/q/{token}". If empty, the
     // QR contains only the token. Set it BEFORE printing QR codes.
     'url' => Env::get('APP_URL', ''),
-    // External form for the Major draw (e.g. a Google Form). The LED-screen QR
-    // points to {APP_URL}/major-form, which redirects here, so this can change
-    // without regenerating the QR. Leave empty until the client provides it.
-    'major_form_url' => Env::get('MAJOR_FORM_URL', ''),
     // Comma-separated list of origins allowed to call the API with cookies.
     // Leave empty when the frontend is served from the same origin (default)
     // or through the Vite dev proxy.

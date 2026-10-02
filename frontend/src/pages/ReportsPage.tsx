@@ -1,11 +1,12 @@
-import { useState } from 'react'
-import { Download, FileSpreadsheet, ScanLine, Trophy } from 'lucide-react'
+import { useCallback, useState } from 'react'
+import { Download, FileSpreadsheet, ScanLine, Sheet, Trophy } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { Card } from '../components/ui/Card'
+import { Card, CardHeader } from '../components/ui/Card'
 import { PageHeader } from '../components/ui/PageHeader'
 import { useApiQuery } from '../hooks/useApiQuery'
 import { API_BASE_URL } from '../services/apiClient'
 import { dashboardService } from '../services/dashboardService'
+import { eventDayService } from '../services/eventDayService'
 import { cn } from '../utils/cn'
 
 type Scope = 'day' | 'all'
@@ -15,32 +16,38 @@ const REPORTS: Array<{ path: string; title: string; description: string; columns
     path: '/reports/registration.csv',
     title: 'Daily registration report',
     description: 'Every attendee with registration status for the day, time and the staff member who scanned them.',
-    columns: 'Event Day, Attendee Code, Full Name, Department, Email, Registration Status, Registered At, Registered By, Attendee Status',
+    columns: 'Event Day, Attendee Code, Full Name, Cluster, Email, Registration Status, Registered At, Registered By, Attendee Status',
     icon: ScanLine,
   },
   {
-    path: '/reports/major-eligibility.csv',
-    title: 'Major eligibility report',
-    description: 'Every attendee with Major Eligible (Yes/No) for the day, and whether it came from an import or a manual addition.',
-    columns: 'Event Day, Attendee Code, Full Name, Department, Email, Major Eligible, Eligibility Source, Imported/Added At, Added/Imported By, Attendee Status',
+    path: '/reports/eligibility.csv',
+    title: 'Raffle eligibility report',
+    description: 'Registration makes an attendee eligible for both Minor and Major. Shows eligibility, its source and whether they already won each draw.',
+    columns: 'Event Day, Attendee Code, Full Name, Cluster, Email, Registered, Minor Eligible, Minor Source, Won Minor, Major Eligible, Major Source, Won Major, Attendee Status',
     icon: FileSpreadsheet,
   },
   {
     path: '/reports/draws.csv',
     title: 'Draw winners report',
     description: 'All Minor and Major draws in order, including voided draws (Status = VOID with reason).',
-    columns: 'Event Day, Draw Type, Attendee Code, Full Name, Department, Drawn At, Drawn By, Status, Voided At, Voided By, Void Reason',
+    columns: 'Event Day, Draw Type, Attendee Code, Full Name, Cluster, Drawn At, Drawn By, Status, Voided At, Voided By, Void Reason',
     icon: Trophy,
   },
 ]
 
 const fetchSummary = () => dashboardService.getSummary()
 
+const linkClass =
+  'inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand-700 px-4 text-sm font-medium text-white shadow-sm hover:bg-brand-800'
+
 export function ReportsPage() {
   const { data } = useApiQuery(fetchSummary)
   const [scope, setScope] = useState<Scope>('day')
   const eventName = data?.activeEvent?.name
+  const eventId = data?.activeEvent?.id ?? null
   const day = data?.activeDay
+  const daysFetcher = useCallback(() => (eventId ? eventDayService.list(eventId) : Promise.resolve([])), [eventId])
+  const { data: days } = useApiQuery(daysFetcher)
 
   const tabClass = (active: boolean) =>
     cn(
@@ -52,22 +59,42 @@ export function ReportsPage() {
     <>
       <PageHeader
         title="Reports"
-        description={eventName ? `CSV exports for the active event: ${eventName}. Opens in Excel or Google Sheets.` : 'CSV exports for the active event.'}
-        actions={
-          <div className="flex rounded-lg bg-slate-100 p-0.5" role="tablist" aria-label="Report scope">
-            <button type="button" role="tab" aria-selected={scope === 'day'} className={tabClass(scope === 'day')} onClick={() => setScope('day')}>
-              {day ? `Day ${day.dayNumber} only` : 'Current day'}
-            </button>
-            <button type="button" role="tab" aria-selected={scope === 'all'} className={tabClass(scope === 'all')} onClick={() => setScope('all')}>
-              All days
-            </button>
-          </div>
-        }
+        description={eventName ? `Exports for the active event: ${eventName}. Open in Excel or Google Sheets.` : 'Exports for the active event.'}
       />
-      <p className="-mt-3 mb-5 text-sm text-slate-600">
+
+      <Card className="mb-6">
+        <CardHeader
+          title="Excel lists"
+          description="Attendee list per event day (same attendees every day, with that day's registration status) and the winners list."
+        />
+        <div className="flex flex-wrap items-center gap-3 px-5 py-4" data-testid="excel-lists">
+          <Sheet className="size-5 text-brand-700" aria-hidden />
+          {(days ?? []).map((d) => (
+            <a key={d.id} href={`${API_BASE_URL}/reports/day-attendees.xlsx?day_id=${d.id}`} className={linkClass}>
+              <Download className="size-4" aria-hidden /> Day {d.dayNumber} Attendees.xlsx
+            </a>
+          ))}
+          <a href={`${API_BASE_URL}/reports/winners.xlsx?scope=all`} className={linkClass}>
+            <Download className="size-4" aria-hidden /> Winners.xlsx
+          </a>
+        </div>
+      </Card>
+
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-base font-semibold text-slate-900">CSV reports</h2>
+        <div className="flex rounded-lg bg-slate-100 p-0.5" role="tablist" aria-label="Report scope">
+          <button type="button" role="tab" aria-selected={scope === 'day'} className={tabClass(scope === 'day')} onClick={() => setScope('day')}>
+            {day ? `Day ${day.dayNumber} only` : 'Current day'}
+          </button>
+          <button type="button" role="tab" aria-selected={scope === 'all'} className={tabClass(scope === 'all')} onClick={() => setScope('all')}>
+            All days
+          </button>
+        </div>
+      </div>
+      <p className="mb-5 text-sm text-slate-600">
         {scope === 'day'
-          ? `Exports cover ${day ? day.displayName : 'the current event day'}.`
-          : 'Exports cover every day of the active event, one Event Day column per row.'}
+          ? `CSV exports cover ${day ? day.displayName : 'the current event day'}.`
+          : 'CSV exports cover every day of the active event, one Event Day column per row.'}
       </p>
       <div className="grid gap-4 lg:grid-cols-3">
         {REPORTS.map(({ path, title, description, columns, icon: Icon }) => (
@@ -75,13 +102,10 @@ export function ReportsPage() {
             <span className="flex size-10 items-center justify-center rounded-lg bg-brand-50 text-brand-700">
               <Icon className="size-5" aria-hidden />
             </span>
-            <h2 className="mt-3 text-base font-semibold text-slate-900">{title}</h2>
+            <h3 className="mt-3 text-base font-semibold text-slate-900">{title}</h3>
             <p className="mt-1 flex-1 text-sm text-slate-500">{description}</p>
             <p className="mt-3 text-xs text-slate-400">Columns: {columns}</p>
-            <a
-              href={`${API_BASE_URL}${path}?scope=${scope}`}
-              className="mt-4 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand-700 px-4 text-sm font-medium text-white shadow-sm hover:bg-brand-800"
-            >
+            <a href={`${API_BASE_URL}${path}?scope=${scope}`} className={cn(linkClass, 'mt-4')}>
               <Download className="size-4" aria-hidden /> Download CSV {scope === 'all' ? '(all days)' : ''}
             </a>
           </Card>

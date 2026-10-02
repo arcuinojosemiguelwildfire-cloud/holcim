@@ -85,7 +85,7 @@ final class RegistrationScan
     {
         $limit = max(1, min(100, $limit));
         $statement = Database::connection()->prepare(
-            "SELECT r.scanned_at, a.attendee_code, a.full_name, a.department, u.name AS scanner_name
+            "SELECT r.scanned_at, a.attendee_code, a.full_name, a.company, a.department, u.name AS scanner_name
              FROM registration_scans r
              JOIN attendees a ON a.id = r.attendee_id
              LEFT JOIN users u ON u.id = r.scanner_user_id

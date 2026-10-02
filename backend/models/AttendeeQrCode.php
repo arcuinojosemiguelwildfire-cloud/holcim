@@ -75,7 +75,7 @@ final class AttendeeQrCode
      */
     public static function printRows(int $eventId, ?array $attendeeIds): array
     {
-        $sql = "SELECT a.id, a.attendee_code, a.full_name, a.department, q.token
+        $sql = "SELECT a.id, a.attendee_code, a.full_name, a.company, a.department, q.token
                 FROM attendees a JOIN attendee_qr_codes q ON q.attendee_id = a.id
                 WHERE a.event_id = ? AND a.status = 'active'";
         $params = [$eventId];

@@ -180,3 +180,11 @@ Every scan attempt per day: `event_id`, `event_day_id`, `user_id`, `attendee_id`
 
 ### Data migration
 015 creates Day 1 for every existing event; 017/020/023 back-fill existing scans, Major eligibility and draws to that Day 1 before 018/021/024 make the column NOT NULL and swap the unique keys; 020 sets `added_by` from the import batch; 029 links Major import batches to Day 1. No rows are deleted.
+
+## Phase 9.2: raffle rules, Company and Cluster (migration 031)
+
+- **Company**: new nullable `attendees.company` VARCHAR(200) with index (event_id, company) — migration 031, additive only. It is the `Name 1` column of the client's External Attendees sheet.
+- **Cluster** (location / region) is stored in the existing `attendees.department` column; the UI and exports label it "Cluster". The column was not renamed so existing code, indexes and data keep working.
+- **Pools** (per current day, active attendees): registered that day (`registration_scans`) ∪ manual additions for that randomizer (`minor_manual_entries`, or `major_eligibility` with `source = 'manual'`) − attendees with a non-void `randomizer_draws` row of the same `randomizer_type` that day. Draws run in a transaction that locks the `event_days` row (`SELECT … FOR UPDATE`), so concurrent draws cannot select the same winner.
+- No unique index was added for winners: draws made before Phase 9.2 (when repeat winners were allowed) may already contain repeats, and MariaDB cannot index a generated column over `attendee_id` (its foreign key uses ON UPDATE CASCADE).
+- `major_eligibility` rows with `source = 'import'` and `import_batches` of type `major_entries` are historical only (the import was removed).

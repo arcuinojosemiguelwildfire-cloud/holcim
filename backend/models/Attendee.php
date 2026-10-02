@@ -18,11 +18,15 @@ final class Attendee
 
     public const CODE_PREFIX = 'ATT-';
 
-    private const COLUMNS = 'id, event_id, attendee_code, full_name, department, email, external_identifier,
+    /**
+     * Business fields (Phase 9.2): full_name, company (new), department =
+     * Cluster (location/region; the column name is kept for compatibility).
+     */
+    private const COLUMNS = 'id, event_id, attendee_code, full_name, company, department, email, external_identifier,
         status, archived_at, extra_data, import_batch_id, created_at, updated_at';
 
     /** Columns an admin may edit. attendee_code is deliberately excluded. */
-    private const EDITABLE = ['full_name', 'department', 'email', 'external_identifier'];
+    private const EDITABLE = ['full_name', 'company', 'department', 'email', 'external_identifier'];
 
     /** Active attendees for an event (dashboard metric). */
     public static function countForEvent(int $eventId): int
@@ -62,8 +66,9 @@ final class Attendee
         }
         if ($search !== '') {
             $like = '%' . addcslashes($search, '%_\\') . '%';
-            $where[] = '(a.attendee_code LIKE :s1 OR a.full_name LIKE :s2 OR a.department LIKE :s3 OR a.email LIKE :s4 OR a.external_identifier LIKE :s5)';
-            foreach (['s1', 's2', 's3', 's4', 's5'] as $key) {
+            $where[] = '(a.attendee_code LIKE :s1 OR a.full_name LIKE :s2 OR a.department LIKE :s3 OR a.email LIKE :s4
+                OR a.external_identifier LIKE :s5 OR a.company LIKE :s6)';
+            foreach (['s1', 's2', 's3', 's4', 's5', 's6'] as $key) {
                 $params[$key] = $like;
             }
         }
@@ -115,7 +120,7 @@ final class Attendee
     public static function identityRowsForEvent(int $eventId): array
     {
         $statement = Database::connection()->prepare(
-            'SELECT id, attendee_code, full_name, department, email, external_identifier, status
+            'SELECT id, attendee_code, full_name, company, department, email, external_identifier, status
              FROM attendees WHERE event_id = :event_id'
         );
         $statement->execute(['event_id' => $eventId]);
@@ -148,14 +153,15 @@ final class Attendee
     public static function create(int $eventId, string $code, array $data, ?int $importBatchId): int
     {
         $statement = Database::connection()->prepare(
-            'INSERT INTO attendees (event_id, attendee_code, full_name, department, email, external_identifier, extra_data, import_batch_id)
-             VALUES (:event_id, :code, :full_name, :department, :email, :external_identifier, :extra_data, :import_batch_id)'
+            'INSERT INTO attendees (event_id, attendee_code, full_name, company, department, email, external_identifier, extra_data, import_batch_id)
+             VALUES (:event_id, :code, :full_name, :company, :department, :email, :external_identifier, :extra_data, :import_batch_id)'
         );
         $statement->execute([
             'event_id' => $eventId,
             'code' => $code,
             'full_name' => $data['full_name'],
-            'department' => $data['department'],
+            'company' => $data['company'] ?? null,
+            'department' => $data['department'] ?? null,
             'email' => $data['email'] ?? null,
             'external_identifier' => $data['external_identifier'] ?? null,
             'extra_data' => !empty($data['extra_data'])
@@ -214,6 +220,7 @@ final class Attendee
             'id' => (int) $row['id'],
             'attendeeCode' => $row['attendee_code'],
             'fullName' => $row['full_name'],
+            'company' => $row['company'],
             'department' => $row['department'],
             'email' => $row['email'],
             'externalIdentifier' => $row['external_identifier'],

@@ -22,6 +22,7 @@ interface AttendeeDetailModalProps {
 function toForm(attendee: AttendeeDetail): AttendeeUpdateInput {
   return {
     full_name: attendee.fullName,
+    company: attendee.company ?? '',
     department: attendee.department ?? '',
     email: attendee.email ?? '',
     external_identifier: attendee.externalIdentifier ?? '',
@@ -120,7 +121,9 @@ export function AttendeeDetailModal({ attendeeId, onClose, onChanged }: Attendee
               <TextField label="Attendee code" value={attendee.attendeeCode} disabled hint="Attendee codes never change." />
               <TextField label="Full name" required autoFocus maxLength={200} value={form.full_name}
                 onChange={(e) => setForm({ ...form, full_name: e.target.value })} error={apiError?.fieldError('full_name')} />
-              <TextField label="Department" maxLength={150} hint="Optional" value={form.department}
+              <TextField label="Company" maxLength={200} hint="Optional" value={form.company}
+                onChange={(e) => setForm({ ...form, company: e.target.value })} error={apiError?.fieldError('company')} />
+              <TextField label="Cluster" maxLength={150} hint="Optional (location / region)" value={form.department}
                 onChange={(e) => setForm({ ...form, department: e.target.value })} error={apiError?.fieldError('department')} />
               <TextField label="Email" type="email" maxLength={190} value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })} error={apiError?.fieldError('email')} />
@@ -136,7 +139,8 @@ export function AttendeeDetailModal({ attendeeId, onClose, onChanged }: Attendee
                 </Badge>
               </Detail>
               <Detail label="Full name">{attendee.fullName}</Detail>
-              <Detail label="Department">{attendee.department ?? '—'}</Detail>
+              <Detail label="Company">{attendee.company ?? '—'}</Detail>
+              <Detail label="Cluster">{attendee.department ?? '—'}</Detail>
               <Detail label="Email">{attendee.email ?? '—'}</Detail>
               <Detail label="Employee ID / External ID">{attendee.externalIdentifier ?? '—'}</Detail>
               <Detail label="Created">{attendee.createdAt}</Detail>

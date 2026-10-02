@@ -18,8 +18,6 @@ use App\Controllers\DashboardController;
 use App\Controllers\EventController;
 use App\Controllers\EventDayController;
 use App\Controllers\HealthController;
-use App\Controllers\MajorFormController;
-use App\Controllers\MajorEligibilityController;
 use App\Controllers\QrCodeController;
 use App\Controllers\RandomizerController;
 use App\Controllers\RegistrationController;
@@ -107,25 +105,19 @@ return static function (Router $router): void {
     $router->get('/randomizers/major/participants', [RandomizerController::class, 'majorParticipants'], [$randomizerOperators]);
     $router->post('/randomizers/major/participants', [RandomizerController::class, 'addMajorParticipant'], [$randomizerOperators]);
 
-    // Major eligibility (imported form responses). View: admin + event operator.
-    // Import: admin only.
-    $router->get('/major-eligibility', [MajorEligibilityController::class, 'index'], [$randomizerOperators]);
-    $router->get('/major-eligibility/imports', [MajorEligibilityController::class, 'imports'], [$randomizerOperators]);
-    $router->post('/major-eligibility/import/parse', [MajorEligibilityController::class, 'parseImport'], [$adminOnly]);
-    $router->post('/major-eligibility/import/preview', [MajorEligibilityController::class, 'previewImport'], [$adminOnly]);
-    $router->post('/major-eligibility/import', [MajorEligibilityController::class, 'import'], [$adminOnly]);
+    // Phase 9.2: Major eligibility comes from registration (no Major form, QR
+    // or import). The /major-eligibility and /major-form routes were removed.
 
     // Draw voiding (Phase 7): admin + event operator. Never deletes the draw.
     $router->post('/randomizers/draws/{id}/void', [RandomizerController::class, 'voidDraw'], [$randomizerOperators]);
 
-    // Major QR (Phase 7): public redirect to MAJOR_FORM_URL; info for the display page.
-    $router->get('/major-form', [MajorFormController::class, 'redirect']);
-    $router->get('/major-form/info', [MajorFormController::class, 'info'], [$randomizerOperators]);
-
     // CSV reports for the active event (Phase 7), ?scope=day|all (Phase 8): admin only.
     $router->get('/reports/registration.csv', [ReportController::class, 'registration'], [$adminOnly]);
-    $router->get('/reports/major-eligibility.csv', [ReportController::class, 'majorEligibility'], [$adminOnly]);
+    $router->get('/reports/eligibility.csv', [ReportController::class, 'eligibility'], [$adminOnly]);
     $router->get('/reports/draws.csv', [ReportController::class, 'draws'], [$adminOnly]);
+    // Excel lists (Phase 9.2): "Day N Attendees.xlsx" for a day of the active event, and Winners.xlsx.
+    $router->get('/reports/day-attendees.xlsx', [ReportController::class, 'dayAttendees'], [$adminOnly]);
+    $router->get('/reports/winners.xlsx', [ReportController::class, 'winners'], [$adminOnly]);
 
     // Settings > Scanner Operators (Phase 8): admin only.
     $router->get('/settings/scanner-operators', [SettingsController::class, 'scannerOperators'], [$adminOnly]);

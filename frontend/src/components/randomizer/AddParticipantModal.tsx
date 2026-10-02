@@ -78,7 +78,7 @@ export function AddParticipantModal({ type, eventDay, onClose, onAdded }: AddPar
       footer={
         <>
           <Button key="cancel" type="button" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button key="add" type="button" disabled={!selected || selected.alreadyEligible} loading={saving} onClick={() => void submit()}>
+          <Button key="add" type="button" disabled={!selected || selected.alreadyEligible || selected.alreadyWon} loading={saving} onClick={() => void submit()}>
             Add to today’s pool
           </Button>
         </>
@@ -97,7 +97,7 @@ export function AddParticipantModal({ type, eventDay, onClose, onAdded }: AddPar
               setQuery(e.target.value)
               setSelected(null)
             }}
-            placeholder="Search code, name, department or email"
+            placeholder="Search code, name, cluster or email"
             autoComplete="off"
             className="h-10 w-full rounded-lg border-0 pl-9 pr-3 text-sm ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-brand-600"
           />
@@ -110,11 +110,11 @@ export function AddParticipantModal({ type, eventDay, onClose, onAdded }: AddPar
               <li key={candidate.id}>
                 <button
                   type="button"
-                  disabled={candidate.alreadyEligible}
+                  disabled={candidate.alreadyEligible || candidate.alreadyWon}
                   onClick={() => setSelected(candidate)}
                   className={cn(
                     'flex w-full items-center gap-3 px-3 py-2 text-left text-sm',
-                    candidate.alreadyEligible ? 'cursor-not-allowed opacity-70' : 'hover:bg-slate-50',
+                    candidate.alreadyEligible || candidate.alreadyWon ? 'cursor-not-allowed opacity-70' : 'hover:bg-slate-50',
                     selected?.id === candidate.id && 'bg-brand-50 ring-1 ring-inset ring-brand-300',
                   )}
                 >
@@ -122,11 +122,15 @@ export function AddParticipantModal({ type, eventDay, onClose, onAdded }: AddPar
                     <span className="block truncate font-medium text-slate-900">{candidate.fullName}</span>
                     <span className="block truncate text-xs text-slate-500">
                       <span className="font-mono">{candidate.attendeeCode}</span>
-                      {candidate.department && ` · ${candidate.department}`}
+                      {candidate.company && ` · ${candidate.company}`}{candidate.department && ` · ${candidate.department}`}
                       {candidate.email && ` · ${candidate.email}`}
                     </span>
                   </span>
-                  {candidate.alreadyEligible && <Badge tone="success">Already eligible</Badge>}
+                  {candidate.alreadyWon ? (
+                    <Badge tone="warning">Already won today</Badge>
+                  ) : (
+                    candidate.alreadyEligible && <Badge tone="success">Already eligible</Badge>
+                  )}
                 </button>
               </li>
             ))}
@@ -151,7 +155,8 @@ export function AddParticipantModal({ type, eventDay, onClose, onAdded }: AddPar
           </div>
         )}
         <p className="text-xs text-slate-500">
-          This does not register the attendee, change their record or QR code. It only affects today’s {label} draw.
+          Use only for an attendee who is present but could not be scanned. This does not register the attendee or change their
+          record or QR code. It only affects today’s {label} draw, not the {type === 'major' ? 'Minor' : 'Major'} draw.
         </p>
       </div>
     </Modal>

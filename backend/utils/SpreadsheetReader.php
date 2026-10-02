@@ -7,7 +7,8 @@ namespace App\Utils;
 use App\Core\HttpException;
 
 /**
- * Reads the first worksheet of a CSV or XLSX file into a header row plus data
+ * Reads a CSV or one XLSX worksheet ("External Attendees" if present, else the
+ * first sheet) into a header row plus data
  * rows, using only PHP built-ins (no Composer). Cell values are treated as
  * untrusted text: control characters are stripped and lengths are capped.
  *
@@ -21,18 +22,28 @@ final class SpreadsheetReader
     public const MAX_CELL_LENGTH = 1000;
     private const MAX_XML_BYTES = 50 * 1024 * 1024; // zip-bomb guard (uncompressed)
 
+    /** Phase 9.2: when a workbook has a sheet with this name, only that sheet is read. */
+    public const PREFERRED_SHEET = 'External Attendees';
+
+    /** Name of the XLSX sheet read by the last read() call (null for CSV). */
+    private static ?string $lastSheet = null;
+
     /**
-     * @return array{headers: list<string>, rows: list<array{rowNumber: int, cells: list<string>}>}
+     * Reads the "External Attendees" sheet when the workbook has one,
+     * otherwise the first sheet (or the CSV).
+     *
+     * @return array{headers: list<string>, rows: list<array{rowNumber: int, cells: list<string>}>, sheet: ?string}
      */
     public static function read(string $path, string $type): array
     {
+        self::$lastSheet = null;
         $raw = match ($type) {
             'csv' => self::readCsv($path),
             'xlsx' => self::readXlsx($path),
             default => throw HttpException::badRequest('Unsupported file type.'),
         };
 
-        return self::normalise($raw);
+        return self::normalise($raw) + ['sheet' => self::$lastSheet];
     }
 
     /**
@@ -176,7 +187,7 @@ final class SpreadsheetReader
         }
 
         try {
-            $sheetPath = self::firstSheetPath($zip);
+            $sheetPath = self::sheetPath($zip);
             $sharedStrings = self::sharedStrings($zip);
             $sheet = self::loadXml($zip, $sheetPath);
             if ($sheet === null) {
@@ -218,7 +229,8 @@ final class SpreadsheetReader
         }
     }
 
-    private static function firstSheetPath(\ZipArchive $zip): string
+    /** Path of the preferred sheet (see PREFERRED_SHEET), else of the first sheet. */
+    private static function sheetPath(\ZipArchive $zip): string
     {
         $workbook = self::loadXml($zip, 'xl/workbook.xml');
         $rels = self::loadXml($zip, 'xl/_rels/workbook.xml.rels');
@@ -227,7 +239,16 @@ final class SpreadsheetReader
         }
 
         $workbook->registerXPathNamespace('m', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
-        $sheet = ($workbook->xpath('//m:sheets/m:sheet') ?: [])[0] ?? null;
+        $sheets = $workbook->xpath('//m:sheets/m:sheet') ?: [];
+        $sheet = $sheets[0] ?? null;
+        foreach ($sheets as $candidate) {
+            $name = preg_replace('/\s+/', ' ', trim((string) $candidate['name'])) ?? '';
+            if (strcasecmp($name, self::PREFERRED_SHEET) === 0) {
+                $sheet = $candidate;
+                break;
+            }
+        }
+        self::$lastSheet = $sheet !== null ? (string) $sheet['name'] : null;
         $relationId = $sheet !== null
             ? (string) $sheet->attributes('http://schemas.openxmlformats.org/officeDocument/2006/relationships')['id']
             : '';

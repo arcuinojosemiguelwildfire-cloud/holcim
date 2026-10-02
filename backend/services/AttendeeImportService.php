@@ -23,32 +23,38 @@ use App\Utils\SpreadsheetReader;
  * Duplicate rules (conservative, no fuzzy matching), checked in order:
  *   1. External identifier (case-insensitive)
  *   2. Email (case-insensitive) unless both sides have different external IDs
- *   3. Normalised full name + department unless both sides have different
- *      external IDs or different emails. Department is optional: a blank
- *      department only matches another blank department (same name), so
- *      "Juan Delacruz / HR" and "Juan Delacruz / (blank)" are different rows.
+ *   3. Normalised full name + company + cluster (attendees.department) unless
+ *      both sides have different external IDs or different emails. Company and
+ *      cluster are optional: a blank value only matches another blank value, so
+ *      "Juan Delacruz / ABC / North" and "Juan Delacruz / XYZ / North" are
+ *      different people.
  * Duplicates are skipped: existing attendees are never modified, and their
  * attendee codes stay stable.
  */
 final class AttendeeImportService
 {
     public const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
-    public const FIELDS = ['full_name', 'department', 'email', 'external_identifier'];
+    public const FIELDS = ['full_name', 'company', 'department', 'email', 'external_identifier'];
     /** Full Name is the only required attendee field; everything else is optional. */
     private const REQUIRED = ['full_name'];
     private const LABELS = [
         'full_name' => 'Full Name',
-        'department' => 'Department',
+        'company' => 'Company',
+        // Stored in attendees.department; shown as "Cluster" (location / region) since Phase 9.2.
+        'department' => 'Cluster',
         'email' => 'Email',
         'external_identifier' => 'Employee ID / External Identifier',
     ];
-    private const MAX_LENGTHS = ['full_name' => 200, 'department' => 150, 'email' => 190, 'external_identifier' => 190];
+    private const MAX_LENGTHS = ['full_name' => 200, 'company' => 200, 'department' => 150, 'email' => 190, 'external_identifier' => 190];
 
     /** Normalised header names that map directly to a field. */
     private const SYNONYMS = [
         'full_name' => ['fullname', 'name', 'employeename', 'completename', 'attendeename', 'participantname',
             'staffname', 'nameofemployee', 'employeefullname', 'nameofattendee', 'guestname'],
-        'department' => ['department', 'dept', 'departmentname', 'deptname', 'division', 'unit', 'section',
+        'company' => ['company', 'companyname', 'name1', 'organization', 'organisation', 'organizationname',
+            'employer', 'firm', 'agency', 'corporation', 'businessname'],
+        'department' => ['cluster', 'clustername', 'region', 'location', 'area', 'territory',
+            'department', 'dept', 'departmentname', 'deptname', 'division', 'unit', 'section',
             'team', 'businessunit', 'group', 'office', 'departmentdivision'],
         'email' => ['email', 'emailaddress', 'mail', 'workemail', 'companyemail', 'officialemail', 'emailadd'],
         'external_identifier' => ['employeeid', 'employeeno', 'employeenumber', 'empid', 'empno', 'idno', 'idnumber',
@@ -86,14 +92,89 @@ final class AttendeeImportService
 
         $sheet = SpreadsheetReader::read((string) $file['tmp_name'], $type);
 
+        $external = self::expandExternalAttendees($sheet['headers'], $sheet['rows']);
+        if ($external !== null) {
+            return [
+                'filename' => $filename,
+                'fileType' => $type,
+                'sheet' => $sheet['sheet'],
+                'layout' => 'external_attendees',
+                'sourceRows' => count($sheet['rows']),
+                'attendeeColumns' => $external['attendeeColumns'],
+                'headers' => $external['headers'],
+                'rows' => $external['rows'],
+                'totalRows' => count($external['rows']),
+                'suggestedMapping' => ['full_name' => 0, 'company' => 1, 'department' => 2, 'email' => null, 'external_identifier' => null],
+            ];
+        }
+
         return [
             'filename' => $filename,
             'fileType' => $type,
+            'sheet' => $sheet['sheet'],
+            'layout' => 'standard',
             'headers' => $sheet['headers'],
             'rows' => $sheet['rows'],
             'totalRows' => count($sheet['rows']),
             'suggestedMapping' => self::suggestMapping($sheet['headers']),
         ];
+    }
+
+    /**
+     * Client "External Attendees" layout (Phase 9.2):
+     *   Cluster | Name 1 | Attendee 1 | Attendee 2 | ... | Attendee N
+     * Cluster = location/region, Name 1 = COMPANY (never an attendee), every
+     * non-empty "Attendee X" cell = one attendee who inherits the row's
+     * Cluster and Company. Blank Attendee cells are skipped; Attendee 1 may be
+     * blank while later ones are filled. Returns one row per attendee with
+     * the columns Full Name, Company, Cluster (the original sheet row number
+     * is kept), or null when the headers are not this layout.
+     *
+     * @param list<string> $headers
+     * @param list<array{rowNumber: int, cells: list<string>}> $rows
+     * @return array{headers: list<string>, rows: list<array{rowNumber: int, cells: list<string>}>, attendeeColumns: int}|null
+     */
+    public static function expandExternalAttendees(array $headers, array $rows): ?array
+    {
+        $cluster = $company = null;
+        $attendeeColumns = []; // number => column index
+        foreach ($headers as $index => $header) {
+            $name = preg_replace('/[^a-z0-9]/', '', mb_strtolower($header)) ?? '';
+            if ($name === 'cluster' && $cluster === null) {
+                $cluster = $index;
+            } elseif ($name === 'name1' && $company === null) {
+                $company = $index;
+            } elseif (preg_match('/^attendee(\d+)$/', $name, $m) && !isset($attendeeColumns[(int) $m[1]])) {
+                $attendeeColumns[(int) $m[1]] = $index;
+            }
+        }
+        // Needs "Name 1" plus at least one "Attendee X" column.
+        if ($company === null || $attendeeColumns === []) {
+            return null;
+        }
+        ksort($attendeeColumns);
+
+        $expanded = [];
+        foreach ($rows as $row) {
+            $cells = $row['cells'];
+            $companyName = SpreadsheetReader::cleanCell($cells[$company] ?? '');
+            $clusterName = $cluster !== null ? SpreadsheetReader::cleanCell($cells[$cluster] ?? '') : '';
+            foreach ($attendeeColumns as $index) {
+                $person = SpreadsheetReader::cleanCell($cells[$index] ?? '');
+                if ($person === '') {
+                    continue;
+                }
+                $expanded[] = ['rowNumber' => $row['rowNumber'], 'cells' => [$person, $companyName, $clusterName]];
+                if (count($expanded) > SpreadsheetReader::MAX_ROWS) {
+                    throw HttpException::validation(['file' => ['The sheet lists more than ' . SpreadsheetReader::MAX_ROWS . ' attendees. Split it into smaller files.']]);
+                }
+            }
+        }
+        if ($expanded === []) {
+            throw HttpException::validation(['file' => ['No attendee names were found in the Attendee columns.']]);
+        }
+
+        return ['headers' => ['Full Name', 'Company', 'Cluster'], 'rows' => $expanded, 'attendeeColumns' => count($attendeeColumns)];
     }
 
     /**
@@ -214,11 +295,13 @@ final class AttendeeImportService
         // Pass 2: keyword match for anything still unmapped.
         $rules = [
             'email' => static fn (string $n): bool => str_contains($n, 'email') || str_contains($n, 'mail'),
-            'department' => static fn (string $n): bool => str_contains($n, 'department') || str_contains($n, 'dept') || str_contains($n, 'division'),
+            'company' => static fn (string $n): bool => str_contains($n, 'company') || str_contains($n, 'organi'),
+            'department' => static fn (string $n): bool => str_contains($n, 'cluster') || str_contains($n, 'region')
+                || str_contains($n, 'department') || str_contains($n, 'dept') || str_contains($n, 'division'),
             'external_identifier' => static fn (string $n): bool => (str_contains($n, 'employee') || str_contains($n, 'emp') || str_contains($n, 'staff'))
                 && (str_ends_with($n, 'id') || str_ends_with($n, 'no') || str_contains($n, 'number') || str_contains($n, 'code')),
             'full_name' => static fn (string $n): bool => str_contains($n, 'name')
-                && !preg_match('/dept|department|company|email|user|first|last|middle|nick|division/', $n),
+                && !preg_match('/dept|department|company|cluster|email|user|first|last|middle|nick|division|^name\d+$/', $n),
         ];
         foreach ($rules as $field => $matches) {
             if ($mapping[$field] !== null) {
@@ -252,7 +335,7 @@ final class AttendeeImportService
         // Index existing attendees of the event (all statuses).
         $existingByExt = $existingByEmail = $existingByName = [];
         foreach (Attendee::identityRowsForEvent($eventId) as $existing) {
-            $identity = self::identity($existing['full_name'], $existing['department'], $existing['email'], $existing['external_identifier']);
+            $identity = self::identity($existing['full_name'], $existing['company'], $existing['department'], $existing['email'], $existing['external_identifier']);
             $entry = ['identity' => $identity, 'ref' => [
                 'type' => 'existing',
                 'attendeeCode' => $existing['attendee_code'],
@@ -277,6 +360,7 @@ final class AttendeeImportService
             $display = [
                 'rowNumber' => $row['rowNumber'],
                 'fullName' => $values['full_name'],
+                'company' => $values['company'],
                 'department' => $values['department'],
                 'email' => $values['email'],
                 'externalIdentifier' => $values['external_identifier'],
@@ -288,7 +372,7 @@ final class AttendeeImportService
                 continue;
             }
 
-            $identity = self::identity($values['full_name'], $values['department'], $values['email'], $values['external_identifier']);
+            $identity = self::identity($values['full_name'], $values['company'], $values['department'], $values['email'], $values['external_identifier']);
 
             $match = self::findMatch($identity, $existingByExt, $existingByEmail, $existingByName)
                 ?? self::findMatch($identity, $fileByExt, $fileByEmail, $fileByName);
@@ -314,6 +398,7 @@ final class AttendeeImportService
             $newRecords[] = [
                 'rowNumber' => $row['rowNumber'],
                 'full_name' => $values['full_name'],
+                'company' => $values['company'] !== '' ? $values['company'] : null,
                 'department' => $values['department'] !== '' ? $values['department'] : null,
                 'email' => $values['email'] !== '' ? mb_strtolower($values['email']) : null,
                 'external_identifier' => $values['external_identifier'] !== '' ? $values['external_identifier'] : null,
@@ -337,6 +422,7 @@ final class AttendeeImportService
             $result['newPreview'] = array_map(static fn (array $r): array => [
                 'rowNumber' => $r['rowNumber'],
                 'fullName' => $r['full_name'],
+                'company' => $r['company'],
                 'department' => $r['department'],
                 'email' => $r['email'],
                 'externalIdentifier' => $r['external_identifier'],
@@ -371,12 +457,13 @@ final class AttendeeImportService
     }
 
     /** @return array{ext: string, email: string, name: string} */
-    private static function identity(?string $name, ?string $department, ?string $email, ?string $ext): array
+    private static function identity(?string $name, ?string $company, ?string $department, ?string $email, ?string $ext): array
     {
         return [
             'ext' => self::normaliseText($ext),
             'email' => self::normaliseText($email),
-            'name' => self::normaliseText($name) . '|' . self::normaliseText($department),
+            // Same name in a different company or cluster is a different person.
+            'name' => self::normaliseText($name) . '|' . self::normaliseText($company) . '|' . self::normaliseText($department),
         ];
     }
 

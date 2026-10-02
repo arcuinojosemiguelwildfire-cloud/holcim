@@ -20,8 +20,8 @@ import { cleanText } from '../utils/qr'
  *   Large:    2 x 3 =  6 per page, QR 64 mm
  */
 const LAYOUTS = {
-  standard: { perPage: 12, columns: 3, card: 'h-[68mm] w-[63mm]', qr: 'w-[44mm]', name: 'text-[10pt]', dept: 'text-[8.5pt]', label: 'Standard (12 per page)' },
-  large: { perPage: 6, columns: 2, card: 'h-[90mm] w-[95mm]', qr: 'w-[64mm]', name: 'text-[13pt]', dept: 'text-[10.5pt]', label: 'Large (6 per page)' },
+  standard: { perPage: 12, columns: 3, card: 'h-[68mm] w-[63mm]', qr: 'w-[44mm]', name: 'text-[10pt]', dept: 'text-[8.5pt]', company: 'line-clamp-2', label: 'Standard (12 per page)' },
+  large: { perPage: 6, columns: 2, card: 'h-[90mm] w-[95mm]', qr: 'w-[64mm]', name: 'text-[13pt]', dept: 'text-[10.5pt]', company: 'truncate', label: 'Large (6 per page)' },
 } as const
 type LayoutKey = keyof typeof LAYOUTS
 
@@ -96,7 +96,7 @@ export function QrPrintPage() {
             >
               <div className={cn('grid justify-center', layout.columns === 3 ? 'grid-cols-[repeat(3,63mm)]' : 'grid-cols-[repeat(2,95mm)]')}>
                 {page.map((item) => (
-                  <QrLabel key={item.id} item={item} cardClass={layout.card} qrClass={layout.qr} nameClass={layout.name} deptClass={layout.dept} />
+                  <QrLabel key={item.id} item={item} cardClass={layout.card} qrClass={layout.qr} nameClass={layout.name} deptClass={layout.dept} companyClass={layout.company} />
                 ))}
               </div>
             </section>
@@ -106,13 +106,14 @@ export function QrPrintPage() {
   )
 }
 
-function QrLabel({ item, cardClass, qrClass, nameClass, deptClass }: { item: QrPrintItem; cardClass: string; qrClass: string; nameClass: string; deptClass: string }) {
+function QrLabel({ item, cardClass, qrClass, nameClass, deptClass, companyClass }: { item: QrPrintItem; cardClass: string; qrClass: string; nameClass: string; deptClass: string; companyClass: string }) {
   return (
     <div className={cn('flex break-inside-avoid flex-col items-center justify-center overflow-hidden border border-dashed border-slate-400 px-[3mm] text-center text-black', cardClass)}>
       <QrImage payload={item.qrPayload} label={`QR code for ${cleanText(item.fullName) || 'attendee'}`} className={cn('shrink-0', qrClass)} />
-      {/* Name (bold), then department if any. No attendee code or token on the card. */}
+      {/* Name (bold), company, cluster (each only if present). No attendee code or token on the card. */}
       {cleanText(item.fullName) && <p className={cn('mt-[0.5mm] line-clamp-2 w-full font-bold leading-tight', nameClass)}>{cleanText(item.fullName)}</p>}
-      {cleanText(item.department) && <p className={cn('w-full truncate leading-tight text-neutral-800', deptClass)}>{cleanText(item.department)}</p>}
+      {cleanText(item.company) && <p className={cn('w-full font-semibold leading-tight text-neutral-900', companyClass, deptClass)}>{cleanText(item.company)}</p>}
+      {cleanText(item.department) && <p className={cn('w-full truncate leading-tight text-neutral-700', deptClass)}>{cleanText(item.department)}</p>}
     </div>
   )
 }

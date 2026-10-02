@@ -8,6 +8,7 @@ import { formatNumber } from '../../utils/format'
 export interface DrawWinner {
   attendeeCode: string
   fullName: string
+  company: string | null
   department: string | null
 }
 
@@ -232,8 +233,13 @@ export function RandomizerStage({ title, eventName, eligibleCount, onDraw, onVoi
             >
               {winner.fullName}
             </p>
-            {winner.department && (
+            {winner.company && (
               <p className={cn('mt-[1.5vh] font-semibold text-brand-200', isFullscreen ? 'text-[3vw]' : 'text-2xl sm:text-3xl')}>
+                {winner.company}
+              </p>
+            )}
+            {winner.department && (
+              <p className={cn('mt-[0.8vh] font-medium text-slate-200', isFullscreen ? 'text-[2.2vw]' : 'text-lg sm:text-xl')}>
                 {winner.department}
               </p>
             )}

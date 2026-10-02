@@ -296,6 +296,7 @@ function ResultPanel({ result }: { result: ScanResult }) {
   const { data } = result
   const registered = result.kind === 'registered'
   const name = cleanText(data.attendee.fullName)
+  const company = cleanText(data.attendee.company)
   const department = cleanText(data.attendee.department)
 
   return (
@@ -310,7 +311,8 @@ function ResultPanel({ result }: { result: ScanResult }) {
       {registered ? <CircleCheck className="size-12" aria-hidden /> : <CircleAlert className="size-12" aria-hidden />}
       <p className="text-xl font-bold uppercase tracking-wide">{registered ? 'Registration Successful' : 'Already Registered'}</p>
       {name && <p className="mt-2 text-3xl font-extrabold uppercase leading-tight sm:text-5xl">{name}</p>}
-      {registered && department && <p className="text-xl font-medium sm:text-2xl">{department}</p>}
+      {registered && company && <p className="text-xl font-semibold sm:text-2xl">{company}</p>}
+      {registered && department && <p className="text-lg font-medium text-white/90 sm:text-xl">{department}</p>}
       {registered ? (
         <p className="mt-2 rounded-full bg-white/20 px-4 py-1 text-sm font-bold uppercase tracking-wide">Minor draw: eligible</p>
       ) : (

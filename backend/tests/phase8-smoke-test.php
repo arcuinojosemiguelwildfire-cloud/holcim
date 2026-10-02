@@ -3,8 +3,9 @@
 declare(strict_types=1);
 
 /**
- * Phase 8 multi-day smoke test: event days, day-specific registration,
- * Minor/Major pools, manual participants, draws, scanner operators,
+ * Phase 8 / 9.2 multi-day smoke test: event days, day-specific registration,
+ * Minor/Major pools from registration, no-repeat winners per randomizer,
+ * voids, manual participants, Excel exports, scanner operators,
  * permissions, password-reset sign-out and day-scoped reports.
  *
  *   HOLCIM_TEST_EMAIL=admin@example.com HOLCIM_TEST_PASSWORD='...' \
@@ -12,7 +13,7 @@ declare(strict_types=1);
  *
  * DEVELOPMENT DATABASE ONLY. It needs an admin account and --write, and it
  * writes real rows to the database in backend/.env (the same one the API
- * uses): a "Phase 8 Smoke ..." event with 2 days and 4 attendees, a second
+ * uses): a "Phase 8 Smoke ..." event with 2 days and 5 attendees, a second
  * draft event, scans, draws and four test accounts (random passwords, never
  * printed). While it runs, the currently active event is set to completed;
  * at the end it is set back to active, the smoke events are archived and the
@@ -75,6 +76,60 @@ final class ApiClient
     /** @return array{status:int, body:array<string,mixed>|null, raw:string} */
     public function request(string $method, string $path, ?array $json = null): array
     {
+        $handle = $this->handle($method, $path, $json);
+        $raw = curl_exec($handle);
+        if ($raw === false) {
+            throw new RuntimeException('Request failed: ' . curl_error($handle));
+        }
+        $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
+        $body = json_decode((string) $raw, true);
+
+        return ['status' => $status, 'body' => is_array($body) ? $body : null, 'raw' => (string) $raw];
+    }
+
+    /**
+     * Sends requests at the same moment (curl_multi), each with its own
+     * client's session. @param list<array{0: ApiClient, 1: string, 2: string}> $requests
+     * @return list<array{status:int, body:array<string,mixed>|null, raw:string}>
+     */
+    public static function parallel(array $requests): array
+    {
+        $multi = curl_multi_init();
+        $handles = [];
+        foreach ($requests as [$client, $method, $path]) {
+            $handle = $client->handle($method, $path, []);
+            curl_multi_add_handle($multi, $handle);
+            $handles[] = $handle;
+        }
+        do {
+            curl_multi_exec($multi, $running);
+            curl_multi_select($multi);
+        } while ($running > 0);
+        $results = [];
+        foreach ($handles as $handle) {
+            $raw = (string) curl_multi_getcontent($handle);
+            $body = json_decode($raw, true);
+            $results[] = ['status' => (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE), 'body' => is_array($body) ? $body : null, 'raw' => $raw];
+            curl_multi_remove_handle($multi, $handle);
+        }
+        curl_multi_close($multi);
+
+        return $results;
+    }
+
+    public function login(string $login, string $password): int
+    {
+        $response = $this->request('POST', '/auth/login', ['login' => $login, 'password' => $password]);
+        if ($response['status'] === 200) {
+            $this->csrf = $response['body']['data']['csrfToken'] ?? $this->csrf;
+        }
+
+        return $response['status'];
+    }
+
+    /** @return \CurlHandle a configured request (not sent) */
+    public function handle(string $method, string $path, ?array $json): \CurlHandle
+    {
         $headers = ['Accept: application/json'];
         if ($json !== null || in_array($method, ['POST', 'PUT', 'PATCH'], true)) {
             $headers[] = 'Content-Type: application/json';
@@ -95,24 +150,25 @@ final class ApiClient
         if ($json !== null) {
             curl_setopt($handle, CURLOPT_POSTFIELDS, json_encode($json));
         }
-        $raw = curl_exec($handle);
-        if ($raw === false) {
-            throw new RuntimeException('Request failed: ' . curl_error($handle));
-        }
-        $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
-        $body = json_decode((string) $raw, true);
 
-        return ['status' => $status, 'body' => is_array($body) ? $body : null, 'raw' => (string) $raw];
+        return $handle;
     }
 
-    public function login(string $login, string $password): int
+    /** multipart/form-data upload of one file as "file"; returns the raw response. */
+    public function upload(string $path, string $file, string $filename): string
     {
-        $response = $this->request('POST', '/auth/login', ['login' => $login, 'password' => $password]);
-        if ($response['status'] === 200) {
-            $this->csrf = $response['body']['data']['csrfToken'] ?? $this->csrf;
-        }
+        $handle = curl_init($this->baseUrl . $path);
+        curl_setopt_array($handle, [
+            CURLOPT_POST => true,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => ['Accept: application/json', 'X-CSRF-Token: ' . $this->csrf],
+            CURLOPT_COOKIEJAR => $this->cookieFile,
+            CURLOPT_COOKIEFILE => $this->cookieFile,
+            CURLOPT_TIMEOUT => 20,
+            CURLOPT_POSTFIELDS => ['file' => new \CURLFile($file, 'application/octet-stream', $filename)],
+        ]);
 
-        return $response['status'];
+        return (string) curl_exec($handle);
     }
 
     /** @return array<string, mixed> response data (empty on error) */
@@ -201,8 +257,8 @@ try {
     // Attendees A, B, C (active, with QR), D (archived); X in another event.
     $tokens = [];
     $ids = [];
-    foreach (['A' => 'Alpha Tester', 'B' => 'Bravo Tester', 'C' => 'Charlie Tester', 'D' => 'Delta Tester'] as $key => $name) {
-        $ids[$key] = Attendee::create($eventId, "P8{$key}-{$stamp}", ['full_name' => $name, 'department' => 'QA', 'email' => strtolower($key) . "-{$stamp}@example.invalid"], null);
+    foreach (['A' => 'Alpha Tester', 'B' => 'Bravo Tester', 'C' => 'Charlie Tester', 'D' => 'Delta Tester', 'E' => 'Echo Tester'] as $key => $name) {
+        $ids[$key] = Attendee::create($eventId, "P8{$key}-{$stamp}", ['full_name' => $name, 'company' => 'Smoke Co', 'department' => 'QA', 'email' => strtolower($key) . "-{$stamp}@example.invalid"], null);
         AttendeeQrCode::create($ids[$key], $tokens[$key] = Token::random(24));
     }
     Attendee::setStatus($ids['D'], Attendee::STATUS_ARCHIVED);
@@ -268,7 +324,7 @@ try {
     check('Other event QR -> 422 WRONG_EVENT', $r['status'] === 422 && ($r['body']['error']['code'] ?? '') === 'WRONG_EVENT');
     $s = $sc1->data('GET', '/registration/summary');
     check('Day 1 summary is for Day 1', ($s['eventDay']['id'] ?? null) === $day1);
-    check('Day 1: Registered = 2, Remaining = 1 (of 3 active)', ($s['counts'] ?? null) === ['total' => 3, 'registered' => 2, 'remaining' => 1], $s['counts'] ?? null);
+    check('Day 1: Registered = 2, Remaining = 2 (of 4 active)', ($s['counts'] ?? null) === ['total' => 4, 'registered' => 2, 'remaining' => 2], $s['counts'] ?? null);
     check('Day 1: Personal Scans = 2, General Scans = 2', ($s['scanCounts'] ?? null) === ['mine' => 2, 'all' => 2], $s['scanCounts'] ?? null);
     $page = static fn (string $view, string $result) => $sc1->data('GET', "/registration/scans?view={$view}&result={$result}");
     check('My Scans (all results) = 6 attempts', ($page('mine', 'all')['pagination']['total'] ?? null) === 6);
@@ -305,23 +361,55 @@ try {
     check('Sources: A/B registration, C manual', ($sources[$codeOf('C')] ?? '') === 'manual' && ($sources[$codeOf('A')] ?? '') === 'registration');
     check('Registration count still 2 after manual add', ($sc1->data('GET', '/registration/summary')['counts']['registered'] ?? null) === 2);
 
-    section('Day 1: Major and draws');
-    check('Manual add B to Major (201)', $add($operator, 'major', $ids['B'])['status'] === 201);
-    check('Major source stored as manual', $pdo->query("SELECT source FROM major_eligibility WHERE event_day_id = {$day1} AND attendee_id = {$ids['B']}")->fetchColumn() === 'manual');
-    check('Day 1 Major pool = B', codes($pool('major')['items'] ?? []) === [$codeOf('B')]);
+    section('Day 1: Phase 9.2 raffle rules (registration -> Minor + Major, no repeat winners)');
+    $poolCodes = static fn (string $type): array => codes($pool($type)['items'] ?? []);
+    $count = static fn (string $type): ?int => $pool($type)['eligibleCount'] ?? null;
+    check('Day 1 Major pool = A, B (registered; no import or form needed)', $poolCodes('major') === [$codeOf('A'), $codeOf('B')], $poolCodes('major'));
+    check('Manual Minor add (C) does not enter the Major pool', !in_array($codeOf('C'), $poolCodes('major'), true));
+    $draw = static fn (ApiClient $c, string $type): array => $c->request('POST', "/randomizers/{$type}/draw");
     $day1Draws = ['minor' => [], 'major' => []];
-    $drawOk = ['minor' => true, 'major' => true];
-    $allowedDay1 = ['minor' => [$codeOf('A'), $codeOf('B'), $codeOf('C')], 'major' => [$codeOf('B')]];
-    foreach (['minor', 'major'] as $type) {
-        for ($i = 0; $i < 4; $i++) {
-            $d = $operator->data('POST', "/randomizers/{$type}/draw");
-            $day1Draws[$type][] = (int) ($d['drawId'] ?? 0);
-            $drawOk[$type] = $drawOk[$type] && in_array($d['winner']['attendeeCode'] ?? '', $allowedDay1[$type], true);
-        }
+    $winners = ['minor' => [], 'major' => []];
+    $poolSizes = [];
+    for ($i = 0; $i < 3; $i++) {
+        $d = $draw($operator, 'minor')['body']['data'] ?? [];
+        $day1Draws['minor'][] = (int) ($d['drawId'] ?? 0);
+        $winners['minor'][] = $d['winner']['attendeeCode'] ?? '';
+        $poolSizes[] = $count('minor');
     }
-    check('Day 1 Minor draws (4) only pick A/B/C', $drawOk['minor']);
-    check('Day 1 Major draws (4) only pick B', $drawOk['major']);
-    check('Void a Day 1 draw (200)', $operator->request('POST', "/randomizers/draws/{$day1Draws['minor'][0]}/void", ['reason' => 'Smoke'])['status'] === 200);
+    $sortedMinor = $winners['minor'];
+    sort($sortedMinor);
+    check('3 Minor draws pick A, B, C once each (no repeat winner)', $sortedMinor === [$codeOf('A'), $codeOf('B'), $codeOf('C')], $winners['minor']);
+    check('Minor pool shrinks 2 -> 1 -> 0 after each win', $poolSizes === [2, 1, 0], $poolSizes);
+    $r = $draw($operator, 'minor');
+    check('4th Minor draw -> 409 NO_ELIGIBLE_ATTENDEES (server-side exclusion)', $r['status'] === 409 && ($r['body']['error']['code'] ?? '') === 'NO_ELIGIBLE_ATTENDEES');
+    check('Minor winners stay in the Major pool (A, B)', $poolCodes('major') === [$codeOf('A'), $codeOf('B')]);
+    for ($i = 0; $i < 2; $i++) {
+        $d = $draw($operator, 'major')['body']['data'] ?? [];
+        $day1Draws['major'][] = (int) ($d['drawId'] ?? 0);
+        $winners['major'][] = $d['winner']['attendeeCode'] ?? '';
+    }
+    $sortedMajor = $winners['major'];
+    sort($sortedMajor);
+    check('2 Major draws pick A and B once each (Minor winners can win Major)', $sortedMajor === [$codeOf('A'), $codeOf('B')], $winners['major']);
+    check('3rd Major draw -> 409 (A and B already won Major)', $draw($operator, 'major')['status'] === 409);
+    check('Major wins do not change the Minor pool (still 0)', $count('minor') === 0);
+    $cand = array_column($operator->data('GET', '/randomizers/minor/candidates?search=' . urlencode("-{$stamp}"))['items'] ?? [], null, 'attendeeCode');
+    check('Candidates show alreadyWon for Minor winners', ($cand[$codeOf('A')]['alreadyWon'] ?? null) === true && ($cand[$codeOf('E')]['alreadyWon'] ?? null) === false);
+    $r = $add($operator, 'minor', $ids['A']);
+    check('Manual add of a Minor winner -> 409 ALREADY_WON', $r['status'] === 409 && ($r['body']['error']['code'] ?? '') === 'ALREADY_WON');
+    $voidedCode = $winners['minor'][0];
+    check('Void the first Minor draw (200)', $operator->request('POST', "/randomizers/draws/{$day1Draws['minor'][0]}/void", ['reason' => 'Smoke'])['status'] === 200);
+    check('Void returns that attendee to the Minor pool only', $poolCodes('minor') === [$voidedCode] && $count('major') === 0);
+    $d = $draw($operator, 'minor')['body']['data'] ?? [];
+    $day1Draws['minor'][] = (int) ($d['drawId'] ?? 0);
+    check('Voided attendee can win Minor again', ($d['winner']['attendeeCode'] ?? '') === $voidedCode);
+    check('Manual add E to Major (201)', $add($operator, 'major', $ids['E'])['status'] === 201);
+    check('Major source stored as manual', $pdo->query("SELECT source FROM major_eligibility WHERE event_day_id = {$day1} AND attendee_id = {$ids['E']}")->fetchColumn() === 'manual');
+    check('Manual Major add: E in Major pool, not in Minor pool', $poolCodes('major') === [$codeOf('E')] && $poolCodes('minor') === []);
+    check('No attendee has two valid wins of the same randomizer on Day 1', (int) $pdo->query(
+        "SELECT COUNT(*) FROM (SELECT attendee_id, randomizer_type FROM randomizer_draws WHERE event_day_id = {$day1} AND voided_at IS NULL
+         GROUP BY attendee_id, randomizer_type HAVING COUNT(*) > 1) x"
+    )->fetchColumn() === 0);
 
     // ---------------------------------------------------------------- Day 2
     section('Day 2: switch and isolation');
@@ -331,8 +419,8 @@ try {
     check('Day 2: Registered = 0', ($s['counts']['registered'] ?? null) === 0 && ($s['eventDay']['id'] ?? null) === $day2);
     check('Day 2: Personal Scans = 0, General Scans = 0', ($s['scanCounts'] ?? null) === ['mine' => 0, 'all' => 0], $s['scanCounts'] ?? null);
     check('Day 2: My Scans list empty', ($page('mine', 'all')['pagination']['total'] ?? null) === 0);
-    check('Day 2 Minor pool empty', ($pool('minor')['eligibleCount'] ?? null) === 0);
-    check('Day 2 Major pool empty (Day 1 Major does not carry over)', ($pool('major')['eligibleCount'] ?? null) === 0);
+    check('Day 2 Minor pool empty', $count('minor') === 0);
+    check('Day 2 Major pool empty (Day 1 eligibility does not carry over)', $count('major') === 0);
     check('Day 2 recent winners empty', ($operator->data('GET', '/randomizers/minor')['recentWinners'] ?? null) === []);
     check('Day 1 draw cannot be voided on Day 2 (404)', $operator->request('POST', "/randomizers/draws/{$day1Draws['minor'][1]}/void")['status'] === 404);
     check('Day 2: same QR registers A again', ($scan($sc1, $tokens['A'])['body']['data']['status'] ?? null) === 'registered');
@@ -346,34 +434,33 @@ try {
     check('Day 2 lookup: A and C registered, B not', ($lookup[$codeOf('A')]['registeredToday'] ?? null) === true
         && ($lookup[$codeOf('C')]['registeredToday'] ?? null) === true && ($lookup[$codeOf('B')]['registeredToday'] ?? null) === false);
     $p = $pool('minor');
-    check('Day 2 Minor pool = A, C (registration only)', codes($p['items'] ?? []) === [$codeOf('A'), $codeOf('C')]);
+    check('Day 2 Minor pool = A, C (Day 1 Minor winners not excluded on Day 2)', codes($p['items'] ?? []) === [$codeOf('A'), $codeOf('C')]);
     check('Day 2: C source is registration (Day 1 manual entry not reused)', (array_column($p['items'] ?? [], 'source', 'attendeeCode')[$codeOf('C')] ?? '') === 'registration');
-    check('Day 2: manual add A to Major (201)', $add($operator, 'major', $ids['A'])['status'] === 201);
-    check('Day 2 Major pool = A only (not Day 1\'s B)', codes($pool('major')['items'] ?? []) === [$codeOf('A')]);
-    check('Day 2 Major row stored for Day 2 only', (int) $pdo->query("SELECT COUNT(*) FROM major_eligibility WHERE attendee_id = {$ids['A']} AND event_day_id = {$day1}")->fetchColumn() === 0);
-    $allowedDay2 = ['minor' => [$codeOf('A'), $codeOf('C')], 'major' => [$codeOf('A')]];
-    $day2Draws = ['minor' => [], 'major' => []];
-    $drawOk = ['minor' => true, 'major' => true];
-    foreach (['minor', 'major'] as $type) {
-        for ($i = 0; $i < 4; $i++) {
-            $d = $operator->data('POST', "/randomizers/{$type}/draw");
-            $day2Draws[$type][] = (int) ($d['drawId'] ?? 0);
-            $drawOk[$type] = $drawOk[$type] && in_array($d['winner']['attendeeCode'] ?? '', $allowedDay2[$type], true);
-        }
-    }
-    check('Day 2 Minor draws (4) only pick A/C (never B)', $drawOk['minor']);
-    check('Day 2 Major draws (4) only pick A (never B)', $drawOk['major']);
-    check('Day 2 draws stored with Day 2', (int) $pdo->query('SELECT COUNT(*) FROM randomizer_draws WHERE event_day_id = ' . $day2 . ' AND id IN (' . implode(',', array_merge(...array_values($day2Draws))) . ')')->fetchColumn() === 8);
+    check('Day 2 Major pool = A, C (Day 1 Major winner A eligible again)', $poolCodes('major') === [$codeOf('A'), $codeOf('C')]);
+    check('Day 2: no Major row for E (Day 1 manual add stays on Day 1)', (int) $pdo->query("SELECT COUNT(*) FROM major_eligibility WHERE attendee_id = {$ids['E']} AND event_day_id = {$day2}")->fetchColumn() === 0);
+    // Two Major draws at the same moment from two sessions must not pick the same winner.
+    $parallel = ApiClient::parallel([[$operator, 'POST', '/randomizers/major/draw'], [$admin, 'POST', '/randomizers/major/draw']]);
+    $pw = array_map(static fn (array $r): string => $r['body']['data']['winner']['attendeeCode'] ?? '', $parallel);
+    sort($pw);
+    check('Simultaneous Major draws give two different winners (A, C)', $pw === [$codeOf('A'), $codeOf('C')], $pw);
+    $day2Draws = ['minor' => [], 'major' => array_map(static fn (array $r): int => (int) ($r['body']['data']['drawId'] ?? 0), $parallel)];
+    check('3rd Day 2 Major draw -> 409', $draw($operator, 'major')['status'] === 409);
+    $d = $draw($operator, 'minor')['body']['data'] ?? [];
+    $day2Draws['minor'][] = (int) ($d['drawId'] ?? 0);
+    check('Day 2 Minor draw picks A or C (A can win Minor again on a new day)', in_array($d['winner']['attendeeCode'] ?? '', [$codeOf('A'), $codeOf('C')], true));
+    check('Day 2 draws stored with Day 2', (int) $pdo->query('SELECT COUNT(*) FROM randomizer_draws WHERE event_day_id = ' . $day2 . ' AND id IN (' . implode(',', array_merge(...array_values($day2Draws))) . ')')->fetchColumn() === 3);
 
     section('Day 2: day-scoped reports');
     $reg = $admin->csv('/reports/registration.csv?scope=day');
     $regStatus = array_column(array_filter($reg, static fn ($r) => str_contains($r['Attendee Code'] ?? '', $stamp)), 'Registration Status', 'Attendee Code');
     check('Registration (day): every row is Day 2', $reg !== [] && count(array_unique(array_column($reg, 'Event Day'))) === 1 && str_starts_with($reg[0]['Event Day'], 'Day 2 '));
-    check('Registration (day): A, C registered; B not', ($regStatus[$codeOf('A')] ?? '') === 'Registered' && ($regStatus[$codeOf('C')] ?? '') === 'Registered' && ($regStatus[$codeOf('B')] ?? '') === 'Not registered');
-    $maj = array_column($admin->csv('/reports/major-eligibility.csv?scope=day'), null, 'Attendee Code');
-    check('Major (day): A Yes / Manual, B No', ($maj[$codeOf('A')]['Major Eligible'] ?? '') === 'Yes' && ($maj[$codeOf('A')]['Eligibility Source'] ?? '') === 'Manual' && ($maj[$codeOf('B')]['Major Eligible'] ?? '') === 'No');
+    check('Registration (day): A, C registered; B not; Cluster column', ($regStatus[$codeOf('A')] ?? '') === 'Registered' && ($regStatus[$codeOf('C')] ?? '') === 'Registered'
+        && ($regStatus[$codeOf('B')] ?? '') === 'Not registered' && array_key_exists('Cluster', $reg[0]));
+    $el = array_column($admin->csv('/reports/eligibility.csv?scope=day'), null, 'Attendee Code');
+    check('Eligibility (day): A Minor+Major Yes via Registration, B No', ($el[$codeOf('A')]['Minor Eligible'] ?? '') === 'Yes' && ($el[$codeOf('A')]['Major Eligible'] ?? '') === 'Yes'
+        && ($el[$codeOf('A')]['Major Source'] ?? '') === 'Registration' && ($el[$codeOf('A')]['Won Major'] ?? '') === 'Yes' && ($el[$codeOf('B')]['Major Eligible'] ?? '') === 'No');
     $dr = $admin->csv('/reports/draws.csv?scope=day');
-    check('Draws (day): 8 rows, all Day 2', count($dr) === 8 && count(array_unique(array_column($dr, 'Event Day'))) === 1);
+    check('Draws (day): 3 rows, all Day 2', count($dr) === 3 && count(array_unique(array_column($dr, 'Event Day'))) === 1);
 
     // ------------------------------------------------------- back to Day 1
     section('Back to Day 1: nothing overwritten');
@@ -384,45 +471,93 @@ try {
     check('Day 1: Registered = 2 (A, B)', ($s['counts']['registered'] ?? null) === 2);
     check('Day 1: Personal Scans = 2, General Scans = 2', ($s['scanCounts'] ?? null) === ['mine' => 2, 'all' => 2], $s['scanCounts'] ?? null);
     check('Day 1 scan log intact (6 attempts)', ($page('mine', 'all')['pagination']['total'] ?? null) === 6);
-    $p = $pool('minor');
-    check('Day 1 Minor pool = A, B, C', codes($p['items'] ?? []) === [$codeOf('A'), $codeOf('B'), $codeOf('C')]);
-    check('Day 1: C still manual', (array_column($p['items'] ?? [], 'source', 'attendeeCode')[$codeOf('C')] ?? '') === 'manual');
-    check('Day 1 Major pool = B', codes($pool('major')['items'] ?? []) === [$codeOf('B')]);
+    check('Day 1 Minor pool still empty (all of A, B, C won Minor)', $count('minor') === 0);
+    check('Day 1 Major pool = E (manual)', $poolCodes('major') === [$codeOf('E')]);
     $metrics = $admin->data('GET', '/dashboard/summary')['metrics'] ?? [];
-    check('Dashboard (Day 1): registered 2, Minor 3, Major 1', ($metrics['registered']['value'] ?? null) === 2
-        && ($metrics['minorEligible']['value'] ?? null) === 3 && ($metrics['majorEligible']['value'] ?? null) === 1, $metrics);
+    check('Dashboard (Day 1): registered 2, Minor 0, Major 1', ($metrics['registered']['value'] ?? null) === 2
+        && ($metrics['minorEligible']['value'] ?? null) === 0 && ($metrics['majorEligible']['value'] ?? null) === 1, $metrics);
     $recent = $operator->data('GET', '/randomizers/minor')['recentWinners'] ?? [];
-    check('Day 1 Minor history = 4 draws, first one VOID', count($recent) === 4 && ($recent[3]['status'] ?? '') === 'void' && ($recent[3]['drawId'] ?? 0) === $day1Draws['minor'][0]);
-    check('Day 1 Major history = 4 draws', count($operator->data('GET', '/randomizers/major')['recentWinners'] ?? []) === 4);
+    check('Day 1 Minor history = 4 draws, the first one VOID', count($recent) === 4 && ($recent[3]['status'] ?? '') === 'void' && ($recent[3]['drawId'] ?? 0) === $day1Draws['minor'][0]);
+    check('Day 1 Major history = 2 draws', count($operator->data('GET', '/randomizers/major')['recentWinners'] ?? []) === 2);
     $reg = $admin->csv('/reports/registration.csv?scope=day');
     $regStatus = array_column(array_filter($reg, static fn ($r) => str_contains($r['Attendee Code'] ?? '', $stamp)), 'Registration Status', 'Attendee Code');
     check('Registration (day 1): A, B registered; C not; Day 1 only', ($regStatus[$codeOf('A')] ?? '') === 'Registered' && ($regStatus[$codeOf('B')] ?? '') === 'Registered'
         && ($regStatus[$codeOf('C')] ?? '') === 'Not registered' && count(array_unique(array_column($reg, 'Event Day'))) === 1 && str_starts_with($reg[0]['Event Day'], 'Day 1 '));
-    $maj = array_column($admin->csv('/reports/major-eligibility.csv?scope=day'), null, 'Attendee Code');
-    check('Major (day 1): B Yes, A No', ($maj[$codeOf('B')]['Major Eligible'] ?? '') === 'Yes' && ($maj[$codeOf('A')]['Major Eligible'] ?? '') === 'No');
+    $el = array_column($admin->csv('/reports/eligibility.csv?scope=day'), null, 'Attendee Code');
+    check('Eligibility (day 1): C Minor via Manual (not Major), E Major via Manual (not Minor)', ($el[$codeOf('C')]['Minor Source'] ?? '') === 'Manual'
+        && ($el[$codeOf('C')]['Major Eligible'] ?? '') === 'No' && ($el[$codeOf('E')]['Major Source'] ?? '') === 'Manual' && ($el[$codeOf('E')]['Minor Eligible'] ?? '') === 'No');
     $dr = $admin->csv('/reports/draws.csv?scope=day');
-    check('Draws (day 1): 8 rows incl. 1 VOID', count($dr) === 8 && count(array_filter($dr, static fn ($r) => $r['Status'] === 'VOID')) === 1);
+    check('Draws (day 1): 6 rows incl. 1 VOID', count($dr) === 6 && count(array_filter($dr, static fn ($r) => $r['Status'] === 'VOID')) === 1);
     $all = $admin->csv('/reports/registration.csv?scope=all');
     check('Registration (all days): 2 rows per attendee with Event Day', count(array_filter($all, static fn ($r) => ($r['Attendee Code'] ?? '') === $codeOf('A'))) === 2
         && count(array_unique(array_column($all, 'Event Day'))) === 2);
-    check('Draws (all days): 16 rows over 2 days', count($admin->csv('/reports/draws.csv?scope=all')) === 16);
-    check('Major (all days): A Yes on Day 2 only', count(array_filter($admin->csv('/reports/major-eligibility.csv?scope=all'),
-        static fn ($r) => $r['Attendee Code'] === $codeOf('A') && $r['Major Eligible'] === 'Yes' && str_starts_with($r['Event Day'], 'Day 2 '))) === 1);
+    check('Draws (all days): 9 rows over 2 days', count($admin->csv('/reports/draws.csv?scope=all')) === 9);
+
+    section('Excel exports');
+    $sheet = static function (ApiClient $c, string $path): array {
+        $r = $c->request('GET', $path);
+        $file = tempnam(sys_get_temp_dir(), 'p92-');
+        file_put_contents($file, $r['raw']);
+        $zip = new ZipArchive();
+        $rows = [];
+        if ($zip->open($file) === true) {
+            $xml = simplexml_load_string((string) $zip->getFromName('xl/worksheets/sheet1.xml'));
+            foreach ($xml->sheetData->row ?? [] as $row) {
+                $cells = [];
+                foreach ($row->c as $c) {
+                    preg_match('/^([A-Z]+)/', (string) $c['r'], $m);
+                    $cells[$m[1]] = (string) $c->is->t;
+                }
+                $rows[] = $cells;
+            }
+            $zip->close();
+        }
+        @unlink($file);
+        $headers = array_shift($rows) ?? [];
+
+        return ['status' => $r['status'], 'raw' => $r['raw'], 'headers' => array_values($headers),
+            'rows' => array_map(static fn (array $cells): array => array_combine(array_values($headers), array_map(static fn ($col) => $cells[$col] ?? '', array_keys($headers))), $rows)];
+    };
+    $x1 = $sheet($admin, "/reports/day-attendees.xlsx?day_id={$day1}");
+    check('Day 1 Attendees.xlsx: headers', $x1['headers'] === ['Attendee Code', 'Full Name', 'Company', 'Cluster', 'Employee ID', 'Email', 'Registration Status', 'Registered At'], $x1['headers']);
+    $st1 = array_column($x1['rows'], 'Registration Status', 'Attendee Code');
+    check('Day 1 Attendees.xlsx: 4 active attendees, A/B registered, C/E not, D (archived) absent', count($x1['rows']) === 4
+        && ($st1[$codeOf('A')] ?? '') === 'Registered' && ($st1[$codeOf('E')] ?? '') === 'Not registered' && !isset($st1[$codeOf('D')]), $st1);
+    $x2 = $sheet($admin, "/reports/day-attendees.xlsx?day_id={$day2}");
+    $st2 = array_column($x2['rows'], 'Registration Status', 'Attendee Code');
+    check('Day 2 Attendees.xlsx: A/C registered, B not', ($st2[$codeOf('A')] ?? '') === 'Registered' && ($st2[$codeOf('C')] ?? '') === 'Registered' && ($st2[$codeOf('B')] ?? '') === 'Not registered');
+    check('Day attendees files contain no QR tokens', !str_contains($x1['raw'] . $x2['raw'], $tokens['A']) && !str_contains($x1['raw'], $tokens['C']));
+    check('Other event day id -> 404', $admin->request('GET', '/reports/day-attendees.xlsx?day_id=999999')['status'] === 404);
+    $w = $sheet($admin, '/reports/winners.xlsx?scope=all');
+    check('Winners.xlsx: headers', $w['headers'] === ['Event Day', 'Randomizer', 'Attendee Code', 'Full Name', 'Company', 'Cluster', 'Drawn At', 'Drawn By', 'Status', 'Voided At', 'Voided By', 'Void Reason'], $w['headers']);
+    check('Winners.xlsx: 9 draws, 1 VOID', count($w['rows']) === 9 && count(array_filter($w['rows'], static fn ($r) => $r['Status'] === 'VOID')) === 1);
+    $valid = array_filter($w['rows'], static fn ($r) => $r['Status'] === 'VALID');
+    $keys = array_map(static fn ($r) => $r['Event Day'] . '|' . $r['Randomizer'] . '|' . $r['Attendee Code'], $valid);
+    check('Winners.xlsx: nobody valid twice in the same day + randomizer', count($keys) === count(array_unique($keys)));
+    $both = array_filter($valid, static fn ($r) => str_starts_with($r['Event Day'], 'Day 1 ') && $r['Attendee Code'] === $codeOf('A'));
+    check('Winners.xlsx: A appears once as Minor and once as Major on Day 1', count($both) === 2 && count(array_unique(array_column($both, 'Randomizer'))) === 2);
+    check('Winners.xlsx: Company and Cluster filled', ($valid[array_key_first($valid)]['Company'] ?? '') === 'Smoke Co' && ($valid[array_key_first($valid)]['Cluster'] ?? '') === 'QA');
 
     section('Back to Day 2: still intact');
     $admin->request('PATCH', "/event-days/{$day2}/activate");
     $s = $sc1->data('GET', '/registration/summary');
     check('Day 2: Registered = 2 (A, C), Personal 1, General 2', ($s['counts']['registered'] ?? null) === 2 && ($s['scanCounts'] ?? null) === ['mine' => 1, 'all' => 2]);
-    check('Day 2 Minor pool = A, C', codes($pool('minor')['items'] ?? []) === [$codeOf('A'), $codeOf('C')]);
-    check('Day 2 Major pool = A (manual)', codes($pool('major')['items'] ?? []) === [$codeOf('A')]);
-    check('Day 2 Minor history = 4 draws', count($operator->data('GET', '/randomizers/minor')['recentWinners'] ?? []) === 4);
+    check('Day 2 Minor pool = A, C minus the Day 2 Minor winner', $count('minor') === 1);
+    check('Day 2 Major pool empty (A and C won Major)', $count('major') === 0);
+    check('Day 2 Minor history = 1 draw', count($operator->data('GET', '/randomizers/minor')['recentWinners'] ?? []) === 1);
     // An attendee both added manually and registered the same day counts once.
     check('Day 2: manual add B to Minor (201)', $add($operator, 'minor', $ids['B'])['status'] === 201);
     check('Day 2: B then registers at the entrance', ($scan($admin, $tokens['B'])['body']['data']['status'] ?? null) === 'registered');
     $metrics = $admin->data('GET', '/dashboard/summary')['metrics'] ?? [];
-    check('Dashboard (Day 2): registered 3, Minor 3 (B counted once), Major 1', ($metrics['registered']['value'] ?? null) === 3
-        && ($metrics['minorEligible']['value'] ?? null) === 3 && ($metrics['majorEligible']['value'] ?? null) === 1, $metrics);
-    check('Day 2 Minor pool lists B once (source registration)', codes($pool('minor')['items'] ?? []) === [$codeOf('A'), $codeOf('B'), $codeOf('C')]);
+    check('Dashboard (Day 2): registered 3, Minor 2, Major 1 (B, via registration)', ($metrics['registered']['value'] ?? null) === 3
+        && ($metrics['minorEligible']['value'] ?? null) === 2 && ($metrics['majorEligible']['value'] ?? null) === 1, $metrics);
+    check('Day 2 Minor pool lists B once (source registration)', count(array_filter($pool('minor')['items'] ?? [], static fn ($i) => $i['attendeeCode'] === $codeOf('B'))) === 1
+        && (array_column($pool('minor')['items'] ?? [], 'source', 'attendeeCode')[$codeOf('B')] ?? '') === 'registration');
+
+    section('Removed Major QR / form / import');
+    foreach ([['GET', '/major-form'], ['GET', '/major-form/info'], ['GET', '/major-eligibility'], ['POST', '/major-eligibility/import/parse'], ['GET', '/reports/major-eligibility.csv']] as [$m, $p2]) {
+        check("{$m} {$p2} no longer exists (404)", $admin->request($m, $p2)['status'] === 404);
+    }
 
     // ---------------------------------------------------------- permissions
     section('Scanner Operator permissions');
@@ -438,8 +573,8 @@ try {
         ['PUT', "/event-days/{$day1}"], ['PATCH', "/event-days/{$day1}/activate"], ['GET', '/events'], ['POST', '/events'],
         ['PATCH', "/events/{$eventId}/status"], ['GET', '/attendees'], ['PUT', "/attendees/{$ids['A']}"], ['PATCH', "/attendees/{$ids['A']}/status"],
         ['POST', '/attendees/import/parse'], ['POST', '/attendees/import/preview'], ['POST', '/attendees/import'],
-        ['POST', '/major-eligibility/import/parse'], ['POST', '/major-eligibility/import/preview'], ['POST', '/major-eligibility/import'],
-        ['GET', '/major-eligibility'], ['GET', '/reports/registration.csv'], ['GET', '/reports/major-eligibility.csv'], ['GET', '/reports/draws.csv'],
+        ['GET', '/reports/registration.csv'], ['GET', '/reports/eligibility.csv'], ['GET', '/reports/draws.csv'],
+        ['GET', '/reports/day-attendees.xlsx'], ['GET', '/reports/winners.xlsx'],
         ['GET', '/randomizers/minor'], ['POST', '/randomizers/minor/draw'], ['GET', '/randomizers/major'], ['POST', '/randomizers/major/draw'],
         ['POST', '/randomizers/minor/participants'], ['POST', '/randomizers/major/participants'], ['GET', '/randomizers/minor/candidates'],
         ['POST', "/randomizers/draws/{$day2Draws['minor'][0]}/void"], ['GET', '/qr-codes'], ['POST', '/qr-codes/generate-missing'], ['GET', '/dashboard/summary'],
@@ -450,6 +585,40 @@ try {
     }
 
     // ------------------------------------------------------- password reset
+    section('External Attendees import (synthetic workbook)');
+    // Decoy sheets before/after; only "External Attendees" must be read.
+    $book = (new App\Utils\XlsxWriter())
+        ->addSheet('Summary', ['Cluster', 'Name 1', 'Attendee 1'], [['DECOY', 'Decoy Co', "Decoy {$stamp}"]])
+        ->addSheet('External Attendees', ['Cluster', 'Name 1', 'Attendee 1', 'Attendee 2', 'Attendee 3', 'Attendee 4', 'Attendee 5', 'Attendee 6', 'Attendee 7'], [
+            ['North Luzon', "AB Casiano {$stamp}", "Sfg {$stamp}", "Dsf {$stamp}", "Sgs {$stamp}", "Gds {$stamp}", "Dfs {$stamp}", "Dsg {$stamp}"],
+            ['South Luzon', "XYZ & Sons, Inc. (Ph) — \"Main\" {$stamp}", '', "Pedro {$stamp}", '', "Maria {$stamp}"],
+            ['Visayas', "Café Ñiño {$stamp}", "Juan {$stamp}"],
+            ['Mindanao', "Delta {$stamp}", "Juan {$stamp}"],
+            ['NCR', "Empty Co {$stamp}", '', '', ''],
+            ['North Luzon', "AB Casiano {$stamp}", '', '', '', '', '', '', "Dsf {$stamp}"],
+        ])
+        ->addSheet('Internal Attendees', ['Cluster', 'Name 1', 'Attendee 1'], [['X', 'Internal Co', "Internal {$stamp}"]]);
+    $bookFile = tempnam(sys_get_temp_dir(), 'p92x-') . '.xlsx';
+    file_put_contents($bookFile, $book->toString());
+    $parsedRaw = $admin->upload('/attendees/import/parse', $bookFile, 'external.xlsx');
+    @unlink($bookFile);
+    $parsed = json_decode($parsedRaw, true)['data'] ?? [];
+    check('Parse reads only the "External Attendees" sheet', ($parsed['sheet'] ?? '') === 'External Attendees' && ($parsed['layout'] ?? '') === 'external_attendees', $parsedRaw);
+    check('Expanded to 11 attendee rows (Name 1 never an attendee, blanks skipped, Attendee 7 read)', ($parsed['totalRows'] ?? 0) === 11 && ($parsed['attendeeColumns'] ?? 0) === 7);
+    $names = array_map(static fn (array $r): string => $r['cells'][0], $parsed['rows'] ?? []);
+    check('No company, decoy or internal names imported as attendees', !array_filter($names, static fn ($n) => str_contains($n, 'Casiano') || str_contains($n, 'Decoy') || str_contains($n, 'Internal')));
+    $pedro = array_values(array_filter($parsed['rows'] ?? [], static fn ($r) => $r['cells'][0] === "Pedro {$stamp}"))[0]['cells'] ?? [];
+    check('Blank Attendee 1 + filled Attendee 2: Pedro gets the row Company and Cluster', $pedro === ["Pedro {$stamp}", "XYZ & Sons, Inc. (Ph) — \"Main\" {$stamp}", 'South Luzon'], $pedro);
+    $importPayload = ['filename' => 'external.xlsx', 'headers' => $parsed['headers'] ?? [], 'rows' => $parsed['rows'] ?? [], 'mapping' => $parsed['suggestedMapping'] ?? []];
+    $preview = $admin->data('POST', '/attendees/import/preview', $importPayload);
+    check('Preview: 10 new, 1 duplicate in file (same name + company + cluster)', ($preview['summary']['valid'] ?? null) === 10 && ($preview['summary']['duplicatesInFile'] ?? null) === 1, $preview['summary'] ?? null);
+    $committed = $admin->request('POST', '/attendees/import', $importPayload);
+    check('Import commits 10 attendees', $committed['status'] === 201 && ($committed['body']['data']['summary']['valid'] ?? null) === 10, $committed['raw']);
+    $juans = $pdo->query("SELECT company, department FROM attendees WHERE event_id = {$eventId} AND full_name = 'Juan {$stamp}' ORDER BY company")->fetchAll();
+    check('Same name in two companies -> two attendees with their own Company/Cluster', count($juans) === 2
+        && $juans[0]['company'] === "Café Ñiño {$stamp}" && $juans[0]['department'] === 'Visayas' && $juans[1]['company'] === "Delta {$stamp}" && $juans[1]['department'] === 'Mindanao', $juans);
+    check('Company stored separately from Cluster', (int) $pdo->query("SELECT COUNT(*) FROM attendees WHERE event_id = {$eventId} AND company = 'AB Casiano {$stamp}' AND department = 'North Luzon'")->fetchColumn() === 6);
+
     section('Password reset and disable sign-out');
     check('Scanner 1 session active before reset', $sc1->request('GET', '/registration/summary')['status'] === 200);
     $newPassword = bin2hex(random_bytes(8));

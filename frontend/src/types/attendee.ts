@@ -6,6 +6,8 @@ export interface Attendee {
   id: number
   attendeeCode: string
   fullName: string
+  company: string | null
+  /** Cluster (location / region). Stored in `department`. */
   department: string | null
   email: string | null
   externalIdentifier: string | null
@@ -48,6 +50,7 @@ export interface AttendeeListQuery {
 
 export interface AttendeeUpdateInput {
   full_name: string
+  company: string
   department: string
   email: string
   external_identifier: string
@@ -55,7 +58,7 @@ export interface AttendeeUpdateInput {
 
 /* ---------- Import ---------- */
 
-export const IMPORT_FIELDS = ['full_name', 'department', 'email', 'external_identifier'] as const
+export const IMPORT_FIELDS = ['full_name', 'company', 'department', 'email', 'external_identifier'] as const
 export type ImportField = (typeof IMPORT_FIELDS)[number]
 export type ColumnMapping = Record<ImportField, number | null>
 
@@ -71,6 +74,12 @@ export interface ParsedFile {
   rows: ImportRow[]
   totalRows: number
   suggestedMapping: ColumnMapping
+  /** XLSX sheet that was read ("External Attendees" when present). */
+  sheet?: string | null
+  /** external_attendees = Cluster | Name 1 (company) | Attendee 1..N, expanded to one row per attendee. */
+  layout?: 'standard' | 'external_attendees'
+  sourceRows?: number
+  attendeeColumns?: number
 }
 
 export interface ImportSummary {
@@ -85,6 +94,7 @@ export interface ImportSummary {
 interface RowDisplay {
   rowNumber: number
   fullName: string
+  company: string
   department: string
   email: string
   externalIdentifier: string
@@ -110,7 +120,8 @@ export interface ImportPreview {
   newPreview: Array<{
     rowNumber: number
     fullName: string
-    department: string
+    company: string | null
+    department: string | null
     email: string | null
     externalIdentifier: string | null
   }>

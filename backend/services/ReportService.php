@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Core\Database;
+use App\Core\HttpException;
 use App\Core\Response;
 use App\Models\EventDay;
 use App\Models\RandomizerDraw;
+use App\Utils\XlsxWriter;
 
 /**
  * CSV exports for the ACTIVE event (Phase 7), per event day (Phase 8).
@@ -26,7 +28,7 @@ final class ReportService
         [$dayJoin, $params] = self::dayJoin($event, $day);
         $statement = Database::connection()->prepare(
             "SELECT d.day_number, d.event_date AS day_date,
-                    a.attendee_code, a.full_name, a.department, a.email, a.status,
+                    a.attendee_code, a.full_name, a.company, a.department, a.email, a.status,
                     r.scanned_at, u.name AS scanned_by
              FROM attendees a
              {$dayJoin}
@@ -40,7 +42,7 @@ final class ReportService
         $rows = [];
         foreach ($statement->fetchAll() as $row) {
             $rows[] = [
-                self::dayCell($row), $row['attendee_code'], $row['full_name'], $row['department'], $row['email'],
+                self::dayCell($row), $row['attendee_code'], $row['full_name'], $row['company'], $row['department'], $row['email'],
                 $row['scanned_at'] !== null ? 'Registered' : 'Not registered',
                 $row['scanned_at'], $row['scanned_by'], ucfirst((string) $row['status']),
             ];
@@ -50,45 +52,61 @@ final class ReportService
             $event,
             $day,
             'registration',
-            ['Event Day', 'Attendee Code', 'Full Name', 'Department', 'Email', 'Registration Status', 'Registered At', 'Registered By', 'Attendee Status'],
+            ['Event Day', 'Attendee Code', 'Full Name', 'Company', 'Cluster', 'Email', 'Registration Status', 'Registered At', 'Registered By', 'Attendee Status'],
             $rows
         );
     }
 
-    public static function majorEligibility(string $scope): Response
+    /**
+     * Raffle eligibility per attendee per day (Phase 9.2): registration makes
+     * an attendee eligible for BOTH Minor and Major; a manual addition counts
+     * for its own randomizer only. "Won" = valid (not void) draw that day.
+     */
+    public static function eligibility(string $scope): Response
     {
         [$event, $day] = self::context($scope);
         [$dayJoin, $params] = self::dayJoin($event, $day);
         $statement = Database::connection()->prepare(
             "SELECT d.day_number, d.event_date AS day_date,
-                    a.attendee_code, a.full_name, a.department, a.email, a.status,
-                    m.id AS eligibility_id, m.source, m.imported_at, u.name AS added_by
+                    a.attendee_code, a.full_name, a.company, a.department, a.email, a.status,
+                    (r.id IS NOT NULL) AS registered,
+                    (mm.id IS NOT NULL) AS minor_manual,
+                    (mj.id IS NOT NULL) AS major_manual,
+                    EXISTS (SELECT 1 FROM randomizer_draws w WHERE w.event_day_id = d.id AND w.attendee_id = a.id
+                            AND w.randomizer_type = 'minor' AND w.voided_at IS NULL) AS won_minor,
+                    EXISTS (SELECT 1 FROM randomizer_draws w2 WHERE w2.event_day_id = d.id AND w2.attendee_id = a.id
+                            AND w2.randomizer_type = 'major' AND w2.voided_at IS NULL) AS won_major
              FROM attendees a
              {$dayJoin}
-             LEFT JOIN major_eligibility m ON m.attendee_id = a.id AND m.event_day_id = d.id
-             LEFT JOIN users u ON u.id = m.added_by
+             LEFT JOIN registration_scans r ON r.attendee_id = a.id AND r.event_day_id = d.id
+             LEFT JOIN minor_manual_entries mm ON mm.attendee_id = a.id AND mm.event_day_id = d.id
+             LEFT JOIN major_eligibility mj ON mj.attendee_id = a.id AND mj.event_day_id = d.id AND mj.source = 'manual'
              WHERE a.event_id = :event_id
-             ORDER BY d.day_number, (m.id IS NULL), a.attendee_code"
+             ORDER BY d.day_number, (r.id IS NULL), a.attendee_code"
         );
         $statement->execute($params);
 
         $rows = [];
         foreach ($statement->fetchAll() as $row) {
-            // Eligible for the draw = record for that day AND attendee active (same rule as the randomizer).
-            $hasRecord = $row['eligibility_id'] !== null;
+            $active = $row['status'] === 'active';
+            $source = static fn (bool $manual): string => $row['registered'] ? 'Registration' : ($manual ? 'Manual' : '');
+            $minor = $active && ($row['registered'] || $row['minor_manual']);
+            $major = $active && ($row['registered'] || $row['major_manual']);
             $rows[] = [
-                self::dayCell($row), $row['attendee_code'], $row['full_name'], $row['department'], $row['email'],
-                $hasRecord && $row['status'] === 'active' ? 'Yes' : 'No',
-                $hasRecord ? ucfirst((string) $row['source']) : '',
-                $row['imported_at'], $row['added_by'], ucfirst((string) $row['status']),
+                self::dayCell($row), $row['attendee_code'], $row['full_name'], $row['company'], $row['department'], $row['email'],
+                $row['registered'] ? 'Yes' : 'No',
+                $minor ? 'Yes' : 'No', $minor ? $source((bool) $row['minor_manual']) : '', $row['won_minor'] ? 'Yes' : 'No',
+                $major ? 'Yes' : 'No', $major ? $source((bool) $row['major_manual']) : '', $row['won_major'] ? 'Yes' : 'No',
+                ucfirst((string) $row['status']),
             ];
         }
 
         return self::csv(
             $event,
             $day,
-            'major-eligibility',
-            ['Event Day', 'Attendee Code', 'Full Name', 'Department', 'Email', 'Major Eligible', 'Eligibility Source', 'Imported/Added At', 'Added/Imported By', 'Attendee Status'],
+            'raffle-eligibility',
+            ['Event Day', 'Attendee Code', 'Full Name', 'Company', 'Cluster', 'Email', 'Registered',
+                'Minor Eligible', 'Minor Source', 'Won Minor', 'Major Eligible', 'Major Source', 'Won Major', 'Attendee Status'],
             $rows
         );
     }
@@ -99,7 +117,7 @@ final class ReportService
         $rows = [];
         foreach (RandomizerDraw::allForEvent((int) $event['id'], $day !== null ? (int) $day['id'] : null) as $row) {
             $rows[] = [
-                self::dayCell($row), ucfirst((string) $row['randomizer_type']), $row['attendee_code'], $row['full_name'], $row['department'],
+                self::dayCell($row), ucfirst((string) $row['randomizer_type']), $row['attendee_code'], $row['full_name'], $row['company'], $row['department'],
                 $row['selected_at'], $row['drawn_by_name'], $row['voided_at'] !== null ? 'VOID' : 'Valid',
                 $row['voided_at'], $row['voided_by_name'], $row['void_reason'],
             ];
@@ -109,9 +127,78 @@ final class ReportService
             $event,
             $day,
             'draw-winners',
-            ['Event Day', 'Draw Type', 'Attendee Code', 'Full Name', 'Department', 'Drawn At', 'Drawn By', 'Status', 'Voided At', 'Voided By', 'Void Reason'],
+            ['Event Day', 'Draw Type', 'Attendee Code', 'Full Name', 'Company', 'Cluster', 'Drawn At', 'Drawn By', 'Status', 'Voided At', 'Voided By', 'Void Reason'],
             $rows
         );
+    }
+
+    /**
+     * "Day N Attendees.xlsx" (Phase 9.2): every active attendee of the active
+     * event with their registration status for that day. The same attendee
+     * list is used for every day; each file is one day. $dayId must be a day
+     * of the active event (defaults to the current day).
+     */
+    public static function dayAttendeesXlsx(?int $dayId): Response
+    {
+        $event = AttendeeService::activeEventOrFail();
+        $day = $dayId !== null ? EventDay::find($dayId) : EventDay::findActiveForEvent((int) $event['id']);
+        if ($day === null || (int) $day['event_id'] !== (int) $event['id']) {
+            throw HttpException::notFound('Event day not found in the active event.');
+        }
+        $statement = Database::connection()->prepare(
+            "SELECT a.attendee_code, a.full_name, a.company, a.department, a.external_identifier, a.email, r.scanned_at
+             FROM attendees a
+             LEFT JOIN registration_scans r ON r.attendee_id = a.id AND r.event_day_id = :day_id
+             WHERE a.event_id = :event_id AND a.status = 'active'
+             ORDER BY a.full_name, a.attendee_code"
+        );
+        $statement->execute(['day_id' => (int) $day['id'], 'event_id' => (int) $event['id']]);
+
+        $rows = [];
+        foreach ($statement->fetchAll() as $row) {
+            $rows[] = [
+                $row['attendee_code'], $row['full_name'], $row['company'], $row['department'], $row['external_identifier'], $row['email'],
+                $row['scanned_at'] !== null ? 'Registered' : 'Not registered', $row['scanned_at'],
+            ];
+        }
+        $xlsx = (new XlsxWriter())->addSheet(
+            "Day {$day['day_number']} Attendees",
+            ['Attendee Code', 'Full Name', 'Company', 'Cluster', 'Employee ID', 'Email', 'Registration Status', 'Registered At'],
+            $rows
+        );
+
+        return self::xlsx($xlsx, "Day {$day['day_number']} Attendees.xlsx");
+    }
+
+    /**
+     * Winners.xlsx (Phase 9.2): one sheet of Minor and Major draws in order,
+     * with Event Day and Randomizer. VOID draws are kept with their reason.
+     */
+    public static function winnersXlsx(string $scope): Response
+    {
+        [$event, $day] = self::context($scope);
+        $rows = [];
+        foreach (RandomizerDraw::allForEvent((int) $event['id'], $day !== null ? (int) $day['id'] : null) as $row) {
+            $rows[] = [
+                self::dayCell($row), ucfirst((string) $row['randomizer_type']), $row['attendee_code'], $row['full_name'], $row['company'], $row['department'],
+                $row['selected_at'], $row['drawn_by_name'], $row['voided_at'] !== null ? 'VOID' : 'VALID',
+                $row['voided_at'], $row['voided_by_name'], $row['void_reason'],
+            ];
+        }
+        $xlsx = (new XlsxWriter())->addSheet(
+            'Winners',
+            ['Event Day', 'Randomizer', 'Attendee Code', 'Full Name', 'Company', 'Cluster', 'Drawn At', 'Drawn By', 'Status', 'Voided At', 'Voided By', 'Void Reason'],
+            $rows
+        );
+
+        return self::xlsx($xlsx, $day !== null ? "Winners - Day {$day['day_number']}.xlsx" : 'Winners.xlsx');
+    }
+
+    private static function xlsx(XlsxWriter $xlsx, string $filename): Response
+    {
+        return Response::raw(200, $xlsx->toString(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', [
+            'Content-Disposition' => 'attachment; filename="' . str_replace('"', '', $filename) . '"',
+        ]);
     }
 
     /** @return array{0: array<string, mixed>, 1: array<string, mixed>|null} [event, day or null for all days] */

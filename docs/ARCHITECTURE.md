@@ -58,7 +58,7 @@ the client sees a generic `SERVER_ERROR` unless `APP_DEBUG=true`.
 | QR generation/printing | `QrCodeService` using `Token::random()` | Printable ID view | `attendee_qr_codes` (unique token, one per attendee) |
 | Registration scanner | `POST /registration/scan` (token → attendee, insert scan, duplicate → 409 + audit) | Registration page (hardware QR scanner input) | `registration_scans` unique (event, attendee), composite FK |
 | Minor randomizer | Draw service using `random_int()` + audit | Fullscreen draw UI | Eligibility = registered attendees (rules defined then) |
-| Major import + randomizer | Google Sheet/CSV import → `major_entries` | Major draw UI | `major_entries.response_data`, `external_identifier` |
+| Major randomizer | Pool = today's registrations (+ manual) − today's Major winners (Phase 9.2) | Major draw UI | `randomizer_draws`, `registration_scans` |
 | Winners / Reports | New `winners` table migration | Reports pages | `audit_logs` |
 
 ## Security checklist (Phase 1)

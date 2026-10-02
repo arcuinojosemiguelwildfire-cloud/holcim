@@ -139,6 +139,17 @@ and the role matrix is in README §9g. Phase 8 notes:
   reports with `scope=day`) resolve the current Event Day on the server and
   return `409 NO_ACTIVE_DAY` when the active event has no current day. They
   never accept an event or day ID from the client.
+- Phase 9.2: `/major-form`, `/major-form/info` and all `/major-eligibility*`
+  endpoints were removed (404). Major eligibility = registration. Draw pools
+  exclude today's valid winners of the same randomizer. Candidates include
+  `alreadyWon`; a manual add of a winner returns `409 ALREADY_WON`. New
+  exports: `GET /reports/eligibility.csv?scope=`, `GET /reports/day-attendees.xlsx?day_id=`,
+  `GET /reports/winners.xlsx?scope=all|day` (admin). Attendee payloads have
+  `company` (new) and `department`, which holds the **Cluster**
+  (location/region). `POST /attendees/import/parse` reads only the
+  `External Attendees` sheet when present and, for the
+  `Cluster | Name 1 | Attendee 1..N` layout, returns one row per attendee
+  (`layout: "external_attendees"`, headers Full Name / Company / Cluster).
 - `EventDay`: `{ id, eventId, dayNumber, eventDate, label, status, displayName }`,
   status `upcoming` / `active` / `completed`.
 

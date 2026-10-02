@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Core\Database;
 use App\Core\HttpException;
 use App\Core\Request;
 use App\Models\Attendee;
@@ -14,13 +15,14 @@ use App\Models\RandomizerParticipant;
 /**
  * Minor and Major Randomizers for the ACTIVE DAY of the ACTIVE event.
  *
- * Eligible pool (queried server-side on every draw, current day only):
- *   minor = active attendees registered today OR manually added today
- *   major = active attendees with a major_eligibility row for today
- *           (imported responses or manual additions)
- * The winner is chosen here with random_int() (CSPRNG); the browser only
- * animates the result. Each draw is stored in randomizer_draws; winners stay
- * eligible (no repeat-winner rule has been defined).
+ * Draw pool (queried server-side on every draw, current day only; Phase 9.2):
+ *   active attendees registered today (or manually added to THIS randomizer
+ *   today) MINUS anyone with a valid draw of THIS randomizer today.
+ * Registration makes an attendee eligible for both Minor and Major. Winning
+ * Minor removes them from Minor only (and Major from Major only); voiding the
+ * draw puts them back. The winner is chosen here with random_int() (CSPRNG)
+ * inside a transaction that locks the event day, so two simultaneous draws
+ * cannot pick the same winner. The browser only animates the result.
  */
 final class RandomizerService
 {
@@ -48,13 +50,17 @@ final class RandomizerService
         $eventId = (int) $event['id'];
         $dayId = (int) $day['id'];
 
-        $pool = RandomizerDraw::eligibleIds($dayId, $type);
-        if ($pool === []) {
-            throw new HttpException(409, 'NO_ELIGIBLE_ATTENDEES', "No eligible attendees for Day {$day['day_number']} yet.");
-        }
+        $userId = AuthService::currentUserId();
+        [$pool, $winnerId, $drawId] = Database::transaction(static function () use ($dayId, $eventId, $type, $userId, $day): array {
+            RandomizerDraw::lockDay($dayId); // one draw at a time per day
+            $pool = RandomizerDraw::eligibleIds($dayId, $type);
+            if ($pool === []) {
+                throw new HttpException(409, 'NO_ELIGIBLE_ATTENDEES', "No eligible attendees left for today's " . ucfirst($type) . " draw (Day {$day['day_number']}).");
+            }
+            $winnerId = $pool[random_int(0, count($pool) - 1)];
 
-        $winnerId = $pool[random_int(0, count($pool) - 1)];
-        $drawId = RandomizerDraw::create($eventId, $dayId, $winnerId, $type, AuthService::currentUserId());
+            return [$pool, $winnerId, RandomizerDraw::create($eventId, $dayId, $winnerId, $type, $userId)];
+        });
 
         // Random sample of other eligible names for the rolling effect.
         $others = array_values(array_diff($pool, [$winnerId]));
@@ -148,9 +154,11 @@ final class RandomizerService
                 'id' => (int) $row['id'],
                 'attendeeCode' => $row['attendee_code'],
                 'fullName' => $row['full_name'],
+                'company' => $row['company'],
                 'department' => $row['department'],
                 'email' => $row['email'],
                 'alreadyEligible' => (bool) $row['already_eligible'],
+                'alreadyWon' => (bool) $row['already_won'],
             ], $rows),
         ];
     }
@@ -175,6 +183,7 @@ final class RandomizerService
                 'id' => (int) $row['id'],
                 'attendeeCode' => $row['attendee_code'],
                 'fullName' => $row['full_name'],
+                'company' => $row['company'],
                 'department' => $row['department'],
                 'source' => $row['source'],
                 'addedAt' => $row['added_at'],
@@ -212,8 +221,12 @@ final class RandomizerService
         }
 
         $label = $type === RandomizerDraw::TYPE_MAJOR ? 'Major' : 'Minor';
+        // Exception for attendees who could not be scanned: affects THIS randomizer only.
+        if (RandomizerDraw::hasValidWin($dayId, $type, $attendeeId)) {
+            throw new HttpException(409, 'ALREADY_WON', "{$attendee['full_name']} has already won today's {$label} draw.");
+        }
         $already = new HttpException(409, 'ALREADY_ELIGIBLE', "{$attendee['full_name']} is already eligible for today's {$label} draw.");
-        if (RandomizerDraw::isEligible($dayId, $type, $attendeeId)) {
+        if (RandomizerDraw::inBasePool($dayId, $type, $attendeeId)) {
             throw $already;
         }
 
@@ -241,7 +254,7 @@ final class RandomizerService
         );
 
         return [
-            'attendee' => ['id' => $attendeeId, 'attendeeCode' => $attendee['attendee_code'], 'fullName' => $attendee['full_name'], 'department' => $attendee['department']],
+            'attendee' => ['id' => $attendeeId, 'attendeeCode' => $attendee['attendee_code'], 'fullName' => $attendee['full_name'], 'company' => $attendee['company'], 'department' => $attendee['department']],
             'source' => 'manual',
             'eventDay' => EventDay::toPublic($day),
             'eligibleCount' => RandomizerDraw::countEligible($dayId, $type),
@@ -256,6 +269,7 @@ final class RandomizerService
             'selectedAt' => $row['selected_at'],
             'attendeeCode' => $row['attendee_code'],
             'fullName' => $row['full_name'],
+            'company' => $row['company'],
             'department' => $row['department'],
             'drawnBy' => $row['drawn_by_name'],
             'status' => $row['voided_at'] !== null ? 'void' : 'valid',
@@ -273,6 +287,7 @@ final class RandomizerService
         return [
             'attendeeCode' => $row['attendee_code'],
             'fullName' => $row['full_name'],
+            'company' => $row['company'],
             'department' => $row['department'],
         ];
     }

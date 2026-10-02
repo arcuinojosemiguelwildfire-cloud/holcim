@@ -31,12 +31,13 @@ export interface DrawResult {
 }
 
 /** How an attendee got into today's pool. */
-export type ParticipantSource = 'registration' | 'import' | 'manual'
+export type ParticipantSource = 'registration' | 'manual'
 
 export interface PoolParticipant {
   id: number
   attendeeCode: string
   fullName: string
+  company: string | null
   department: string | null
   source: ParticipantSource
   addedAt: string
@@ -55,13 +56,16 @@ export interface ParticipantCandidate {
   id: number
   attendeeCode: string
   fullName: string
+  company: string | null
   department: string | null
   email: string | null
   alreadyEligible: boolean
+  /** Has a valid (not void) draw of this randomizer today. */
+  alreadyWon: boolean
 }
 
 export interface AddParticipantResult {
-  attendee: { id: number; attendeeCode: string; fullName: string; department: string | null }
+  attendee: { id: number; attendeeCode: string; fullName: string; company: string | null; department: string | null }
   source: 'manual'
   eventDay: EventDay
   eligibleCount: number

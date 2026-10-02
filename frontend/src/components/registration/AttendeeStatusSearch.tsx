@@ -48,7 +48,7 @@ export function AttendeeStatusSearch() {
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Code, name, department or email"
+            placeholder="Code, name, cluster or email"
             autoComplete="off"
             className="h-10 w-full rounded-lg border-0 pl-9 pr-3 text-sm ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-brand-600"
           />
@@ -63,7 +63,7 @@ export function AttendeeStatusSearch() {
                   <span className="block truncate font-medium text-slate-900">{row.fullName}</span>
                   <span className="block truncate text-xs text-slate-500">
                     <span className="font-mono">{row.attendeeCode}</span>
-                    {row.department && ` · ${row.department}`}
+                    {row.company && ` · ${row.company}`}{row.department && ` · ${row.department}`}
                     {row.registeredToday && ` · ${formatTime(row.registeredAt)}${row.registeredBy ? ` by ${row.registeredBy}` : ''}`}
                   </span>
                 </span>

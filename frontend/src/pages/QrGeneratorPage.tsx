@@ -156,12 +156,12 @@ export function QrGeneratorPage() {
               type="search"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search code, name or department"
+              placeholder="Search code, name or cluster"
               className="h-10 w-full rounded-lg border-0 bg-white pl-9 pr-3 text-sm shadow-sm ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-brand-600"
             />
           </label>
-          <select aria-label="Department" value={query.department} onChange={(e) => update({ department: e.target.value })} className={SELECT_CLASS}>
-            <option value="">All departments</option>
+          <select aria-label="Cluster" value={query.department} onChange={(e) => update({ department: e.target.value })} className={SELECT_CLASS}>
+            <option value="">All clusters</option>
             {(list.data?.departments ?? []).map((d) => <option key={d} value={d}>{d}</option>)}
           </select>
           <select aria-label="QR status" value={query.qrStatus} onChange={(e) => update({ qrStatus: e.target.value as QrStatusFilter })} className={SELECT_CLASS}>
@@ -200,7 +200,8 @@ export function QrGeneratorPage() {
                     </th>
                     <th scope="col" className="px-3 py-3">Code</th>
                     <th scope="col" className="px-5 py-3">Name</th>
-                    <th scope="col" className="px-5 py-3">Department</th>
+                    <th scope="col" className="px-5 py-3">Company</th>
+                    <th scope="col" className="px-5 py-3">Cluster</th>
                     <th scope="col" className="px-5 py-3">QR status</th>
                     <th scope="col" className="px-5 py-3"><span className="sr-only">Actions</span></th>
                   </tr>
@@ -214,6 +215,7 @@ export function QrGeneratorPage() {
                       </td>
                       <td className="whitespace-nowrap px-3 py-3 font-mono text-xs text-slate-700">{item.attendeeCode}</td>
                       <td className="px-5 py-3 font-medium text-slate-900">{item.fullName}</td>
+                      <td className="px-5 py-3 text-slate-600">{item.company ?? '—'}</td>
                       <td className="px-5 py-3 text-slate-600">{item.department ?? '—'}</td>
                       <td className="whitespace-nowrap px-5 py-3">
                         {item.qrGeneratedAt ? (

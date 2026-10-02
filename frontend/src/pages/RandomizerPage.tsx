@@ -14,13 +14,13 @@ import { formatTime } from '../utils/format'
 const COPY: Record<RandomizerType, { title: string; intro: string; history: string }> = {
   minor: {
     title: 'Minor Randomizer',
-    intro: 'Draws from attendees registered today, plus anyone added manually for today.',
-    history: 'Latest 10 Minor draws for the current event day. Winners stay eligible for later draws.',
+    intro: 'Draws from attendees registered today who have not won the Minor draw today.',
+    history: 'Latest 10 Minor draws for the current event day. A Minor winner cannot win Minor again today (unless the draw is voided) but stays in the Major draw.',
   },
   major: {
     title: 'Major Randomizer',
-    intro: 'Draws from today’s Major Eligible attendees (imported form responses and manual additions).',
-    history: 'Latest 10 Major draws for the current event day. Winners stay eligible for later draws.',
+    intro: 'Draws from attendees registered today who have not won the Major draw today.',
+    history: 'Latest 10 Major draws for the current event day. A Major winner cannot win Major again today (unless the draw is voided) but stays in the Minor draw.',
   },
 }
 
@@ -116,7 +116,8 @@ export function RandomizerPage({ type }: { type: RandomizerType }) {
                   <th scope="col" className="px-5 py-3">Time</th>
                   <th scope="col" className="px-5 py-3">Code</th>
                   <th scope="col" className="px-5 py-3">Name</th>
-                  <th scope="col" className="px-5 py-3">Department</th>
+                  <th scope="col" className="px-5 py-3">Company</th>
+                  <th scope="col" className="px-5 py-3">Cluster</th>
                   <th scope="col" className="px-5 py-3">Drawn by</th>
                   <th scope="col" className="px-5 py-3">Status</th>
                 </tr>
@@ -127,6 +128,7 @@ export function RandomizerPage({ type }: { type: RandomizerType }) {
                     <td className="whitespace-nowrap px-5 py-3 tabular-nums text-slate-500">{formatTime(row.selectedAt)}</td>
                     <td className="whitespace-nowrap px-5 py-3 font-mono text-xs text-slate-700">{row.attendeeCode}</td>
                     <td className={`px-5 py-3 font-medium ${row.status === 'void' ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{row.fullName}</td>
+                    <td className="px-5 py-3 text-slate-600">{row.company ?? '—'}</td>
                     <td className="px-5 py-3 text-slate-600">{row.department ?? '—'}</td>
                     <td className="px-5 py-3 text-slate-500">{row.drawnBy ?? '—'}</td>
                     <td className="px-5 py-3">
