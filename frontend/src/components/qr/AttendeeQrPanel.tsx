@@ -9,7 +9,7 @@ import { errorMessage } from '../../services/apiClient'
 import { qrService } from '../../services/qrService'
 import type { AttendeeQr } from '../../types/qr'
 import { downloadQrPng, openQrPrintSheet } from '../../utils/qr'
-import { QrImage } from './QrImage'
+import { QrCard } from './QrCard'
 
 function formatIssued(value: string): string {
   const date = new Date(value.replace(' ', 'T'))
@@ -64,7 +64,13 @@ export function AttendeeQrPanel({ attendeeId, attendeeStatus }: { attendeeId: nu
 
       {qr?.status === 'generated' && qr.qrPayload ? (
         <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-start">
-          <QrImage payload={qr.qrPayload} label={`QR code for ${qr.attendeeCode}`} className="w-40 shrink-0 self-center rounded border border-slate-200" />
+          <QrCard
+            payload={qr.qrPayload}
+            attendeeCode={qr.attendeeCode}
+            fullName={qr.fullName}
+            department={qr.department}
+            className="w-48 shrink-0 self-center sm:self-start"
+          />
           <div className="min-w-0 flex-1 space-y-3 text-sm">
             <div>
               <p className="font-mono font-medium text-slate-900">{qr.attendeeCode}</p>
@@ -72,8 +78,8 @@ export function AttendeeQrPanel({ attendeeId, attendeeStatus }: { attendeeId: nu
             </div>
             <div className="flex flex-wrap gap-2">
               <Button size="sm" variant="secondary" icon={<Download className="size-4" aria-hidden />}
-                onClick={() => qr.qrPayload && downloadQrPng(qr.qrPayload, qr.attendeeCode, qr.fullName).catch((e) => setError(errorMessage(e)))}>
-                Download
+                onClick={() => qr.qrPayload && downloadQrPng(qr.qrPayload, qr).catch((e) => setError(errorMessage(e)))}>
+                Download QR
               </Button>
               <Button size="sm" variant="secondary" icon={<Printer className="size-4" aria-hidden />} onClick={() => openQrPrintSheet([qr.attendeeId])}>
                 Print

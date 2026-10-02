@@ -458,6 +458,7 @@ Full request/response examples: [docs/API.md](docs/API.md).
 - Tokens never change on edits or re-imports. **Generate missing** only creates codes for active attendees without one. Only **Regenerate** (with confirmation) replaces a token; the old one is gone immediately and the change is audit-logged.
 - Archived attendees get no new QR and are excluded from counts and printing; their existing QR records are kept.
 - Images are rendered in the browser with the `qrcode` npm package (error correction Q, 4-module quiet zone): SVG for screen/print, 1200 px PNG for download. No image files are stored on the server.
+- Every QR is shown, printed and downloaded as a card: QR, then the attendee's **full name** (bold) and **department** centred underneath, with the attendee code in small type. Empty values are left out. **Download QR** saves a 1200 px-wide PNG card named `ATT-0001-Juan-Dela-Cruz.png` (ASCII letters, digits and hyphens only; never the token).
 - Print sheet (`/print/qr`, opens in a new tab): A4, Standard 12 labels/page (44 mm QR) or Large 6/page (64 mm QR), dashed cut guides, explicit page breaks. Print at 100% / actual size.
 
 ## 9c. Registration and Minor eligibility (Phase 4)
