@@ -112,14 +112,6 @@ export function QrGeneratorPage() {
         }
       />
 
-      {s && (!s.qrBaseUrl || /localhost|127\.0\.0\.1|\/\/192\.168\.|\/\/10\./i.test(s.qrBaseUrl)) && (
-        <Alert tone="error" className="mb-4" title="Do not print event QR codes yet">
-          {s.qrBaseUrl
-            ? `QR codes point to ${s.qrBaseUrl}, a local address.`
-            : 'APP_URL is not set, so QR codes contain only the token.'}{' '}
-          Set APP_URL in backend/.env to the public HTTPS address before printing labels for the event.
-        </Alert>
-      )}
       {(summary.error || list.error) && (
         <Alert tone="error" className="mb-4">{summary.error ?? list.error}</Alert>
       )}
@@ -136,8 +128,8 @@ export function QrGeneratorPage() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-5 py-4">
           <p className="max-w-2xl text-sm text-slate-500">
             “Generate missing” only creates QR codes for active attendees who don’t have one. Existing QR codes are never
-            replaced, so labels that are already printed stay valid.
-            {s && !s.qrBaseUrl && ' QR codes contain the token only because APP_URL is not set on the server.'}
+            replaced, so labels that are already printed stay valid. Each QR contains only the attendee&apos;s secure token (no web
+            address), so the same labels work offline and after moving to the online server.
           </p>
           {canManage && (
             <Button onClick={generateMissing} loading={generating} disabled={!s || s.missing === 0} icon={<Sparkles className="size-4" aria-hidden />}>

@@ -10,7 +10,7 @@ Copy `backend/.env.production.example` to `backend/.env` on the server (never co
 |----------|-------|----------------|
 | `APP_ENV` | `production` | |
 | `APP_DEBUG` | `false` | Errors must not reveal internals |
-| `APP_URL` | `https://your-event-domain` (no trailing slash) | **Attendee QR codes contain `{APP_URL}/q/<token>`.** Set it before generating/printing QR codes. Never print event labels while it is blank or `localhost`. |
+| `APP_URL` | `https://your-event-domain` (no trailing slash) | Optional. **Not used in attendee QR codes** (they contain only the token since Phase 9.5), so labels printed on the local system stay valid online. |
 | `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` | your database | Use a dedicated DB user with a strong password |
 | `SESSION_SECURE_COOKIE` | `true` | Login cookie only over HTTPS |
 | `LOGIN_MAX_ATTEMPTS` / `LOGIN_MAX_ATTEMPTS_PER_IP` / `LOGIN_LOCKOUT_MINUTES` | `5` / `30` / `15` | Login brute-force protection (defaults shown) |
@@ -31,7 +31,7 @@ php backend/cli/create-user.php        # first admin, if needed
 php backend/cli/check-readiness.php    # must report "No blocking problems found."
 ```
 
-`check-readiness.php` verifies APP_ENV/APP_DEBUG, that APP_URL is HTTPS and not local, secure cookies, PHP extensions, database connection, migrations, an admin account, scanner operators, the active event, its event days and the current day (warns if the current day's date is not today), and attendees without QR codes. It prints no passwords.
+`check-readiness.php` verifies APP_ENV/APP_DEBUG, secure cookies, PHP extensions, database connection, migrations, an admin account, scanner operators, the active event, its event days and the current day (warns if the current day's date is not today), and attendees without QR codes. It prints no passwords.
 
 ### Upgrading an existing Phase 7 installation to Phase 8
 
@@ -59,6 +59,10 @@ Adds manual **Add Attendee** and **Settings › System Reset**. No database chan
 
 Run `php backend/cli/migrate.php` to apply migration 032 (adds `randomizer_draws.reset_at` / `reset_by`; no data changes). Adds Settings › Randomizer Reset. Winners.xlsx and the draw CSV get two extra columns at the end.
 
+### Phase 9.5 (no migration)
+
+Attendee QR codes now contain only the token. Printed labels do not depend on `APP_URL` or the domain. When moving the local data online, transfer the `attendee_qr_codes` table together with `attendees` and `events` (a full dump/restore keeps every ID and link); do **not** re-import and generate QR codes again online.
+
 ## 4. URLs at the event
 
 | URL | Who | Purpose |
@@ -67,7 +71,7 @@ Run `php backend/cli/migrate.php` to apply migration 032 (adds `randomizer_draws
 | `https://domain/registration` | Registration staff, scanner operators | Hardware QR scanner input + scanner dashboard (scanner operators land here after login) |
 | `https://domain/minor-randomizer`, `/major-randomizer` | Event operator | Draw stages (fullscreen), + Add Participant |
 | `https://domain/settings` | Admin | Scanner Operators (add, enable/disable, reset password) |
-| `https://domain/q/<token>` | Encoded in attendee QR labels | Read by the scanner; not meant to be opened |
+| (none) | Attendee QR labels contain only the token, not a URL | Read by the hardware scanner on the Registration page |
 
 ## 5. Backups
 

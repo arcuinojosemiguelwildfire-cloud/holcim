@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use App\Core\Config;
 use App\Core\Database;
 use App\Core\HttpException;
 use App\Core\Request;
@@ -17,9 +16,11 @@ use App\Utils\Token;
  *
  * - Token: 24 random bytes -> 32-char URL-safe string (192 bits). Opaque: no
  *   personal data; unique index in the DB makes Phase 4 lookups O(1).
- * - QR content: "{APP_URL}/q/{token}", or just the token when APP_URL is not
- *   configured. The scanner (Phase 4) reads the last path segment, so either
- *   form resolves.
+ * - QR content (Phase 9.5): ONLY the opaque token. No URL, domain or APP_URL,
+ *   so a printed QR does not depend on DNS, the internet or where the app is
+ *   hosted: the same label works on local XAMPP and on the online server as
+ *   long as attendee_qr_codes.token is carried over unchanged. The scanner
+ *   still accepts the older "{APP_URL}/q/{token}" form (RegistrationService).
  * - A token never changes on attendee edits or re-imports. Only an explicit
  *   regenerate replaces it, and the old token is invalid from that moment.
  * - Images are rendered by the client from the payload; nothing is stored on
@@ -40,7 +41,6 @@ final class QrCodeService
             'activeAttendees' => $counts['active'],
             'generated' => $counts['generated'],
             'missing' => $counts['active'] - $counts['generated'],
-            'qrBaseUrl' => self::baseUrl(),
         ];
     }
 
@@ -141,16 +141,10 @@ final class QrCodeService
         ];
     }
 
+    /** QR content = the token itself (token-only payload; APP_URL is not used). */
     public static function payload(string $token): string
     {
-        $base = self::baseUrl();
-
-        return $base !== '' ? $base . '/q/' . $token : $token;
-    }
-
-    private static function baseUrl(): string
-    {
-        return rtrim((string) Config::get('app.url', ''), '/');
+        return $token;
     }
 
     /** @return array<string, mixed> */

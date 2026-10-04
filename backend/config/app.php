@@ -12,8 +12,8 @@ return [
     'debug' => Env::bool('APP_DEBUG', false),
     'timezone' => Env::get('APP_TIMEZONE', 'Asia/Manila'),
     // Public base URL of the app (no trailing slash), e.g. https://events.example.com.
-    // Printed attendee QR codes contain "{APP_URL}/q/{token}". If empty, the
-    // QR contains only the token. Set it BEFORE printing QR codes.
+    // Optional. NOT used for attendee QR codes: since Phase 9.5 a QR contains
+    // only the opaque token, so printed labels never depend on this value.
     'url' => Env::get('APP_URL', ''),
     // Comma-separated list of origins allowed to call the API with cookies.
     // Leave empty when the frontend is served from the same origin (default)

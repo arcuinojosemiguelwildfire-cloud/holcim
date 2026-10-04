@@ -221,8 +221,12 @@ final class RegistrationService
     }
 
     /**
-     * Accepts "{APP_URL}/q/{token}", any URL ending in the token, or the bare
-     * token. Returns null when the value cannot be a token.
+     * Resolves a scanned value to a token (Phase 9.5):
+     *   - FORMAT A (current labels): the bare token, used as is;
+     *   - FORMAT B (older labels):  "http(s)://any-host/.../q/{token}" - the
+     *     domain is ignored, the segment after "/q/" is the token.
+     * Anything else (other URLs, wrong characters/length) returns null and is
+     * reported as an invalid QR. The token is always the identifier.
      */
     public static function extractToken(string $value): ?string
     {
@@ -233,7 +237,11 @@ final class RegistrationService
         if (preg_match('#^https?://#i', $value)) {
             $path = (string) parse_url($value, PHP_URL_PATH);
             $segments = array_values(array_filter(explode('/', $path), static fn ($s) => $s !== ''));
-            $value = (string) end($segments);
+            $count = count($segments);
+            if ($count < 2 || $segments[$count - 2] !== 'q') {
+                return null;
+            }
+            $value = $segments[$count - 1];
         }
 
         return preg_match('/^[A-Za-z0-9_-]{16,64}$/', $value) ? $value : null;

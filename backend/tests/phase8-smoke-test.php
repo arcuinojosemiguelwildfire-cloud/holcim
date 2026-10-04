@@ -749,6 +749,69 @@ try {
     check('Refused attempts are audited (system.reset_refused)', (int) $pdo->query("SELECT COUNT(*) FROM audit_logs WHERE action = 'system.reset_refused' AND created_at >= NOW() - INTERVAL 5 MINUTE")->fetchColumn() >= 3);
     check('Reset errors never echo SQL details', !preg_match('/SQLSTATE|PDO|DELETE FROM/i', $r['raw'] . $summary['raw']));
 
+    section('Token-only QR payload (Phase 9.5)');
+    $tokOf = static fn (int $id): string => (string) $pdo->query("SELECT token FROM attendee_qr_codes WHERE attendee_id = {$id}")->fetchColumn();
+    $mk = static function (string $name) use ($admin): array {
+        $r = $admin->request('POST', '/attendees', ['full_name' => $name, 'company' => 'Token Co', 'department' => 'QR Cluster']);
+        return $r['body']['data'] ?? [];
+    };
+    $t1 = $mk("Token Bare {$stamp}");
+    $t2 = $mk("Token Url {$stamp}");
+    $t3 = $mk("Token Archived {$stamp}");
+    $t1Id = (int) ($t1['attendee']['id'] ?? 0);
+    $t2Id = (int) ($t2['attendee']['id'] ?? 0);
+    $t3Id = (int) ($t3['attendee']['id'] ?? 0);
+    $tok1 = $tokOf($t1Id);
+    check('T1: QR payload is exactly the stored token (no APP_URL, no /q/)', ($t1['qr']['qrPayload'] ?? null) === $tok1 && !str_contains($tok1, '/'), $t1['qr']['qrPayload'] ?? null);
+    check('T1: token is 32 URL-safe random characters (24 bytes) and contains no ID, code or name',
+        preg_match('/^[A-Za-z0-9_-]{32}$/', $tok1) === 1 && !str_contains($tok1, (string) $t1Id) && !str_contains(strtolower($tok1), 'att-'));
+    check('T11: payload is token-only even though APP_URL is set in .env', App\Core\Config::get('app.url', '') !== '' && ($t1['qr']['qrPayload'] ?? '') === $tok1);
+    $sum = $admin->data('GET', '/qr-codes/summary');
+    check('QR summary no longer exposes an APP_URL base', !array_key_exists('qrBaseUrl', $sum));
+    check('T12: single-attendee QR view returns token-only payload', ($admin->data('GET', "/attendees/{$t1Id}/qr")['qr']['qrPayload'] ?? null) === $tok1);
+    $printItems = array_column($admin->data('GET', "/qr-codes/print?ids={$t1Id},{$t2Id}")['items'] ?? [], 'qrPayload', 'id');
+    check('T12: print sheet / download data use token-only payloads', ($printItems[$t1Id] ?? null) === $tok1 && ($printItems[$t2Id] ?? null) === $tokOf($t2Id));
+    $bulk = $admin->request('GET', '/qr-codes/print');
+    $bulkItems = $bulk['body']['data']['items'] ?? [];
+    $bulkTokens = $pdo->query("SELECT a.id, q.token FROM attendees a JOIN attendee_qr_codes q ON q.attendee_id = a.id WHERE a.event_id = {$eventId} AND a.status = 'active'")->fetchAll(PDO::FETCH_KEY_PAIR);
+    check('T12: bulk print sheet ("Print all") - every payload equals that attendee\'s token', $bulkItems !== []
+        && count($bulkItems) === count($bulkTokens) && !array_filter($bulkItems, static fn ($i) => ($bulkTokens[$i['id']] ?? null) !== $i['qrPayload']), count($bulkItems));
+
+    $r = $scan($sc1, $tok1);
+    check('T2/T6: bare token registers the correct attendee', ($r['body']['data']['status'] ?? '') === 'registered' && ($r['body']['data']['attendee']['fullName'] ?? '') === "Token Bare {$stamp}", $r['raw']);
+    check('Bare token with scanner whitespace / Enter is trimmed', ($scan($sc1, "  {$tok1}\r\n")['body']['data']['status'] ?? '') === 'already_registered');
+    $tok2 = $tokOf($t2Id);
+    $r = $scan($sc1, "http://localhost:5173/q/{$tok2}");
+    check('T3: old URL format http://localhost:5173/q/{token} still registers', ($r['body']['data']['status'] ?? '') === 'registered' && ($r['body']['data']['attendee']['fullName'] ?? '') === "Token Url {$stamp}", $r['raw']);
+    check('T3: old URL on another domain resolves the SAME token', ($scan($sc1, "https://events.example.com/holcim/q/{$tok2}")['body']['data']['status'] ?? '') === 'already_registered');
+    foreach (['T4: unknown token' => str_repeat('Z', 32), 'T4: URL without /q/' => "https://example.com/x/{$tok2}", 'T4: too short' => 'abc123',
+              'T4: illegal characters' => substr($tok2, 0, 30) . '!?', 'T4: attendee code' => 'ATT-0001'] as $label => $value) {
+        $r = $scan($sc1, $value);
+        check("{$label} -> 422 INVALID_QR", $r['status'] === 422 && ($r['body']['error']['code'] ?? '') === 'INVALID_QR', $r['raw']);
+    }
+    Attendee::setStatus($t3Id, Attendee::STATUS_ARCHIVED);
+    $r = $scan($sc1, $tokOf($t3Id));
+    check('T5: valid token of an archived attendee -> 422 ATTENDEE_INACTIVE', $r['status'] === 422 && ($r['body']['error']['code'] ?? '') === 'ATTENDEE_INACTIVE');
+    check('T5: archived attendee not registered', (int) $pdo->query("SELECT COUNT(*) FROM registration_scans WHERE attendee_id = {$t3Id}")->fetchColumn() === 0);
+    Attendee::setStatus($t3Id, Attendee::STATUS_ACTIVE);
+    check('Registered via token: eligible for Minor and Major today', in_array($t1['attendee']['attendeeCode'], $poolCodes('minor'), true) && in_array($t1['attendee']['attendeeCode'], $poolCodes('major'), true));
+
+    $before = $tokOf($t1Id);
+    $admin->request('POST', '/qr-codes/generate-missing');
+    $admin->request('POST', '/qr-codes/generate-missing');
+    check('T7: Generate missing (twice) does not change an existing token', $tokOf($t1Id) === $before);
+    check('T7: single Generate on an attendee with a QR returns the same token', ($admin->data('POST', "/attendees/{$t1Id}/qr")['qr']['qrPayload'] ?? null) === $before);
+    $r = $admin->request('PUT', "/attendees/{$t1Id}", ['full_name' => "Token Bare Renamed {$stamp}", 'company' => 'Other Co', 'department' => 'Other Cluster',
+        'email' => "tok-{$stamp}@example.invalid", 'external_identifier' => "TOK-{$stamp}"]);
+    check('T9: editing name/company/cluster/email/employee ID keeps the token', $r['status'] === 200 && $tokOf($t1Id) === $before, $r['raw']);
+    $r = $admin->request('POST', "/attendees/{$t1Id}/qr/regenerate");
+    $newTok = $tokOf($t1Id);
+    check('T8: regenerate creates a new token-only payload', $r['status'] === 200 && $newTok !== $before && ($r['body']['data']['qr']['qrPayload'] ?? null) === $newTok, $r['raw']);
+    check('T8: old token now rejected (INVALID_QR)', ($scan($sc1, $before)['body']['error']['code'] ?? '') === 'INVALID_QR');
+    check('T8: old URL form of the old token also rejected', ($scan($sc1, "http://localhost:5173/q/{$before}")['body']['error']['code'] ?? '') === 'INVALID_QR');
+    check('T8: new token accepted', ($scan($sc1, $newTok)['body']['data']['status'] ?? '') === 'already_registered');
+    check('T8: regeneration audited', (int) $pdo->query("SELECT COUNT(*) FROM audit_logs WHERE action = 'qr.regenerated' AND event_id = {$eventId}")->fetchColumn() >= 1);
+
     section('Randomizer Reset (Phase 9.4): lift winner exclusions, keep history');
     // Snapshot of everything a randomizer reset must NOT touch (this event only).
     $snapshot = static function () use ($pdo, $eventId): array {
@@ -931,10 +994,12 @@ try {
     check('Winners.xlsx: original 12 columns unchanged, 2 appended (Exclusion Reset At / By)', $w['headers'] === ['Event Day', 'Randomizer', 'Attendee Code', 'Full Name', 'Company', 'Cluster',
         'Drawn At', 'Drawn By', 'Status', 'Voided At', 'Voided By', 'Void Reason', 'Exclusion Reset At', 'Exclusion Reset By'], $w['headers']);
     check('Winners.xlsx: every draw row still present', count($w['rows']) === count($drawRows()));
-    $aMinorD1 = array_values(array_filter($w['rows'], static fn ($r) => str_starts_with($r['Event Day'], 'Day 1 ') && $r['Randomizer'] === 'Minor' && $r['Attendee Code'] === $codeOf('A') && $r['Status'] === 'VALID'));
-    check('Winners.xlsx: A listed twice for Day 1 Minor, the earlier win marked with the reset time and admin, the later win after it',
-        count($aMinorD1) === 2 && $aMinorD1[0]['Exclusion Reset At'] !== '' && $aMinorD1[0]['Exclusion Reset By'] !== '' && $aMinorD1[1]['Exclusion Reset At'] === ''
-        && $aMinorD1[1]['Drawn At'] >= $aMinorD1[0]['Exclusion Reset At'], $aMinorD1);
+    // A may also have an older VOID row, and A's new win may be the one voided above: match by reset time.
+    $aMinorD1 = array_values(array_filter($w['rows'], static fn ($r) => str_starts_with($r['Event Day'], 'Day 1 ') && $r['Randomizer'] === 'Minor' && $r['Attendee Code'] === $codeOf('A')));
+    $aReset = array_values(array_filter($aMinorD1, static fn ($r) => $r['Exclusion Reset At'] !== ''));
+    $aAfter = $aReset !== [] ? array_values(array_filter($aMinorD1, static fn ($r) => $r['Exclusion Reset At'] === '' && $r['Drawn At'] >= $aReset[0]['Exclusion Reset At'])) : [];
+    check('Winners.xlsx: A listed again for Day 1 Minor - the earlier VALID win marked with the reset time and admin, a later win after it',
+        count($aReset) === 1 && $aReset[0]['Status'] === 'VALID' && $aReset[0]['Exclusion Reset By'] !== '' && count($aAfter) === 1, $aMinorD1);
     check('Winners.xlsx: VOID rows have no reset mark', !array_filter($w['rows'], static fn ($r) => $r['Status'] === 'VOID' && $r['Exclusion Reset At'] !== ''));
     $dcsv = $admin->csv('/reports/draws.csv?scope=all');
     check('Draw CSV report still valid with the appended reset columns', $dcsv !== [] && array_key_exists('Exclusion Reset At', $dcsv[0]) && array_key_exists('Void Reason', $dcsv[0]));

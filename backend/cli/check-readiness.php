@@ -30,16 +30,9 @@ $production = $env === 'production';
 $add($production ? 'OK' : 'WARN', 'APP_ENV', $env . ($production ? '' : ' (use "production" on the event server)'));
 $add(Config::get('app.debug') ? ($production ? 'FAIL' : 'WARN') : 'OK', 'APP_DEBUG', Config::get('app.debug') ? 'true (must be false in production)' : 'false');
 
+// APP_URL is optional and no longer part of attendee QR codes (token-only, Phase 9.5).
 $appUrl = (string) Config::get('app.url', '');
-if ($appUrl === '') {
-    $add('FAIL', 'APP_URL', 'empty - attendee QR codes would contain only the token; set it before printing');
-} elseif (preg_match('#localhost|127\.0\.0\.1|//192\.168\.|//10\.#i', $appUrl)) {
-    $add($production ? 'FAIL' : 'WARN', 'APP_URL', "{$appUrl} is a local address - do not print event QR codes with it");
-} elseif (!str_starts_with(strtolower($appUrl), 'https://')) {
-    $add('FAIL', 'APP_URL', "{$appUrl} is not HTTPS - the registration camera needs HTTPS");
-} else {
-    $add('OK', 'APP_URL', $appUrl);
-}
+$add('INFO', 'APP_URL', ($appUrl === '' ? '(not set)' : $appUrl) . ' - not used in QR codes');
 
 $secure = (bool) Config::get('session.secure');
 $add($secure ? 'OK' : ($production ? 'FAIL' : 'WARN'), 'SESSION_SECURE_COOKIE', $secure ? 'true' : 'false (must be true on HTTPS)');
@@ -95,11 +88,9 @@ try {
         $add($activeDay !== null ? 'OK' : 'FAIL', 'Current event day', $activeDay !== null
             ? "Day {$activeDay['day_number']} - {$activeDay['event_date']}" . ($activeDay['event_date'] !== date('Y-m-d') ? ' (not today\'s date - check before doors open)' : '')
             : 'none - activate a day on the Events page');
-        if ($appUrl !== '') {
-            $s = $pdo->prepare('SELECT COUNT(*) FROM attendee_qr_codes q JOIN attendees a ON a.id = q.attendee_id WHERE a.event_id = :id');
-            $s->execute(['id' => $id]);
-            $add('INFO', 'Attendee QR codes', $s->fetchColumn() . " issued; they encode {$appUrl}/q/<token>");
-        }
+        $s = $pdo->prepare('SELECT COUNT(*) FROM attendee_qr_codes q JOIN attendees a ON a.id = q.attendee_id WHERE a.event_id = :id');
+        $s->execute(['id' => $id]);
+        $add('INFO', 'Attendee QR codes', $s->fetchColumn() . ' issued; each QR contains only its token');
     }
 } catch (\Throwable $exception) {
     $add('FAIL', 'Database connection', 'cannot connect - check DB_* settings (' . get_class($exception) . ')');

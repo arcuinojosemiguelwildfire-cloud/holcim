@@ -15,7 +15,6 @@ export interface QrSummary {
   activeAttendees: number
   generated: number
   missing: number
-  qrBaseUrl: string
 }
 
 export interface QrPrintItem {

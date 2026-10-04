@@ -77,15 +77,17 @@ export interface AttendeeStatusRow {
 }
 
 /**
- * Pulls the token out of a scanned value: "{APP_URL}/q/{token}", any URL
- * ending in the token, or the bare token. The server re-validates everything.
+ * Scanned value -> token. Current labels contain only the token (sent as is);
+ * older labels contain "http(s)://host/q/{token}" (the token after "/q/" is
+ * sent). Any other URL is sent unchanged so the server rejects it as an
+ * invalid QR. The server re-validates everything.
  */
 export function extractToken(value: string): string {
   const trimmed = value.trim()
   if (/^https?:\/\//i.test(trimmed)) {
     try {
       const segments = new URL(trimmed).pathname.split('/').filter(Boolean)
-      return segments[segments.length - 1] ?? ''
+      return segments.length >= 2 && segments[segments.length - 2] === 'q' ? (segments[segments.length - 1] ?? trimmed) : trimmed
     } catch {
       return trimmed
     }

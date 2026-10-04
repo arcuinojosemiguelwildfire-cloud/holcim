@@ -267,7 +267,7 @@ environment variables set by the host, which take precedence.
 | `APP_ENV` | `local` | `production` | Environment name |
 | `APP_DEBUG` | `true` | **`false`** | `true` puts exception messages in API errors |
 | `APP_TIMEZONE` | `Asia/Manila` | `Asia/Manila` | PHP time zone; the MySQL session time zone is aligned to it |
-| `APP_URL` | `http://localhost:5173` | `https://your-domain` | Public base URL. QR codes contain `{APP_URL}/q/{token}`; empty = token only. **Set before printing QR codes** |
+| `APP_URL` | `http://localhost:5173` | `https://your-domain` | Public base URL (optional). **Not used in QR codes** — since Phase 9.5 a QR contains only the token |
 | `LOGIN_MAX_ATTEMPTS` / `LOGIN_MAX_ATTEMPTS_PER_IP` / `LOGIN_LOCKOUT_MINUTES` | `5` / `30` / `15` | same | Failed logins allowed per email / per IP before a temporary lockout |
 | `DB_HOST` | `127.0.0.1` | host's DB server | Use `127.0.0.1` rather than `localhost` on macOS XAMPP (TCP instead of a socket path) |
 | `DB_PORT` | `3306` | `3306` | |
@@ -457,7 +457,7 @@ Full request/response examples: [docs/API.md](docs/API.md).
 ## 9b. Attendee QR codes (Phase 3)
 
 - One QR record per attendee (`attendee_qr_codes`). Token = 24 random bytes, base64url (32 chars, 192 bits), unique index. No personal data in the QR.
-- QR content: `{APP_URL}/q/{token}` (or just the token if `APP_URL` is empty). The Phase 4 scanner reads the last path segment, so both work.
+- QR content (Phase 9.5): **only the token** — no URL, domain or `APP_URL`. Older test labels containing `http(s)://any-host/q/{token}` still scan (the token after `/q/` is used).
 - Tokens never change on edits or re-imports. **Generate missing** only creates codes for active attendees without one. Only **Regenerate** (with confirmation) replaces a token; the old one is gone immediately and the change is audit-logged.
 - Archived attendees get no new QR and are excluded from counts and printing; their existing QR records are kept.
 - Images are rendered in the browser with the `qrcode` npm package (error correction Q, 4-module quiet zone): SVG for screen/print, 1200 px PNG for download. No image files are stored on the server.
@@ -467,7 +467,7 @@ Full request/response examples: [docs/API.md](docs/API.md).
 ## 9c. Registration and Minor eligibility (Phase 4)
 
 - **Registration page** (admin, registration staff, scanner operators) uses a **physical QR scanner** in keyboard mode (USB or Bluetooth HID; no driver or SDK). The scanner types the QR value into the focused **Scan Attendee QR** box and presses Enter; the page submits it, clears and refocuses the box, and shows the result (Registration Successful / Already Registered / Invalid QR Code / Invalid Event / Attendee Inactive) for ~3.5 s. Typing anywhere on the page outside a text field sends focus back to the box, so no mouse is needed between attendees. Scans that arrive while one is being checked are queued in order. **The device camera is not used** (the `qr-scanner` package was removed in Phase 9.1).
-- The box accepts whatever the QR contains (`{APP_URL}/q/{token}` or the bare token); the server validates it exactly as before.
+- The box accepts the bare token (current labels) or an older `http(s)://host/q/{token}` label; any other URL or value is an invalid QR. The server validates it exactly as before.
 - The server resolves the token → attendee, checks the active event and the attendee status, then inserts into `registration_scans`. The existing UNIQUE (event_id, attendee_id) key guarantees one check-in per attendee even with several scanners; a second scan returns `already_registered` and inserts nothing. Regenerated (old) tokens no longer exist and return `INVALID_QR`.
 - **Minor eligible = attendee has a `registration_scans` row for the active event and is still active.** No separate eligibility table. Phase 5 will draw from this pool.
 - Successful check-ins are audit-logged (`registration.checked_in`, with the staff member). Invalid and duplicate scans are not logged.
@@ -491,7 +491,7 @@ Full request/response examples: [docs/API.md](docs/API.md).
 - **Reports** (admin): Registration, Raffle eligibility (Phase 9.2) and Draw winners CSVs for the active event only (UTF-8 for Excel; cells starting with `= + - @` are neutralised).
 - **Void draw** (admin, event operator): marks a draw VOID with time, user and an optional reason. The record stays in history and reports; registration is untouched, and since Phase 9.2 the attendee becomes eligible again for that randomizer.
 - **Major QR**: removed in Phase 9.2 (no Major form/survey).
-- **Readiness:** `php backend/cli/check-readiness.php`, the QR Generator and print sheet warn when `APP_URL` is blank or local. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and [docs/EVENT_DAY_CHECKLIST.md](docs/EVENT_DAY_CHECKLIST.md).
+- **Readiness:** `php backend/cli/check-readiness.php` (APP_URL is informational only; QR labels no longer depend on it). See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and [docs/EVENT_DAY_CHECKLIST.md](docs/EVENT_DAY_CHECKLIST.md).
 
 ## 9g. Multi-day events, scanner operators and manual participants (Phase 8)
 
@@ -566,6 +566,14 @@ Settings › **Randomizer Reset** (admin only) lets previous winners of **one ev
 - **Reports.** Winners.xlsx and the draw CSV keep every draw and gain two columns at the end: **Exclusion Reset At** and **Exclusion Reset By**. After a reset the same person can appear twice for the same day + randomizer: the earlier row shows the reset time, the later win comes after it. The raffle eligibility report is unchanged ("Won Minor/Major" stays as history). The randomizer's Recent winners list tags reset draws with **Reset**.
 - **Concurrency.** The reset takes the same event-day row lock as a draw, so a draw and a reset never interleave: a draw in progress finishes first (and its winner is included in the reset), and a draw after the reset sees the new state.
 - **Audit.** `randomizer.reset` (admin, event, day, randomizer, number of winners per randomizer, draw IDs and attendee codes/names); refused attempts are `randomizer.reset_refused`.
+
+## 9k. Token-only QR codes (Phase 9.5)
+
+- A printed QR contains **only the attendee's opaque token** (32 characters, `A–Z a–z 0–9 - _`, 24 bytes from `random_bytes`). No URL, domain, attendee code, ID, name, email, company or cluster.
+- The hardware scanner types the token into the Registration page; the server looks it up in `attendee_qr_codes.token` (exact, case-sensitive) and registers the attendee for the current day. No internet, DNS, redirect or QR service is involved; the app's assets are all bundled, so the local XAMPP system works offline.
+- Old-format labels (`http(s)://any-host/q/{token}`) still scan and resolve to the same token. Other URLs are rejected as invalid.
+- `APP_URL` no longer affects QR codes. Moving from local to online keeps every printed label valid as long as the `attendee_qr_codes` rows (token + attendee link) are transferred unchanged — a full database dump/restore is simplest. Never re-import attendees and run **Generate missing** online, and never **Regenerate** or **System Reset** after printing.
+- No database change: tokens were always stored on their own; only the QR content changed.
 
 ## 10. Creating the first admin
 
