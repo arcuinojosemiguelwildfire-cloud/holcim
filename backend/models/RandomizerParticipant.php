@@ -45,7 +45,7 @@ final class RandomizerParticipant
                     (EXISTS (SELECT 1 FROM registration_scans r WHERE r.event_day_id = :d1 AND r.attendee_id = a.id)
                      OR EXISTS (SELECT 1 FROM (" . self::MANUAL[$type] . ") m WHERE m.attendee_id = a.id)) AS already_eligible,
                     EXISTS (SELECT 1 FROM randomizer_draws w WHERE w.event_day_id = :d3 AND w.randomizer_type = :wtype
-                            AND w.attendee_id = a.id AND w.voided_at IS NULL) AS already_won
+                            AND w.attendee_id = a.id AND " . RandomizerDraw::EXCLUDES . ") AS already_won
              FROM attendees a
              WHERE a.event_id = :event_id AND a.status = 'active'
                AND (a.attendee_code LIKE :s1 OR a.full_name LIKE :s2 OR a.department LIKE :s3 OR a.email LIKE :s4 OR a.company LIKE :s5)
@@ -87,7 +87,7 @@ final class RandomizerParticipant
         $params = ['d1' => $dayId, 'd2' => $dayId, 'd4' => $dayId, 'd3' => $dayId, 'wtype' => $type];
 
         $where = "WHERE NOT EXISTS (SELECT 1 FROM randomizer_draws w WHERE w.event_day_id = :d3 AND w.randomizer_type = :wtype
-                    AND w.attendee_id = p.id AND w.voided_at IS NULL)";
+                    AND w.attendee_id = p.id AND " . RandomizerDraw::EXCLUDES . ")";
         if ($search !== '') {
             $like = '%' . addcslashes($search, '%_\\') . '%';
             $where .= ' AND (p.attendee_code LIKE :s1 OR p.full_name LIKE :s2 OR p.department LIKE :s3 OR p.email LIKE :s4 OR p.company LIKE :s5)';

@@ -138,7 +138,14 @@ export function RandomizerPage({ type }: { type: RandomizerType }) {
                           {row.voidReason && <span className="ml-2 text-xs text-slate-500">{row.voidReason}</span>}
                         </span>
                       ) : (
-                        <Badge tone="success">Valid</Badge>
+                        <span>
+                          <Badge tone="success">Valid</Badge>
+                          {row.exclusionReset && (
+                            <span title={row.resetAt ? `Exclusion reset by an admin at ${formatTime(row.resetAt)}; can be drawn again` : undefined}>
+                              <Badge tone="muted" className="ml-2">Reset</Badge>
+                            </span>
+                          )}
+                        </span>
                       )}
                     </td>
                   </tr>

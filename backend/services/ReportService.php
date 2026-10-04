@@ -120,6 +120,7 @@ final class ReportService
                 self::dayCell($row), ucfirst((string) $row['randomizer_type']), $row['attendee_code'], $row['full_name'], $row['company'], $row['department'],
                 $row['selected_at'], $row['drawn_by_name'], $row['voided_at'] !== null ? 'VOID' : 'Valid',
                 $row['voided_at'], $row['voided_by_name'], $row['void_reason'],
+                $row['reset_at'], $row['reset_at'] !== null ? $row['reset_by_name'] : null,
             ];
         }
 
@@ -127,7 +128,7 @@ final class ReportService
             $event,
             $day,
             'draw-winners',
-            ['Event Day', 'Draw Type', 'Attendee Code', 'Full Name', 'Company', 'Cluster', 'Drawn At', 'Drawn By', 'Status', 'Voided At', 'Voided By', 'Void Reason'],
+            ['Event Day', 'Draw Type', 'Attendee Code', 'Full Name', 'Company', 'Cluster', 'Drawn At', 'Drawn By', 'Status', 'Voided At', 'Voided By', 'Void Reason', 'Exclusion Reset At', 'Exclusion Reset By'],
             $rows
         );
     }
@@ -173,6 +174,9 @@ final class ReportService
     /**
      * Winners.xlsx (Phase 9.2): one sheet of Minor and Major draws in order,
      * with Event Day and Randomizer. VOID draws are kept with their reason.
+     * Phase 9.4: "Exclusion Reset At/By" (appended columns) mark VALID draws
+     * whose no-repeat exclusion an admin reset; a later win of the same
+     * person on the same day + randomizer comes after that time.
      */
     public static function winnersXlsx(string $scope): Response
     {
@@ -183,11 +187,12 @@ final class ReportService
                 self::dayCell($row), ucfirst((string) $row['randomizer_type']), $row['attendee_code'], $row['full_name'], $row['company'], $row['department'],
                 $row['selected_at'], $row['drawn_by_name'], $row['voided_at'] !== null ? 'VOID' : 'VALID',
                 $row['voided_at'], $row['voided_by_name'], $row['void_reason'],
+                $row['reset_at'], $row['reset_at'] !== null ? $row['reset_by_name'] : null,
             ];
         }
         $xlsx = (new XlsxWriter())->addSheet(
             'Winners',
-            ['Event Day', 'Randomizer', 'Attendee Code', 'Full Name', 'Company', 'Cluster', 'Drawn At', 'Drawn By', 'Status', 'Voided At', 'Voided By', 'Void Reason'],
+            ['Event Day', 'Randomizer', 'Attendee Code', 'Full Name', 'Company', 'Cluster', 'Drawn At', 'Drawn By', 'Status', 'Voided At', 'Voided By', 'Void Reason', 'Exclusion Reset At', 'Exclusion Reset By'],
             $rows
         );
 

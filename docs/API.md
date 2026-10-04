@@ -162,6 +162,15 @@ and the role matrix is in README §9g. Phase 8 notes:
   non-admin accounts (422 with `fields.confirmation` / `fields.password` when
   refused, `500 RESET_FAILED` with a generic message if the transaction rolled
   back).
+- Phase 9.4: `GET /settings/randomizer-reset?event_id=&event_day_id=` (admin)
+  returns `{event, eventDay, phrases, minor: {count, winners}, major: {count, winners}}`.
+  `POST /settings/randomizer-reset` (admin)
+  `{event_id, event_day_id, randomizer: "minor"|"major"|"both", confirmation, password}`
+  returns `{affected: {minor?, major?}, total, message}`; 422 with
+  `fields.confirmation` / `fields.password` when refused, 404 when the day is
+  not in that event. Draw objects in `recentWinners` gain `exclusionReset`
+  and `resetAt`. Winners.xlsx / `draws.csv` append `Exclusion Reset At`,
+  `Exclusion Reset By`.
 - `EventDay`: `{ id, eventId, dayNumber, eventDate, label, status, displayName }`,
   status `upcoming` / `active` / `completed`.
 

@@ -193,3 +193,10 @@ Every scan attempt per day: `event_id`, `event_day_id`, `user_id`, `attendee_id`
 
 - No schema change. Manually added attendees use the existing `attendees` columns (`import_batch_id` NULL) and `attendee_qr_codes`; the code is `MAX(ATT-####) + 1` for the event, generated while the event row is locked (`SELECT … FOR UPDATE`), the same as imports.
 - System Reset deletes, in one transaction and in this order: `scan_logs`, `randomizer_draws`, `minor_manual_entries`, `major_eligibility`, `major_entries`, `registration_scans`, `attendee_qr_codes`, `attendees`, `import_batches`, `event_days`, `audit_logs`, `events`, `login_attempts`, then `users WHERE role <> 'admin'`. Children go before parents, so no RESTRICT foreign key fails and no orphans remain (SET NULL references to users are already gone with their rows). `schema_migrations` and admin users are never touched. Uses DELETE (not TRUNCATE) so it can roll back.
+
+## Phase 9.4: Randomizer Reset (migration 032)
+
+- `randomizer_draws.reset_at` DATETIME NULL and `reset_by` INT UNSIGNED NULL (FK `users`, ON DELETE SET NULL) — additive; existing rows stay NULL.
+- A draw **excludes** its winner from that day's pool of that randomizer only while `voided_at IS NULL AND reset_at IS NULL` (`RandomizerDraw::EXCLUDES`, used by the pool, `+ Add Participant` and candidate queries).
+- A Randomizer Reset runs `UPDATE randomizer_draws SET reset_at = NOW(), reset_by = admin WHERE event_day_id = ? AND randomizer_type = ? AND voided_at IS NULL AND reset_at IS NULL` inside a transaction that holds the `event_days` row lock used by draws. No rows are deleted; VOID rows and other days/types are never matched.
+- The raffle eligibility report's "Won Minor/Major" still counts any non-void draw (history), independent of resets.

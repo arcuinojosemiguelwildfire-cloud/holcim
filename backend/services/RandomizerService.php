@@ -275,6 +275,9 @@ final class RandomizerService
             'status' => $row['voided_at'] !== null ? 'void' : 'valid',
             'voidReason' => $row['void_reason'],
             'voidedBy' => $row['voided_by_name'],
+            // Phase 9.4: winner exclusion lifted by an admin Randomizer Reset (draw kept).
+            'exclusionReset' => $row['reset_at'] !== null,
+            'resetAt' => $row['reset_at'],
         ], RandomizerDraw::recent($dayId, $type, 10));
     }
 

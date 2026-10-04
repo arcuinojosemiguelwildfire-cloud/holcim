@@ -55,6 +55,10 @@ Nothing is deleted. After migrating, open **Events › Days** to add Day 2, 3…
 
 Adds manual **Add Attendee** and **Settings › System Reset**. No database change. If the production server was used for testing, an admin can run System Reset **once, before the real event** (take a backup first). It removes all events, attendees, registrations, draws, imports and non-admin accounts and keeps the admin account(s). Afterwards recreate staff, event operator and scanner operator accounts.
 
+### Phase 9.4 (migration 032)
+
+Run `php backend/cli/migrate.php` to apply migration 032 (adds `randomizer_draws.reset_at` / `reset_by`; no data changes). Adds Settings › Randomizer Reset. Winners.xlsx and the draw CSV get two extra columns at the end.
+
 ## 4. URLs at the event
 
 | URL | Who | Purpose |

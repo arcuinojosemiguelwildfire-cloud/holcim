@@ -10,6 +10,9 @@ export interface RecentWinner extends DrawWinner {
   status: 'valid' | 'void'
   voidReason: string | null
   voidedBy: string | null
+  /** Winner exclusion lifted by an admin Randomizer Reset (the draw is kept). */
+  exclusionReset: boolean
+  resetAt: string | null
 }
 
 export type RandomizerType = 'minor' | 'major'

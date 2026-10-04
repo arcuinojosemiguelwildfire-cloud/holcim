@@ -408,6 +408,8 @@ Error codes: `BAD_REQUEST` (400), `UNAUTHENTICATED` / `INVALID_CREDENTIALS` (401
 | GET / POST | `/api/settings/scanner-operators` | Admin | List / create `{name, username, password, password_confirmation, status}` |
 | PATCH · POST | `/api/settings/scanner-operators/{id}` · `/{id}/password` | Admin | Enable/disable `{status}` / reset password |
 | GET | `/api/settings/system-reset` | Admin | Row counts a reset would remove (read-only) |
+| GET | `/api/settings/randomizer-reset?event_id=&event_day_id=` | Admin | Randomizer Reset preview: current Minor / Major winners of that day (read-only) |
+| POST | `/api/settings/randomizer-reset` | Admin | `{event_id, event_day_id, randomizer: minor\|major\|both, confirmation, password}` — lifts the no-repeat exclusion; draws are kept |
 | POST | `/api/settings/system-reset` | Admin | **Destructive** System Reset: `{confirmation: "RESET EVENT DATA", password}` (current admin password) |
 
 Full request/response examples: [docs/API.md](docs/API.md).
@@ -553,6 +555,17 @@ Minor eligible  +  Major eligible
 - Safety: POST only (CSRF-protected), admin role checked on the server, requires typing `RESET EVENT DATA` **and** the admin's current password. Rows are deleted child-first (foreign-key order, no TRUNCATE) in one transaction; any failure rolls everything back and the browser only sees a generic error. One `system.reset` audit entry is written after the reset; refused attempts are logged as `system.reset_refused`.
 - It never runs automatically (not in migrations, startup, deployment or the smoke tests). The only command-line path is the test `backend/tests/reset-test.php`, which refuses to run without `--confirm-reset`, on a database whose name does not contain `test`, or with `APP_ENV=production`.
 - After the reset, recreate staff / event operator accounts (`backend/cli/create-user.php`) and scanner operators (Settings), then create the real event and import/add attendees.
+
+## 9j. Randomizer Reset (Phase 9.4, migration 032)
+
+Settings › **Randomizer Reset** (admin only) lets previous winners of **one event day** be drawn again, for **Minor**, **Major** or **Minor + Major**. It is not the System Reset.
+
+- Choose Event, Event Day and Randomizer; the preview lists the current winners that would be released and the count. Confirm by typing `RESET MINOR DRAW`, `RESET MAJOR DRAW` or `RESET RAFFLE DRAWS` (Minor + Major) **and** your current password. POST only, CSRF-protected; event operators, registration staff and scanner operators get 403.
+- **History is kept.** Draw rows are never deleted. Each currently excluding draw (valid, not already reset) of that day + randomizer gets `reset_at` / `reset_by` (migration 032). A draw excludes its winner only while it is neither VOID nor reset. VOID draws are not touched.
+- **Exact scope.** Only that day and that randomizer change. The other randomizer, other days, registrations, attendees, QR codes, manual participants (+ Add Participant records) and eligibility are untouched. A manually added participant who won becomes eligible again because their manual record is kept.
+- **Reports.** Winners.xlsx and the draw CSV keep every draw and gain two columns at the end: **Exclusion Reset At** and **Exclusion Reset By**. After a reset the same person can appear twice for the same day + randomizer: the earlier row shows the reset time, the later win comes after it. The raffle eligibility report is unchanged ("Won Minor/Major" stays as history). The randomizer's Recent winners list tags reset draws with **Reset**.
+- **Concurrency.** The reset takes the same event-day row lock as a draw, so a draw and a reset never interleave: a draw in progress finishes first (and its winner is included in the reset), and a draw after the reset sees the new state.
+- **Audit.** `randomizer.reset` (admin, event, day, randomizer, number of winners per randomizer, draw IDs and attendee codes/names); refused attempts are `randomizer.reset_refused`.
 
 ## 10. Creating the first admin
 
@@ -700,7 +713,7 @@ DB_DATABASE=holcim_test php backend/tests/reset-test.php --confirm-reset
 
 It seeds an event, two days, attendees, QR codes, registrations, draws (incl. a void), manual participants, legacy Major rows, an import batch, login attempts, audit logs and staff / event operator / scanner operator accounts, runs the reset and checks that every event table is empty, all admins are unchanged and can still authenticate, the schema and `schema_migrations` are unchanged, no foreign key has orphans, and that a failure part-way rolls back. It refuses to run without `--confirm-reset`, unless the database name contains `test`, or with `APP_ENV=production`.
 
-The Phase 8 smoke test also covers manual Add Attendee and the reset endpoint's permissions and validation (it never performs a reset).
+The Phase 8 smoke test also covers manual Add Attendee and the System Reset endpoint's permissions and validation (it never performs a System Reset), and the Randomizer Reset on its own smoke event (scope isolation, history kept, audit, reports, void, and a draw/reset race).
 
 **Frontend:** `npm run typecheck`, `npm run lint`, `npm run build`. The build
 prints a "chunks larger than 500 kB" notice (≈520 kB, ≈155 kB gzipped). It is

@@ -9,6 +9,7 @@ use App\Core\Request;
 use App\Core\Response;
 use App\Models\User;
 use App\Services\ScannerOperatorService;
+use App\Services\RandomizerResetService;
 use App\Services\SystemResetService;
 use App\Utils\Validator;
 
@@ -80,5 +81,40 @@ final class SettingsController
         );
 
         return Response::success($result, message: 'System reset completed. All event/test data was removed. Admin account was preserved.');
+    }
+
+    /** GET /settings/randomizer-reset?event_id=&event_day_id= - read-only preview of current winners */
+    public static function randomizerResetPreview(Request $request): Response
+    {
+        return Response::success(RandomizerResetService::preview(
+            Validator::id(self::idString($request->query('event_id')), 'Event'),
+            Validator::id(self::idString($request->query('event_day_id')), 'Event day')
+        ));
+    }
+
+    /**
+     * POST /settings/randomizer-reset (admin)
+     * {event_id, event_day_id, randomizer: minor|major|both, confirmation, password}
+     */
+    public static function randomizerReset(Request $request): Response
+    {
+        $body = $request->body();
+        $text = static fn (string $key): string => isset($body[$key]) && is_string($body[$key]) ? $body[$key] : '';
+        $result = RandomizerResetService::reset(
+            $request,
+            Validator::id(self::idString($body['event_id'] ?? null), 'Event'),
+            Validator::id(self::idString($body['event_day_id'] ?? null), 'Event day'),
+            $text('randomizer'),
+            $text('confirmation'),
+            $text('password')
+        );
+
+        return Response::success($result, message: $result['message']);
+    }
+
+    /** JSON numbers and query strings -> string for Validator::id (anything else -> null). */
+    private static function idString(mixed $value): ?string
+    {
+        return is_int($value) || is_string($value) ? (string) $value : null;
     }
 }

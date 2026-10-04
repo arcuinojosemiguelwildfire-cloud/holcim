@@ -48,6 +48,9 @@
 - [ ] A Minor winner leaves the Minor pool but stays in the Major pool (and vice versa). Voiding a draw puts the person back in that pool.
 - [ ] Check the eligible counts on the Minor / Major Randomizer pages before each draw.
 
+## If the client asks to reset the draws
+- [ ] Settings › **Randomizer Reset** (admin): pick the event, the **day** and Minor / Major / Minor + Major; check the preview list; type the phrase shown and your password. Previous winners of that day + randomizer can then be drawn again. Draw history stays in Winners.xlsx (marked in "Exclusion Reset At").
+
 ## Major draw
 - [ ] Open **Major Randomizer** → **Enter fullscreen**.
 - [ ] Draw, confirm the winner; **Void draw** if necessary and draw again.

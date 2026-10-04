@@ -135,4 +135,9 @@ return static function (Router $router): void {
     // requires the phrase RESET EVENT DATA and the admin's current password.
     $router->get('/settings/system-reset', [SettingsController::class, 'resetSummary'], [$adminOnly]);
     $router->post('/settings/system-reset', [SettingsController::class, 'reset'], [$adminOnly]);
+
+    // Settings > Randomizer Reset (Phase 9.4): admin only. Lifts the no-repeat
+    // winner exclusion for one event day + Minor/Major/both; draws are kept.
+    $router->get('/settings/randomizer-reset', [SettingsController::class, 'randomizerResetPreview'], [$adminOnly]);
+    $router->post('/settings/randomizer-reset', [SettingsController::class, 'randomizerReset'], [$adminOnly]);
 };

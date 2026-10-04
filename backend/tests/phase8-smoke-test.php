@@ -89,15 +89,16 @@ final class ApiClient
 
     /**
      * Sends requests at the same moment (curl_multi), each with its own
-     * client's session. @param list<array{0: ApiClient, 1: string, 2: string}> $requests
+     * client's session; optional 4th element = JSON body. @param list<array{0: ApiClient, 1: string, 2: string, 3?: array<string, mixed>}> $requests
      * @return list<array{status:int, body:array<string,mixed>|null, raw:string}>
      */
     public static function parallel(array $requests): array
     {
         $multi = curl_multi_init();
         $handles = [];
-        foreach ($requests as [$client, $method, $path]) {
-            $handle = $client->handle($method, $path, []);
+        foreach ($requests as $spec) {
+            [$client, $method, $path] = $spec;
+            $handle = $client->handle($method, $path, $spec[3] ?? []);
             curl_multi_add_handle($multi, $handle);
             $handles[] = $handle;
         }
@@ -537,7 +538,7 @@ try {
     check('Day attendees files contain no QR tokens', !str_contains($x1['raw'] . $x2['raw'], $tokens['A']) && !str_contains($x1['raw'], $tokens['C']));
     check('Other event day id -> 404', $admin->request('GET', '/reports/day-attendees.xlsx?day_id=999999')['status'] === 404);
     $w = $sheet($admin, '/reports/winners.xlsx?scope=all');
-    check('Winners.xlsx: headers', $w['headers'] === ['Event Day', 'Randomizer', 'Attendee Code', 'Full Name', 'Company', 'Cluster', 'Drawn At', 'Drawn By', 'Status', 'Voided At', 'Voided By', 'Void Reason'], $w['headers']);
+    check('Winners.xlsx: headers (Phase 9.4 appends Exclusion Reset At / By)', $w['headers'] === ['Event Day', 'Randomizer', 'Attendee Code', 'Full Name', 'Company', 'Cluster', 'Drawn At', 'Drawn By', 'Status', 'Voided At', 'Voided By', 'Void Reason', 'Exclusion Reset At', 'Exclusion Reset By'], $w['headers']);
     check('Winners.xlsx: 9 draws, 1 VOID', count($w['rows']) === 9 && count(array_filter($w['rows'], static fn ($r) => $r['Status'] === 'VOID')) === 1);
     $valid = array_filter($w['rows'], static fn ($r) => $r['Status'] === 'VALID');
     $keys = array_map(static fn ($r) => $r['Event Day'] . '|' . $r['Randomizer'] . '|' . $r['Attendee Code'], $valid);
@@ -584,6 +585,7 @@ try {
         ['GET', '/reports/registration.csv'], ['GET', '/reports/eligibility.csv'], ['GET', '/reports/draws.csv'],
         ['GET', '/reports/day-attendees.xlsx'], ['GET', '/reports/winners.xlsx'], ['POST', '/attendees'],
         ['GET', '/settings/system-reset'], ['POST', '/settings/system-reset'],
+        ['GET', '/settings/randomizer-reset'], ['POST', '/settings/randomizer-reset'],
         ['GET', '/randomizers/minor'], ['POST', '/randomizers/minor/draw'], ['GET', '/randomizers/major'], ['POST', '/randomizers/major/draw'],
         ['POST', '/randomizers/minor/participants'], ['POST', '/randomizers/major/participants'], ['GET', '/randomizers/minor/candidates'],
         ['POST', "/randomizers/draws/{$day2Draws['minor'][0]}/void"], ['GET', '/qr-codes'], ['POST', '/qr-codes/generate-missing'], ['GET', '/dashboard/summary'],
@@ -746,6 +748,202 @@ try {
         && (int) $pdo->query('SELECT COUNT(*) FROM attendees')->fetchColumn() === $attendeesBefore);
     check('Refused attempts are audited (system.reset_refused)', (int) $pdo->query("SELECT COUNT(*) FROM audit_logs WHERE action = 'system.reset_refused' AND created_at >= NOW() - INTERVAL 5 MINUTE")->fetchColumn() >= 3);
     check('Reset errors never echo SQL details', !preg_match('/SQLSTATE|PDO|DELETE FROM/i', $r['raw'] . $summary['raw']));
+
+    section('Randomizer Reset (Phase 9.4): lift winner exclusions, keep history');
+    // Snapshot of everything a randomizer reset must NOT touch (this event only).
+    $snapshot = static function () use ($pdo, $eventId): array {
+        $hash = static fn (string $sql): string => md5(json_encode($pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC)));
+
+        return [
+            'registration_scans' => $hash("SELECT * FROM registration_scans WHERE event_id = {$eventId} ORDER BY id"),
+            'attendees' => $hash("SELECT * FROM attendees WHERE event_id = {$eventId} ORDER BY id"),
+            'attendee_qr_codes' => $hash("SELECT q.* FROM attendee_qr_codes q JOIN attendees a ON a.id = q.attendee_id WHERE a.event_id = {$eventId} ORDER BY q.id"),
+            'minor_manual_entries' => $hash("SELECT * FROM minor_manual_entries WHERE event_id = {$eventId} ORDER BY id"),
+            'major_eligibility' => $hash("SELECT * FROM major_eligibility WHERE event_id = {$eventId} ORDER BY id"),
+            'event_days' => $hash("SELECT id, event_id, day_number, event_date, label FROM event_days WHERE event_id = {$eventId} ORDER BY id"),
+        ];
+    };
+    $drawRows = static fn (): array => $pdo->query("SELECT id, event_day_id, attendee_id, randomizer_type, drawn_by, selected_at, voided_at, voided_by, void_reason, reset_at, reset_by
+        FROM randomizer_draws WHERE event_id = {$eventId} ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);
+    $excluding = static fn (int $dayId, string $type): array => array_map('intval', $pdo->query("SELECT attendee_id FROM randomizer_draws
+        WHERE event_day_id = {$dayId} AND randomizer_type = '{$type}' AND voided_at IS NULL AND reset_at IS NULL ORDER BY attendee_id")->fetchAll(PDO::FETCH_COLUMN));
+    $resetReq = static fn (ApiClient $c, int $dayId, string $scope, string $phrase, string $pw, ?int $evId = null): array => $c->request('POST', '/settings/randomizer-reset', [
+        'event_id' => $evId ?? $eventId, 'event_day_id' => $dayId, 'randomizer' => $scope, 'confirmation' => $phrase, 'password' => $pw,
+    ]);
+    $baseline = $snapshot();
+    $drawsBefore = $drawRows();
+    $ex = ['d1minor' => $excluding($day1, 'minor'), 'd1major' => $excluding($day1, 'major'), 'd2minor' => $excluding($day2, 'minor'), 'd2major' => $excluding($day2, 'major')];
+    $abc = [$ids['A'], $ids['B'], $ids['C']];
+    sort($abc);
+    check('Setup: Day 1 Minor winners A, B, C are currently excluded', $ex['d1minor'] === $abc, $ex['d1minor']);
+    check('Setup: Day 1 Major excluded = A, B; Day 2 has excluded winners in both', !array_diff([$ids['A'], $ids['B']], $ex['d1major']) && count($ex['d1major']) === 2 && $ex['d2minor'] !== [] && $ex['d2major'] !== []);
+
+    $preview = $admin->request('GET', "/settings/randomizer-reset?event_id={$eventId}&event_day_id={$day1}");
+    check('Admin preview (200): Day 1 Minor 3 current winners, Major 2', $preview['status'] === 200 && ($preview['body']['data']['minor']['count'] ?? null) === 3
+        && ($preview['body']['data']['major']['count'] ?? null) === 2 && ($preview['body']['data']['eventDay']['dayNumber'] ?? null) === 1, $preview['raw']);
+    check('Preview lists names without tokens or database IDs', !str_contains($preview['raw'], $tokens['A']) && !str_contains($preview['raw'], '"attendeeId"')
+        && in_array('Alpha Tester', array_column($preview['body']['data']['minor']['winners'] ?? [], 'fullName'), true));
+    check('Preview gives the three confirmation phrases', ($preview['body']['data']['phrases'] ?? null) === ['minor' => 'RESET MINOR DRAW', 'major' => 'RESET MAJOR DRAW', 'both' => 'RESET RAFFLE DRAWS']);
+
+    foreach (['Event Operator' => $operator, 'Registration Staff' => $staff] as $label => $client) {
+        check("{$label} cannot preview (403)", $client->request('GET', "/settings/randomizer-reset?event_id={$eventId}&event_day_id={$day1}")['status'] === 403);
+        check("{$label} cannot reset (403)", $resetReq($client, $day1, 'minor', 'RESET MINOR DRAW', $adminPassword)['status'] === 403);
+    }
+    check('Scanner Operator cannot reset (403)', $resetReq($sc1, $day1, 'minor', 'RESET MINOR DRAW', $adminPassword)['status'] === 403);
+    $r = $resetReq($admin, $day1, 'minor', 'RESET MAJOR DRAW', $adminPassword);
+    check('Wrong phrase for the scope (RESET MAJOR DRAW for Minor) -> 422', $r['status'] === 422 && isset($r['body']['error']['details']['fields']['confirmation']), $r['raw']);
+    $r = $resetReq($admin, $day1, 'minor', 'RESET MINOR DRAW', $adminPassword . 'x');
+    check('Wrong password -> 422 on password', $r['status'] === 422 && isset($r['body']['error']['details']['fields']['password']), $r['raw']);
+    check('Unknown randomizer scope -> 422', $resetReq($admin, $day1, 'all', 'RESET RAFFLE DRAWS', $adminPassword)['status'] === 422);
+    check('Day of another event -> 404', $resetReq($admin, $day1, 'minor', 'RESET MINOR DRAW', $adminPassword, $otherEventId)['status'] === 404);
+    $saved = $admin->swapCsrf(null);
+    $r = $resetReq($admin, $day1, 'minor', 'RESET MINOR DRAW', $adminPassword);
+    $admin->swapCsrf($saved);
+    check('POST without CSRF token rejected', in_array($r['status'], [403, 419], true), (string) $r['status']);
+    check('GET with reset-looking parameters is read-only', $admin->request('GET', "/settings/randomizer-reset?event_id={$eventId}&event_day_id={$day1}&randomizer=minor&confirmation=RESET+MINOR+DRAW")['status'] === 200);
+    check('Refused / unauthorised attempts changed nothing (draws and all other data identical)', $drawRows() === $drawsBefore && $snapshot() === $baseline);
+    check('Refused attempts audited (randomizer.reset_refused)', (int) $pdo->query("SELECT COUNT(*) FROM audit_logs WHERE action = 'randomizer.reset_refused' AND event_id = {$eventId}")->fetchColumn() >= 2);
+
+    // ---- Reset Day 1 Minor
+    $r = $resetReq($admin, $day1, 'minor', 'RESET MINOR DRAW', $adminPassword);
+    check('Admin resets Day 1 Minor (200, 3 winners affected)', $r['status'] === 200 && ($r['body']['data']['affected'] ?? null) === ['minor' => 3], $r['raw']);
+    $drawsAfter = $drawRows();
+    $changed = array_values(array_filter(array_keys($drawsAfter), static fn ($i) => $drawsAfter[$i] !== $drawsBefore[$i]));
+    check('History kept: same number of draw rows, none deleted', count($drawsAfter) === count($drawsBefore) && array_column($drawsAfter, 'id') === array_column($drawsBefore, 'id'));
+    check('Only the 3 Day 1 Minor valid draws changed, and only reset_at / reset_by', count($changed) === 3 && !array_filter($changed, static function ($i) use ($drawsAfter, $drawsBefore, $day1): bool {
+        $a = $drawsAfter[$i]; $b = $drawsBefore[$i];
+        return (int) $a['event_day_id'] !== $day1 || $a['randomizer_type'] !== 'minor' || $a['voided_at'] !== null || $a['reset_at'] === null
+            || array_diff_key($a, ['reset_at' => 1, 'reset_by' => 1]) != array_diff_key($b, ['reset_at' => 1, 'reset_by' => 1]);
+    }));
+    $voidRow = array_values(array_filter($drawsAfter, static fn ($d) => (int) $d['id'] === $day1Draws['minor'][0]))[0] ?? [];
+    check('VOID draw untouched (still void, never marked reset)', ($voidRow['voided_at'] ?? null) !== null && array_key_exists('reset_at', $voidRow) && $voidRow['reset_at'] === null);
+    check('Day 1 Minor: no winner excluded any more', $excluding($day1, 'minor') === []);
+    check('Day 1 Major unchanged (A, B still excluded)', $excluding($day1, 'major') === $ex['d1major']);
+    check('Day 2 Minor and Major unchanged', $excluding($day2, 'minor') === $ex['d2minor'] && $excluding($day2, 'major') === $ex['d2major']);
+    check('Registrations, attendees, QR codes, manual participants and days unchanged', $snapshot() === $baseline);
+    $audit = $pdo->query("SELECT user_id, metadata FROM audit_logs WHERE action = 'randomizer.reset' AND event_id = {$eventId} ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    $meta = json_decode((string) ($audit['metadata'] ?? '{}'), true);
+    check('Audited: randomizer.reset by the admin with day, scope, count and attendees', $audit !== false && (int) $audit['user_id'] === (int) $admin->data('GET', '/auth/me')['user']['id']
+        && ($meta['event_day_id'] ?? null) === $day1 && ($meta['randomizer'] ?? '') === 'minor' && ($meta['affected']['minor'] ?? null) === 3 && count($meta['attendees']['minor'] ?? []) === 3, $meta);
+
+    check('Admin sets Day 1 current to draw again', $admin->request('PATCH', "/event-days/{$day1}/activate")['status'] === 200);
+    check('Previous Minor winners A, B (registered) and C (manual) are eligible for Day 1 Minor again', $poolCodes('minor') === [$codeOf('A'), $codeOf('B'), $codeOf('C')], $poolCodes('minor'));
+    check('Manual participant C still sourced "manual" (record kept)', (array_column($pool('minor')['items'] ?? [], 'source', 'attendeeCode')[$codeOf('C')] ?? '') === 'manual');
+    check('Out of scope: Day 1 Major winners A, B still excluded (pool = E only)', $poolCodes('major') === [$codeOf('E')], $poolCodes('major'));
+    check('+ Add Participant: A no longer counts as an excluded Minor winner (409 ALREADY_ELIGIBLE, not ALREADY_WON)', ($add($operator, 'minor', $ids['A'])['body']['error']['code'] ?? '') === 'ALREADY_ELIGIBLE');
+    check('+ Add Participant: A still ALREADY_WON for Major', ($add($operator, 'major', $ids['A'])['body']['error']['code'] ?? '') === 'ALREADY_WON');
+    $again = [];
+    $againIds = [];
+    for ($i = 0; $i < 3; $i++) {
+        $d = $draw($operator, 'minor')['body']['data'] ?? [];
+        $again[] = $d['winner']['attendeeCode'] ?? '';
+        $againIds[] = (int) ($d['drawId'] ?? 0);
+    }
+    sort($again);
+    check('New Day 1 Minor draws after reset select the previous winners again (A, B, C once each)', $again === [$codeOf('A'), $codeOf('B'), $codeOf('C')], $again);
+    check('No repeat after the new wins: 4th Minor draw -> 409', $draw($operator, 'minor')['status'] === 409);
+    $hist = $operator->data('GET', '/randomizers/minor')['recentWinners'] ?? [];
+    check('Day 1 Minor history shows old draws flagged exclusionReset and new ones not', count(array_filter($hist, static fn ($h) => $h['exclusionReset'])) === 3
+        && count(array_filter($hist, static fn ($h) => !$h['exclusionReset'] && $h['status'] === 'valid')) === 3, $hist);
+    check('Void still works after reset: voiding a new draw returns that attendee to Minor', $operator->request('POST', "/randomizers/draws/{$againIds[0]}/void", ['reason' => 'Smoke'])['status'] === 200
+        && count($poolCodes('minor')) === 1);
+
+    // ---- Reset Day 1 Major
+    $r = $resetReq($admin, $day1, 'major', 'RESET MAJOR DRAW', $adminPassword);
+    check('Admin resets Day 1 Major (2 affected)', $r['status'] === 200 && ($r['body']['data']['affected'] ?? null) === ['major' => 2], $r['raw']);
+    check('Previous Major winners A, B eligible again for Day 1 Major (with manual E)', $poolCodes('major') === [$codeOf('A'), $codeOf('B'), $codeOf('E')], $poolCodes('major'));
+    check('Major reset leaves the Day 1 Minor state alone (2 excluded after the void)', count($excluding($day1, 'minor')) === 2);
+    check('Day 2 still unchanged', $excluding($day2, 'minor') === $ex['d2minor'] && $excluding($day2, 'major') === $ex['d2major']);
+
+    // ---- Reset Day 2 Minor + Major
+    $d1MinorBefore = $excluding($day1, 'minor');
+    $d1MajorBefore = $excluding($day1, 'major');
+    $r = $resetReq($admin, $day2, 'both', 'RESET MINOR DRAW', $adminPassword);
+    check('Minor + Major needs RESET RAFFLE DRAWS (422 otherwise)', $r['status'] === 422);
+    $r = $resetReq($admin, $day2, 'both', 'RESET RAFFLE DRAWS', $adminPassword);
+    check('Admin resets Day 2 Minor + Major (counts per randomizer)', $r['status'] === 200 && ($r['body']['data']['affected'] ?? null) === ['minor' => count($ex['d2minor']), 'major' => count($ex['d2major'])], $r['raw']);
+    check('Day 2: nobody excluded in Minor or Major', $excluding($day2, 'minor') === [] && $excluding($day2, 'major') === []);
+    check('Day 1 untouched by the Day 2 reset', $excluding($day1, 'minor') === $d1MinorBefore && $excluding($day1, 'major') === $d1MajorBefore);
+    check('Still no registration/attendee/QR/manual changes after all resets', $snapshot() === $baseline);
+    $r = $resetReq($admin, $day2, 'both', 'RESET RAFFLE DRAWS', $adminPassword);
+    check('Resetting again with no current winners is harmless (0 affected)', $r['status'] === 200 && ($r['body']['data']['total'] ?? null) === 0);
+
+    // ---- Concurrency: a draw and a reset of the same day/randomizer at the same moment
+    check('Admin sets Day 2 current again', $admin->request('PATCH', "/event-days/{$day2}/activate")['status'] === 200);
+    $consistent = true;
+    $orders = [];
+    for ($i = 0; $i < 4; $i++) {
+        [$dr, $rs] = ApiClient::parallel([
+            [$operator, 'POST', '/randomizers/minor/draw'],
+            [$admin, 'POST', '/settings/randomizer-reset', ['event_id' => $eventId, 'event_day_id' => $day2, 'randomizer' => 'minor', 'confirmation' => 'RESET MINOR DRAW', 'password' => $adminPassword]],
+        ]);
+        $drawId = (int) ($dr['body']['data']['drawId'] ?? 0);
+        $row = $pdo->query("SELECT reset_at FROM randomizer_draws WHERE id = {$drawId}")->fetch(PDO::FETCH_ASSOC);
+        $exNow = $excluding($day2, 'minor');
+        // Draw first -> the reset lifted it (0 excluded); reset first -> the new win excludes (1).
+        $ok = $dr['status'] === 201 || $dr['status'] === 200;
+        $ok = $ok && $rs['status'] === 200 && $row !== false
+            && (($row['reset_at'] !== null && $exNow === [] && ($rs['body']['data']['total'] ?? -1) >= 1)
+                || ($row['reset_at'] === null && count($exNow) === 1 && ($rs['body']['data']['total'] ?? -1) === 0));
+        $orders[] = $row !== false && $row['reset_at'] !== null ? 'draw-then-reset' : 'reset-then-draw';
+        $consistent = $consistent && $ok;
+        if (!$ok) {
+            echo '    detail: ' . json_encode([$dr['raw'], $rs['raw'], $row, $exNow]) . "\n";
+        }
+    }
+    check('Concurrent draw + reset is serialised (always one consistent order: ' . implode(', ', array_unique($orders)) . ')', $consistent);
+    // Deterministic: hold the event-day lock exactly as a running draw does, then send a reset.
+    if ($excluding($day2, 'minor') === []) {
+        $draw($operator, 'minor'); // make sure one current winner exists
+    }
+    $lockPdo = new PDO('mysql:host=' . App\Core\Config::get('database.host') . ';port=' . App\Core\Config::get('database.port') . ';dbname=' . App\Core\Config::get('database.database') . ';charset=utf8mb4',
+        (string) App\Core\Config::get('database.username'), (string) App\Core\Config::get('database.password'), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+    $lockPdo->beginTransaction();
+    $lockPdo->query("SELECT id FROM event_days WHERE id = {$day2} FOR UPDATE")->fetchAll();
+    $multi = curl_multi_init();
+    $handle = $admin->handle('POST', '/settings/randomizer-reset', ['event_id' => $eventId, 'event_day_id' => $day2, 'randomizer' => 'minor', 'confirmation' => 'RESET MINOR DRAW', 'password' => $adminPassword]);
+    curl_multi_add_handle($multi, $handle);
+    $waitUntil = microtime(true) + 1.5;
+    do {
+        curl_multi_exec($multi, $running);
+        curl_multi_select($multi, 0.1);
+    } while ($running > 0 && microtime(true) < $waitUntil);
+    $stillWaiting = $running > 0;
+    $excludedWhileLocked = $excluding($day2, 'minor');
+    $lockPdo->commit(); // the "draw" finishes
+    do {
+        curl_multi_exec($multi, $running);
+        curl_multi_select($multi, 0.1);
+    } while ($running > 0);
+    $lockedStatus = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
+    curl_multi_remove_handle($multi, $handle);
+    curl_multi_close($multi);
+    check('While a draw holds the day lock, the reset waits (no partial reset)', $stillWaiting && count($excludedWhileLocked) === 1, json_encode([$stillWaiting, $excludedWhileLocked]));
+    check('Once the draw finishes, the waiting reset completes (200) and lifts that exclusion', $lockedStatus === 200 && $excluding($day2, 'minor') === []);
+    $d = $draw($operator, 'minor');
+    check('A draw right after a reset uses the reset state (succeeds, winner excluded again)', in_array($d['status'], [200, 201], true) && count($excluding($day2, 'minor')) === 1);
+    check('No attendee is excluded twice for the same day + randomizer', (int) $pdo->query(
+        "SELECT COUNT(*) FROM (SELECT attendee_id, event_day_id, randomizer_type FROM randomizer_draws WHERE event_id = {$eventId}
+         AND voided_at IS NULL AND reset_at IS NULL GROUP BY attendee_id, event_day_id, randomizer_type HAVING COUNT(*) > 1) x")->fetchColumn() === 0);
+
+    // ---- Reports keep the history
+    $w = $sheet($admin, '/reports/winners.xlsx?scope=all');
+    check('Winners.xlsx: original 12 columns unchanged, 2 appended (Exclusion Reset At / By)', $w['headers'] === ['Event Day', 'Randomizer', 'Attendee Code', 'Full Name', 'Company', 'Cluster',
+        'Drawn At', 'Drawn By', 'Status', 'Voided At', 'Voided By', 'Void Reason', 'Exclusion Reset At', 'Exclusion Reset By'], $w['headers']);
+    check('Winners.xlsx: every draw row still present', count($w['rows']) === count($drawRows()));
+    $aMinorD1 = array_values(array_filter($w['rows'], static fn ($r) => str_starts_with($r['Event Day'], 'Day 1 ') && $r['Randomizer'] === 'Minor' && $r['Attendee Code'] === $codeOf('A') && $r['Status'] === 'VALID'));
+    check('Winners.xlsx: A listed twice for Day 1 Minor, the earlier win marked with the reset time and admin, the later win after it',
+        count($aMinorD1) === 2 && $aMinorD1[0]['Exclusion Reset At'] !== '' && $aMinorD1[0]['Exclusion Reset By'] !== '' && $aMinorD1[1]['Exclusion Reset At'] === ''
+        && $aMinorD1[1]['Drawn At'] >= $aMinorD1[0]['Exclusion Reset At'], $aMinorD1);
+    check('Winners.xlsx: VOID rows have no reset mark', !array_filter($w['rows'], static fn ($r) => $r['Status'] === 'VOID' && $r['Exclusion Reset At'] !== ''));
+    $dcsv = $admin->csv('/reports/draws.csv?scope=all');
+    check('Draw CSV report still valid with the appended reset columns', $dcsv !== [] && array_key_exists('Exclusion Reset At', $dcsv[0]) && array_key_exists('Void Reason', $dcsv[0]));
+    $el = $admin->csv('/reports/eligibility.csv?scope=all');
+    check('Raffle eligibility report still valid (same columns, Won Minor kept as history)', $el !== [] && array_keys($el[0]) === ['Event Day', 'Attendee Code', 'Full Name', 'Company', 'Cluster', 'Email', 'Registered',
+        'Minor Eligible', 'Minor Source', 'Won Minor', 'Major Eligible', 'Major Source', 'Won Major', 'Attendee Status'], array_keys($el[0] ?? []));
+    $x1 = $sheet($admin, "/reports/day-attendees.xlsx?day_id={$day1}");
+    check('Day 1 Attendees.xlsx unchanged by resets (same headers, A registered)', ($x1['headers'][6] ?? '') === 'Registration Status'
+        && (array_column($x1['rows'], 'Registration Status', 'Attendee Code')[$codeOf('A')] ?? '') === 'Registered');
 
     section('Password reset and disable sign-out');
     check('Scanner 1 session active before reset', $sc1->request('GET', '/registration/summary')['status'] === 200);

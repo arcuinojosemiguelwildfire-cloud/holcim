@@ -14,8 +14,9 @@ use App\Core\Database;
  *                       UNION manual additions for that type and day
  *                       (minor: minor_manual_entries; major: major_eligibility
  *                       rows with source = 'manual')
- *   draw pool (type)  = base pool MINUS attendees with a valid (not void)
- *                       draw of the same type on the same day
+ *   draw pool (type)  = base pool MINUS attendees with an EXCLUDING draw of
+ *                       the same type on the same day (not void and not
+ *                       reset - see EXCLUDES)
  * Registration is the single source of eligibility for BOTH raffles. A
  * Minor win excludes from Minor only; a Major win from Major only. Voiding a
  * draw returns the attendee to that pool. Imported Major rows from earlier
@@ -26,6 +27,14 @@ final class RandomizerDraw
     public const TYPE_MINOR = 'minor';
     public const TYPE_MAJOR = 'major';
     public const TYPES = [self::TYPE_MINOR, self::TYPE_MAJOR];
+
+    /**
+     * SQL condition (draw alias `w`) for a draw that still excludes its winner
+     * from that day's pool of that randomizer: not VOID and not lifted by an
+     * admin Randomizer Reset (Phase 9.4, migration 032). Reset draws stay in
+     * history and reports; they just no longer exclude.
+     */
+    public const EXCLUDES = 'w.voided_at IS NULL AND w.reset_at IS NULL';
 
     /** Attendee ids of a type's manual additions for day :d2. */
     private const MANUAL_SQL = [
@@ -48,7 +57,7 @@ final class RandomizerDraw
               AND NOT EXISTS (
                 SELECT 1 FROM randomizer_draws w
                 WHERE w.event_day_id = :d3 AND w.randomizer_type = :wtype
-                  AND w.attendee_id = a.id AND w.voided_at IS NULL
+                  AND w.attendee_id = a.id AND ' . self::EXCLUDES . '
               )';
     }
 
@@ -93,12 +102,12 @@ final class RandomizerDraw
         return (bool) $statement->fetchColumn();
     }
 
-    /** Has a valid (not void) draw of $type today. */
+    /** Has a draw of $type today that still excludes them (not void, not reset). */
     public static function hasValidWin(int $dayId, string $type, int $attendeeId): bool
     {
         $statement = Database::connection()->prepare(
-            'SELECT COUNT(*) FROM randomizer_draws
-             WHERE event_day_id = :day_id AND randomizer_type = :type AND attendee_id = :attendee_id AND voided_at IS NULL'
+            'SELECT COUNT(*) FROM randomizer_draws w
+             WHERE w.event_day_id = :day_id AND w.randomizer_type = :type AND w.attendee_id = :attendee_id AND ' . self::EXCLUDES
         );
         $statement->execute(['day_id' => $dayId, 'type' => self::normalise($type), 'attendee_id' => $attendeeId]);
 
@@ -153,7 +162,7 @@ final class RandomizerDraw
     {
         $limit = max(1, min(50, $limit));
         $statement = Database::connection()->prepare(
-            "SELECT d.id, d.selected_at, d.voided_at, d.void_reason, a.attendee_code, a.full_name, a.company, a.department,
+            "SELECT d.id, d.selected_at, d.voided_at, d.void_reason, d.reset_at, a.attendee_code, a.full_name, a.company, a.department,
                     u.name AS drawn_by_name, v.name AS voided_by_name
              FROM randomizer_draws d
              JOIN attendees a ON a.id = d.attendee_id
@@ -201,14 +210,15 @@ final class RandomizerDraw
      */
     public static function allForEvent(int $eventId, ?int $dayId = null): array
     {
-        $sql = 'SELECT d.id, d.randomizer_type, d.selected_at, d.voided_at, d.void_reason,
+        $sql = 'SELECT d.id, d.randomizer_type, d.selected_at, d.voided_at, d.void_reason, d.reset_at,
                     a.attendee_code, a.full_name, a.company, a.department, u.name AS drawn_by_name, v.name AS voided_by_name,
-                    ed.day_number, ed.event_date AS day_date
+                    rs.name AS reset_by_name, ed.day_number, ed.event_date AS day_date
              FROM randomizer_draws d
              JOIN event_days ed ON ed.id = d.event_day_id
              JOIN attendees a ON a.id = d.attendee_id
              LEFT JOIN users u ON u.id = d.drawn_by
              LEFT JOIN users v ON v.id = d.voided_by
+             LEFT JOIN users rs ON rs.id = d.reset_by
              WHERE d.event_id = :event_id';
         $params = ['event_id' => $eventId];
         if ($dayId !== null) {
@@ -219,5 +229,40 @@ final class RandomizerDraw
         $statement->execute($params);
 
         return $statement->fetchAll();
+    }
+
+    /**
+     * Draws of one day + type that currently exclude their winner (Randomizer
+     * Reset preview / scope). Oldest first.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public static function excludingDraws(int $dayId, string $type): array
+    {
+        $statement = Database::connection()->prepare(
+            'SELECT w.id, w.attendee_id, w.selected_at, a.attendee_code, a.full_name, a.company, a.department
+             FROM randomizer_draws w JOIN attendees a ON a.id = w.attendee_id
+             WHERE w.event_day_id = :day_id AND w.randomizer_type = :type AND ' . self::EXCLUDES . '
+             ORDER BY w.selected_at, w.id'
+        );
+        $statement->execute(['day_id' => $dayId, 'type' => self::normalise($type)]);
+
+        return $statement->fetchAll();
+    }
+
+    /**
+     * Lifts the exclusion of every currently excluding draw of one day + type
+     * (sets reset_at / reset_by; the rows are kept). VOID draws and draws of
+     * other days or the other randomizer are never touched. Returns rows changed.
+     */
+    public static function resetExclusions(int $dayId, string $type, ?int $userId): int
+    {
+        $statement = Database::connection()->prepare(
+            'UPDATE randomizer_draws w SET w.reset_at = NOW(), w.reset_by = :user_id
+             WHERE w.event_day_id = :day_id AND w.randomizer_type = :type AND ' . self::EXCLUDES
+        );
+        $statement->execute(['user_id' => $userId, 'day_id' => $dayId, 'type' => self::normalise($type)]);
+
+        return $statement->rowCount();
     }
 }
