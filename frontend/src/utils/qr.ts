@@ -93,9 +93,10 @@ function fitWidth(context: CanvasRenderingContext2D, text: string, maxWidth: num
  * (no attendee code, token or internal ID); the code is only used in the
  * file name.
  * Drawn on its own canvas, not a screenshot of the page. Used by
- * "Download QR" and by "Export QR codes" (ZIP), so both are identical.
+ * "Download QR" and by "Export QR codes" (ZIP). The export passes
+ * { cluster: false }: exported cards show only the QR, name and company.
  */
-export async function renderQrPng(payload: string, details: QrCardDetails): Promise<Blob> {
+export async function renderQrPng(payload: string, details: QrCardDetails, options: { cluster?: boolean } = {}): Promise<Blob> {
   const size = 1200
   const padding = 80
   const textWidth = size - padding * 2
@@ -110,7 +111,7 @@ export async function renderQrPng(payload: string, details: QrCardDetails): Prom
   measure.font = `56px ${sans}`
   const companyLines = cleanText(details.company) ? wrapText(measure, cleanText(details.company), textWidth, 2) : []
   measure.font = `48px ${sans}`
-  const departmentLines = cleanText(details.department) ? wrapText(measure, cleanText(details.department), textWidth, 2) : []
+  const departmentLines = options.cluster !== false && cleanText(details.department) ? wrapText(measure, cleanText(details.department), textWidth, 2) : []
 
   // Layout (y = baseline): QR, then name, company and cluster lines.
   const rows: Array<{ text: string; font: string; color: string; advance: number }> = [

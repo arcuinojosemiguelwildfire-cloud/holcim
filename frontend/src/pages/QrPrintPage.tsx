@@ -105,10 +105,9 @@ function QrLabel({ item, cardClass, qrClass, nameClass, deptClass, companyClass 
   return (
     <div className={cn('flex break-inside-avoid flex-col items-center justify-center overflow-hidden border border-dashed border-slate-400 px-[3mm] text-center text-black', cardClass)}>
       <QrImage payload={item.qrPayload} label={`QR code for ${cleanText(item.fullName) || 'attendee'}`} className={cn('shrink-0', qrClass)} />
-      {/* Name (bold), company, cluster (each only if present). No attendee code or token on the card. */}
+      {/* Name (bold) and company (if present) only. No cluster/location, attendee code or token on printed labels. */}
       {cleanText(item.fullName) && <p className={cn('mt-[0.5mm] line-clamp-2 w-full font-bold leading-tight', nameClass)}>{cleanText(item.fullName)}</p>}
       {cleanText(item.company) && <p className={cn('w-full font-semibold leading-tight text-neutral-900', companyClass, deptClass)}>{cleanText(item.company)}</p>}
-      {cleanText(item.department) && <p className={cn('w-full truncate leading-tight text-neutral-700', deptClass)}>{cleanText(item.department)}</p>}
     </div>
   )
 }

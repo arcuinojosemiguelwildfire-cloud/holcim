@@ -463,6 +463,7 @@ Full request/response examples: [docs/API.md](docs/API.md).
 - Archived attendees get no new QR and are excluded from counts and printing; their existing QR records are kept.
 - Images are rendered in the browser with the `qrcode` npm package (error correction Q, 4-module quiet zone): SVG for screen/print, 1200 px PNG for download. No image files are stored on the server.
 - Every QR is shown, printed and downloaded as a card: QR, then the attendee's **full name** (bold), **company** and **cluster** (each only if present) centred underneath. The attendee code, token and internal IDs are not printed on the card (Phase 9.1). **Download QR** saves a 1200 px-wide PNG card named `ATT-0001-Juan-Dela-Cruz.png` (ASCII letters, digits and hyphens only; never the token).
+- **Phase 9.7:** printed labels (Print QR / Print all) and **Export QR codes** PNGs show only the QR, **full name** and **company** (if present) — no cluster/location. The on-screen card and the single **Download QR** PNG still show the cluster. Cluster stays everywhere else (attendee records, import, lists, reports, randomizer).
 - Print sheet (`/print/qr`, opens in a new tab): A4, Standard 12 labels/page (44 mm QR) or Large 6/page (64 mm QR), dashed cut guides, explicit page breaks. Print at 100% / actual size.
 
 ## 9c. Registration and Minor eligibility (Phase 4)
@@ -581,7 +582,7 @@ Settings › **Randomizer Reset** (admin only) lets previous winners of **one ev
 QR / ID Generator › **Export QR codes** (admin only) downloads one ZIP with a PNG per **existing** QR of the active event's **active** attendees, named `ATT-0001_Juan_Dela_Cruz.png`.
 
 - The summary shows how many QR codes are ready and how many active attendees have none. Missing QR codes are **not** generated; with none generated, nothing is exported.
-- Each PNG is drawn by the same function as **Download QR** (same image, byte-for-byte): token-only QR, full name, company and cluster. No attendee code, token or ID is drawn.
+- Each PNG is drawn by the same function as **Download QR**, with the cluster line left out: token-only QR, full name and company (if present). No cluster, attendee code, token or ID is drawn.
 - The browser gets the list from `POST /api/qr-codes/export` (admin, CSRF) and builds the ZIP itself (no compression; PNGs are already compressed). Nothing is written to disk on the server, so there are no temporary or public files to clean up. The export is logged as `qr.exported`.
 - No token, attendee, registration or raffle data is changed.
 

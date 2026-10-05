@@ -41,7 +41,7 @@ export function ExportQrModal({ summary, onClose }: { summary: QrSummary; onClos
       }
       const entries = []
       for (const [index, item] of data.items.entries()) {
-        const blob = await renderQrPng(item.qrPayload, item)
+        const blob = await renderQrPng(item.qrPayload, item, { cluster: false }) // QR + name + company only
         entries.push({ name: qrExportFilename(item.attendeeCode, item.fullName), data: new Uint8Array(await blob.arrayBuffer()) })
         setProgress({ done: index + 1, total: data.items.length })
       }
@@ -60,7 +60,7 @@ export function ExportQrModal({ summary, onClose }: { summary: QrSummary; onClos
     <Modal
       open
       title="Export QR codes"
-      description="Downloads one ZIP with a PNG for every generated QR code (same image as “Download QR”)."
+      description="Downloads one ZIP with a PNG for every generated QR code: QR, full name and company."
       onClose={() => !busy && onClose()}
       footer={
         <>
