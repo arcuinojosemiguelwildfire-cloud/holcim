@@ -46,3 +46,6 @@ desktop.ini
 .phpunit.result.cache
 xamppfiles/
 php_errors.log
+
+# --- QR migration manifests (names + QR tokens; keep private) ---------------
+database/qr-migration/

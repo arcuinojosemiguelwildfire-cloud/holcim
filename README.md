@@ -586,6 +586,29 @@ QR / ID Generator › **Export QR codes** (admin only) downloads one ZIP with a 
 - The browser gets the list from `POST /api/qr-codes/export` (admin, CSRF) and builds the ZIP itself (no compression; PNGs are already compressed). Nothing is written to disk on the server, so there are no temporary or public files to clean up. The export is logged as `qr.exported`.
 - No token, attendee, registration or raffle data is changed.
 
+## 9m. Local → Online QR Migration
+
+A printed QR contains **only the stored token** (`attendee_qr_codes.token`) — no `localhost`, `APP_URL`, online domain or http(s) URL. A move from local XAMPP to the online server keeps every printed QR usable **only if the same token records and attendee relationships are preserved**. `backend/cli/verify-qr-migration.php` proves this. It is **read-only**: it reads inside a READ ONLY transaction that is rolled back and never generates, changes or deletes anything.
+
+**Before migration (local)**
+
+1. Make a full database backup (`mysqldump`, see docs/DEPLOYMENT.md §5).
+2. Run `php backend/cli/verify-qr-migration.php --save` — checks integrity and saves `database/qr-migration/qr-manifest-YYYYMMDD-HHMMSS.json` + `.sha256` (names and QR tokens: keep private; the folder is blocked from the web and ignored by git). `--out=DIR` saves elsewhere; `--event=ID` limits to one event.
+3. Keep the manifest and the printed SHA-256 with the backup. Do **not** regenerate any QR codes.
+
+**Restore online:** restore the complete database dump (do not re-import attendees or generate QR codes online).
+
+**After restore:** point the online `backend/.env` at the restored database, copy the manifest to the server, then run
+`php backend/cli/verify-qr-migration.php --compare=/path/to/qr-manifest-....json` and expect `RESULT: PASS`. Only after PASS are the printed QR codes verified against the online database.
+
+**What is checked:** missing QR (active attendees), orphan QR records, duplicate tokens, attendees with more than one QR, empty tokens, token format (scannable `A–Z a–z 0–9 - _`, 16–64; issued tokens are 32), missing attendee codes, attendees whose event is missing, and scans linked to another attendee's QR. `attendee_qr_codes` has no `event_id` column; the event is checked through the attendee (`event_id + attendee_code` is the identity key). Comparison identity = **event_id + attendee_code + exact token** (case, `-`, `_` and whitespace are significant). Changed tokens, missing / unexpected attendees, changed attendee codes, tokens moved to another attendee and event mismatches **FAIL** (affected attendee codes are listed; tokens and names are never printed). Changed auto-increment attendee IDs and changed name / company / cluster are **reported only**. The manifest itself is checked against its `.sha256` and its fingerprints, so an edited manifest fails. Exit code 0 = PASS, 1 = FAIL, 2 = usage / read error. `--dump` is intentionally not supported (parsing raw SQL dumps is not reliable): restore a dump into a scratch database and compare that instead.
+
+**Fingerprint:** SHA-256 over one line per record `event_id|attendee_id|attendee_code|full_name|company|department|token` + LF, sorted by event_id, attendee_code (byte order), attendee_id, token; NULL written as `\N`; inside values `\` → `\\`, `|` → `\|`, LF → `\n`, CR → `\r`; UTF-8 bytes as stored, tokens never trimmed or lower-cased. The **identity fingerprint** uses `event_id|attendee_code|token` lines only (unchanged by ID renumbering or name/company/cluster edits).
+
+**QR-safe operations:** dump/restore, event and attendee editing, registration, event-day changes, randomizer draws and Randomizer Reset, QR export and printing, moving localhost → online. **QR-invalidating operations** (explicit only): Regenerate QR, deleting an attendee / QR, System Reset, recreating attendees with new QR records.
+
+Tests: `php backend/tests/qr-migration-test.php --confirm` (creates and drops the scratch database `holcim_qrmig_test`; covers PASS, missing / duplicate / orphan / changed / case / `-`↔`_` / whitespace / empty tokens, changed codes, event mismatch, renumbered IDs, company / cluster changes, dump/restore and manifest tampering).
+
 ## 10. Creating the first admin
 
 There are **no default or hard-coded credentials**. Create accounts from the

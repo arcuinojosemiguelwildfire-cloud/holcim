@@ -63,6 +63,10 @@ Run `php backend/cli/migrate.php` to apply migration 032 (adds `randomizer_draws
 
 Attendee QR codes now contain only the token. Printed labels do not depend on `APP_URL` or the domain. When moving the local data online, transfer the `attendee_qr_codes` table together with `attendees` and `events` (a full dump/restore keeps every ID and link); do **not** re-import and generate QR codes again online.
 
+### Moving the local database online (QR codes already printed)
+
+Before: `php backend/cli/verify-qr-migration.php --save` on the local machine, then `mysqldump`. After restoring the full dump online: `php backend/cli/verify-qr-migration.php --compare=<manifest.json>` must print `RESULT: PASS`. See README §9m. The tool is read-only.
+
 ## 4. URLs at the event
 
 | URL | Who | Purpose |
