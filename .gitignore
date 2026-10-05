@@ -49,3 +49,7 @@ php_errors.log
 
 # --- QR migration manifests (names + QR tokens; keep private) ---------------
 database/qr-migration/
+
+# --- Supabase CLI local state ------------------------------------------------
+supabase/.temp/
+supabase/.branches/

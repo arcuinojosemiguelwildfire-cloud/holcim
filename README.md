@@ -609,6 +609,10 @@ A printed QR contains **only the stored token** (`attendee_qr_codes.token`) — 
 
 Tests: `php backend/tests/qr-migration-test.php --confirm` (creates and drops the scratch database `holcim_qrmig_test`; covers PASS, missing / duplicate / orphan / changed / case / `-`↔`_` / whitespace / empty tokens, changed codes, event mismatch, renumbered IDs, company / cluster changes, dump/restore and manifest tampering).
 
+## 9n. Supabase migration (Phase 1, branch `feature/supabase-migration`)
+
+Work toward React/Vite on Vercel + Supabase has started. **Phase 1** adds the PostgreSQL schema (`supabase/migrations/`), a one-time MySQL → PostgreSQL import with built-in verification (`tools/import-mysql-to-postgres.ts`), and a TypeScript port of the read-only QR verifier (`tools/verify-qr-migration.ts`) that works against MySQL and PostgreSQL. Its manifests are interchangeable with the PHP tool's. The PHP/MySQL system is unchanged and stays the live system and fallback. See **docs/SUPABASE_MIGRATION.md** for the translation rules, the Asia/Manila time-zone handling, the security baseline and the step-by-step procedure.
+
 ## 10. Creating the first admin
 
 There are **no default or hard-coded credentials**. Create accounts from the
@@ -756,6 +760,8 @@ DB_DATABASE=holcim_test php backend/tests/reset-test.php --confirm-reset
 It seeds an event, two days, attendees, QR codes, registrations, draws (incl. a void), manual participants, legacy Major rows, an import batch, login attempts, audit logs and staff / event operator / scanner operator accounts, runs the reset and checks that every event table is empty, all admins are unchanged and can still authenticate, the schema and `schema_migrations` are unchanged, no foreign key has orphans, and that a failure part-way rolls back. It refuses to run without `--confirm-reset`, unless the database name contains `test`, or with `APP_ENV=production`.
 
 The Phase 8 smoke test also covers manual Add Attendee and the System Reset endpoint's permissions and validation (it never performs a System Reset), and the Randomizer Reset on its own smoke event (scope isolation, history kept, audit, reports, void, and a draw/reset race).
+
+**Supabase migration tools (Phase 1):** `cd tools && npm ci && npm run typecheck && npm test`. Set `TEST_MYSQL_ADMIN_URL` / `TEST_PG_ADMIN_URL` to run the database tests on throwaway `holcim_migtest_*` databases (docs/SUPABASE_MIGRATION.md §7).
 
 **Frontend:** `npm run typecheck`, `npm run lint`, `npm run build`. The build
 prints a "chunks larger than 500 kB" notice (≈520 kB, ≈155 kB gzipped). It is

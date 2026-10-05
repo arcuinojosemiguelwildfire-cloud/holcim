@@ -5,6 +5,10 @@ interface ImportMetaEnv {
   readonly VITE_API_BASE_URL?: string
   /** Public path the app is served from, e.g. "/". */
   readonly VITE_BASE_PATH?: string
+  /** Supabase project URL, e.g. "https://abcd.supabase.co" (public). */
+  readonly VITE_SUPABASE_URL?: string
+  /** Supabase anon / publishable key (public). NEVER the service-role key. */
+  readonly VITE_SUPABASE_ANON_KEY?: string
 }
 
 interface ImportMeta {
