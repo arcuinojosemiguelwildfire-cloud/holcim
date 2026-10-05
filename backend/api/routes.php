@@ -85,6 +85,8 @@ return static function (Router $router): void {
     $router->get('/qr-codes', [QrCodeController::class, 'index'], [$qrViewers]);
     $router->get('/qr-codes/print', [QrCodeController::class, 'print'], [$qrCardViewers]);
     $router->post('/qr-codes/generate-missing', [QrCodeController::class, 'generateMissing'], [$adminOnly]);
+    // Export QR Codes (ZIP of PNGs, built in the browser): admin only, POST + CSRF, read-only.
+    $router->post('/qr-codes/export', [QrCodeController::class, 'export'], [$adminOnly]);
     $router->get('/attendees/{id}/qr', [QrCodeController::class, 'show'], [$qrCardViewers]);
     $router->post('/attendees/{id}/qr', [QrCodeController::class, 'generate'], [$adminOnly]);
     $router->post('/attendees/{id}/qr/regenerate', [QrCodeController::class, 'regenerate'], [$adminOnly]);

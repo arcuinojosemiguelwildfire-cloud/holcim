@@ -142,6 +142,26 @@ final class QrCodeService
     }
 
     /** QR content = the token itself (token-only payload; APP_URL is not used). */
+    /**
+     * Export QR Codes (admin): the data the browser needs to draw every
+     * existing QR as the same PNG as "Download QR" and zip them. Read-only:
+     * active attendees that already have a QR, current token only. Nothing is
+     * generated, replaced or written to disk; only an audit entry is added.
+     *
+     * @return array<string, mixed>
+     */
+    public static function exportData(Request $request): array
+    {
+        $data = self::printData(null);
+        $counts = AttendeeQrCode::countsForEvent((int) $data['event']['id']);
+        $data['ready'] = count($data['items']);
+        $data['missing'] = $counts['active'] - $counts['generated'];
+        AuditLogger::log($request, 'qr.exported', "Exported {$data['ready']} QR code(s) as PNG/ZIP ({$data['missing']} active attendee(s) without a QR not included).",
+            (int) $data['event']['id'], ['ready' => $data['ready'], 'missing' => $data['missing']]);
+
+        return $data;
+    }
+
     public static function payload(string $token): string
     {
         return $token;

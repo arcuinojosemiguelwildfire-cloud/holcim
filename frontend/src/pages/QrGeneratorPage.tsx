@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Printer, QrCode, Search, Sparkles } from 'lucide-react'
+import { FileArchive, Printer, QrCode, Search, Sparkles } from 'lucide-react'
 import { AttendeeDetailModal } from '../components/attendees/AttendeeDetailModal'
+import { ExportQrModal } from '../components/qr/ExportQrModal'
 import { Alert } from '../components/ui/Alert'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -40,6 +41,7 @@ export function QrGeneratorPage() {
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [openId, setOpenId] = useState<number | null>(null)
   const [generating, setGenerating] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
@@ -106,9 +108,16 @@ export function QrGeneratorPage() {
         title="QR / ID Generator"
         description={s ? `QR labels for active attendees of ${s.event.name}` : 'QR labels for active attendees of the active event'}
         actions={
-          <Button variant="secondary" onClick={() => openQrPrintSheet()} disabled={!s || s.generated === 0} icon={<Printer className="size-4" aria-hidden />}>
-            Print all
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {canManage && (
+              <Button variant="secondary" onClick={() => setExporting(true)} disabled={!s} icon={<FileArchive className="size-4" aria-hidden />}>
+                Export QR codes
+              </Button>
+            )}
+            <Button variant="secondary" onClick={() => openQrPrintSheet()} disabled={!s || s.generated === 0} icon={<Printer className="size-4" aria-hidden />}>
+              Print all
+            </Button>
+          </div>
         }
       />
 
@@ -247,6 +256,7 @@ export function QrGeneratorPage() {
       </Card>
 
       {openId !== null && <AttendeeDetailModal key={openId} attendeeId={openId} onClose={() => { setOpenId(null); refresh() }} onChanged={refresh} />}
+      {exporting && s && <ExportQrModal summary={s} onClose={() => setExporting(false)} />}
     </>
   )
 }

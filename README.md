@@ -387,6 +387,7 @@ Error codes: `BAD_REQUEST` (400), `UNAUTHENTICATED` / `INVALID_CREDENTIALS` (401
 | GET | `/api/qr-codes` | Admin, registration staff | Active attendees with QR status (`qr_status=generated\|missing`) |
 | POST | `/api/qr-codes/generate-missing` | Admin | Create QR only for active attendees without one |
 | GET | `/api/qr-codes/print?ids=` | Admin, registration staff; event operator (selected IDs only) | Print data (all, or selected IDs) |
+| POST | `/api/qr-codes/export` | Admin | Export QR Codes: existing QR payloads of active attendees (+ ready / missing counts) for the browser-built ZIP. Read-only; never generates a QR |
 | GET / POST | `/api/attendees/{id}/qr` | Admin, registration staff, event operator / Admin | QR state / generate if missing |
 | POST | `/api/attendees/{id}/qr/regenerate` | Admin | Replace token (old QR becomes invalid) |
 | GET | `/api/registration/summary` | Admin, registration staff, scanner operator | Current day: total / registered / remaining, my / all scans today, latest 20 check-ins |
@@ -574,6 +575,15 @@ Settings › **Randomizer Reset** (admin only) lets previous winners of **one ev
 - Old-format labels (`http(s)://any-host/q/{token}`) still scan and resolve to the same token. Other URLs are rejected as invalid.
 - `APP_URL` no longer affects QR codes. Moving from local to online keeps every printed label valid as long as the `attendee_qr_codes` rows (token + attendee link) are transferred unchanged — a full database dump/restore is simplest. Never re-import attendees and run **Generate missing** online, and never **Regenerate** or **System Reset** after printing.
 - No database change: tokens were always stored on their own; only the QR content changed.
+
+## 9l. Export QR Codes (ZIP)
+
+QR / ID Generator › **Export QR codes** (admin only) downloads one ZIP with a PNG per **existing** QR of the active event's **active** attendees, named `ATT-0001_Juan_Dela_Cruz.png`.
+
+- The summary shows how many QR codes are ready and how many active attendees have none. Missing QR codes are **not** generated; with none generated, nothing is exported.
+- Each PNG is drawn by the same function as **Download QR** (same image, byte-for-byte): token-only QR, full name, company and cluster. No attendee code, token or ID is drawn.
+- The browser gets the list from `POST /api/qr-codes/export` (admin, CSRF) and builds the ZIP itself (no compression; PNGs are already compressed). Nothing is written to disk on the server, so there are no temporary or public files to clean up. The export is logged as `qr.exported`.
+- No token, attendee, registration or raffle data is changed.
 
 ## 10. Creating the first admin
 

@@ -48,6 +48,16 @@ export function qrFilename(attendeeCode: string, fullName: string | null | undef
   return `${code}-${name || 'QR'}.png`
 }
 
+/**
+ * Export ZIP entry name: "ATT-0001_Juan_Dela_Cruz.png" (ASCII letters, digits,
+ * hyphens in the code, underscores between name words). Never the token.
+ */
+export function qrExportFilename(attendeeCode: string, fullName: string | null | undefined): string {
+  const code = fileSafe(attendeeCode) || 'attendee'
+  const name = fileSafe(cleanText(fullName)).replace(/-/g, '_')
+  return `${code}_${name || 'QR'}.png`
+}
+
 /** Splits text into at most `maxLines` lines that fit `maxWidth` (last line gets "…"). */
 function wrapText(context: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number): string[] {
   const words = text.split(' ')
@@ -77,14 +87,15 @@ function fitWidth(context: CanvasRenderingContext2D, text: string, maxWidth: num
 }
 
 /**
- * Downloads a print-quality QR card PNG: the 1200px QR (about 10 cm at
+ * Renders a print-quality QR card PNG: the 1200px QR (about 10 cm at
  * 300 dpi, same rendering as before) with the attendee's full name (bold)
  * and, if present, company and cluster (attendees.department) centred underneath. Nothing else is drawn
  * (no attendee code, token or internal ID); the code is only used in the
  * file name.
- * Drawn on its own canvas, not a screenshot of the page.
+ * Drawn on its own canvas, not a screenshot of the page. Used by
+ * "Download QR" and by "Export QR codes" (ZIP), so both are identical.
  */
-export async function downloadQrPng(payload: string, details: QrCardDetails): Promise<void> {
+export async function renderQrPng(payload: string, details: QrCardDetails): Promise<Blob> {
   const size = 1200
   const padding = 80
   const textWidth = size - padding * 2
@@ -130,14 +141,24 @@ export async function downloadQrPng(payload: string, details: QrCardDetails): Pr
 
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
   if (!blob) throw new Error('Could not create the image.')
+  return blob
+}
+
+/** Saves a Blob as a file download. */
+export function saveBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = qrFilename(details.attendeeCode, details.fullName)
+  link.download = filename
   document.body.appendChild(link)
   link.click()
   link.remove()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+/** Downloads one attendee's QR card PNG (see renderQrPng). */
+export async function downloadQrPng(payload: string, details: QrCardDetails): Promise<void> {
+  saveBlob(await renderQrPng(payload, details), qrFilename(details.attendeeCode, details.fullName))
 }
 
 /** Opens the print sheet in a new tab. No ids = all active attendees with a QR. */

@@ -812,6 +812,44 @@ try {
     check('T8: new token accepted', ($scan($sc1, $newTok)['body']['data']['status'] ?? '') === 'already_registered');
     check('T8: regeneration audited', (int) $pdo->query("SELECT COUNT(*) FROM audit_logs WHERE action = 'qr.regenerated' AND event_id = {$eventId}")->fetchColumn() >= 1);
 
+    section('Export QR Codes (ZIP data, admin only, read-only)');
+    $qrSnapshot = static fn (): string => md5(json_encode($pdo->query("SELECT q.id, q.attendee_id, q.token, q.created_at, q.updated_at FROM attendee_qr_codes q JOIN attendees a ON a.id = q.attendee_id WHERE a.event_id = {$eventId} ORDER BY q.id")->fetchAll(PDO::FETCH_ASSOC)));
+    $attSnapshot = static fn (): string => md5(json_encode($pdo->query("SELECT * FROM attendees WHERE event_id = {$eventId} ORDER BY id")->fetchAll(PDO::FETCH_ASSOC)));
+    $noQr = Attendee::create($eventId, "PX-NOQR-{$stamp}", ['full_name' => "Export NoQr {$stamp}"], null); // active, no QR
+    $archivedWithQr = $t3Id; // has a QR; archive it for this check
+    Attendee::setStatus($archivedWithQr, Attendee::STATUS_ARCHIVED);
+    $qrBefore = $qrSnapshot();
+    $attBefore = $attSnapshot();
+    $rowsBefore = (int) $pdo->query('SELECT COUNT(*) FROM attendee_qr_codes')->fetchColumn();
+    foreach (['Event Operator' => $operator, 'Registration Staff' => $staff, 'Scanner Operator' => $sc1] as $label => $client) {
+        check("{$label} cannot export QR codes (403)", $client->request('POST', '/qr-codes/export')['status'] === 403);
+    }
+    check('GET /qr-codes/export is not a route (export is POST only)', in_array($admin->request('GET', '/qr-codes/export')['status'], [404, 405], true));
+    $saved = $admin->swapCsrf(null);
+    $r = $admin->request('POST', '/qr-codes/export');
+    $admin->swapCsrf($saved);
+    check('Export without CSRF token rejected', in_array($r['status'], [403, 419], true), (string) $r['status']);
+    $r = $admin->request('POST', '/qr-codes/export');
+    $ex = $r['body']['data'] ?? [];
+    $dbTokens = $pdo->query("SELECT a.id, q.token FROM attendees a JOIN attendee_qr_codes q ON q.attendee_id = a.id WHERE a.event_id = {$eventId} AND a.status = 'active'")->fetchAll(PDO::FETCH_KEY_PAIR);
+    $exTokens = array_column($ex['items'] ?? [], 'qrPayload', 'id');
+    ksort($exTokens);
+    ksort($dbTokens);
+    check('Admin export (200): every active attendee with a QR, payload = current DB token', $r['status'] === 200 && $exTokens === array_map('strval', $dbTokens) && count($exTokens) > 0, $r['status']);
+    check('Export excludes the archived attendee (has a QR)', !isset($exTokens[$archivedWithQr]));
+    check('Export excludes the active attendee without a QR', !isset($exTokens[$noQr]));
+    $activeNoQr = (int) $pdo->query("SELECT COUNT(*) FROM attendees a LEFT JOIN attendee_qr_codes q ON q.attendee_id = a.id WHERE a.event_id = {$eventId} AND a.status = 'active' AND q.id IS NULL")->fetchColumn();
+    check('Export reports ready and missing counts', ($ex['ready'] ?? -1) === count($dbTokens) && ($ex['missing'] ?? -1) === $activeNoQr && $activeNoQr >= 1, [$ex['ready'] ?? null, $ex['missing'] ?? null, $activeNoQr]);
+    check('Export items carry only display fields + payload (no email, employee ID, status)', !array_diff(array_keys($ex['items'][0] ?? []), ['id', 'attendeeCode', 'fullName', 'company', 'department', 'qrPayload']));
+    check('Export generated no QR (row count unchanged, missing attendee still has none)', (int) $pdo->query('SELECT COUNT(*) FROM attendee_qr_codes')->fetchColumn() === $rowsBefore
+        && (int) $pdo->query("SELECT COUNT(*) FROM attendee_qr_codes WHERE attendee_id = {$noQr}")->fetchColumn() === 0);
+    check('Export changed no token and no attendee', $qrSnapshot() === $qrBefore && $attSnapshot() === $attBefore);
+    check('Export audited (qr.exported)', (int) $pdo->query("SELECT COUNT(*) FROM audit_logs WHERE action = 'qr.exported' AND event_id = {$eventId}")->fetchColumn() >= 1);
+    $anyTok = (string) reset($exTokens);
+    $sr = $scan($sc1, $anyTok);
+    check('An exported token scans with the normal registration flow', in_array($sr['body']['data']['status'] ?? '', ['registered', 'already_registered'], true), $sr['raw']);
+    Attendee::setStatus($archivedWithQr, Attendee::STATUS_ACTIVE);
+
     section('Randomizer Reset (Phase 9.4): lift winner exclusions, keep history');
     // Snapshot of everything a randomizer reset must NOT touch (this event only).
     $snapshot = static function () use ($pdo, $eventId): array {

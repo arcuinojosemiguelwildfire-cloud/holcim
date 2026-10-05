@@ -47,6 +47,12 @@ final class QrCodeController
     }
 
     /** GET /qr-codes/print?ids=1,2,3 (omit ids = all) */
+    /** POST /qr-codes/export (admin) - existing QR codes of active attendees for the ZIP export */
+    public static function export(Request $request): Response
+    {
+        return Response::success(QrCodeService::exportData($request));
+    }
+
     public static function print(Request $request): Response
     {
         $raw = $request->query('ids');

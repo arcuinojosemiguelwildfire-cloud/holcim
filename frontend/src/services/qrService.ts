@@ -32,6 +32,11 @@ export const qrService = {
     return (await apiClient.post<{ qr: AttendeeQr }>(`/attendees/${id}/qr/regenerate`)).qr
   },
 
+  /** Export QR Codes (admin): active attendees' existing QR codes; nothing is generated. */
+  exportData(): Promise<QrPrintData & { ready: number; missing: number }> {
+    return apiClient.post<QrPrintData & { ready: number; missing: number }>('/qr-codes/export')
+  },
+
   printData(ids: number[] | null): Promise<QrPrintData> {
     return apiClient.get<QrPrintData>(`/qr-codes/print${ids && ids.length > 0 ? `?ids=${ids.join(',')}` : ''}`)
   },
