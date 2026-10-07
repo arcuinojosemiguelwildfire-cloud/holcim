@@ -89,7 +89,7 @@ try {
   const expectQ = opt['expect-qr'];
   if (expectA !== undefined && Number(expectA) !== srcQr.attendee_count) throw new Refused(`Expected ${expectA} attendees in the source, found ${srcQr.attendee_count}.`);
   if (expectQ !== undefined && Number(expectQ) !== srcQr.qr_count) throw new Refused(`Expected ${expectQ} QR records in the source, found ${srcQr.qr_count}.`);
-  if (!migrations.some((m) => m.startsWith('032'))) throw new Refused('Source database is missing migration 032 (randomizer reset); run php database/migrate.php first.');
+  if (!migrations.some((m) => m.startsWith('033'))) throw new Refused('Source database is missing migration 033 (registration sessions); run php backend/cli/migrate.php first.');
 
   // ---- 2. Target: one transaction; schema must match and every table must be empty.
   await dst.query('BEGIN ISOLATION LEVEL SERIALIZABLE');
@@ -222,6 +222,14 @@ function convert(table: string, c: Column, row: Row): unknown {
       if (v.includes('\\u0000')) throw new Refused(`JSON with a NUL character in ${where} cannot be stored as jsonb.`);
       return v;
     }
+    case 'time': {
+      const s = String(v);
+      if (!/^\d{2}:\d{2}:\d{2}$/.test(s)) throw new Refused(`Invalid time value in ${where}.`);
+      return s;
+    }
+    case 'bool':
+      if (!['0', '1'].includes(String(v))) throw new Refused(`Invalid flag value in ${where} (expected 0 or 1).`);
+      return String(v);
     case 'int':
       return String(v);
     default: {
@@ -238,6 +246,8 @@ function placeholder(c: Column, value: unknown, params: unknown[]): string {
   switch (c.kind) {
     case 'datetime': return `(${p}::timestamp AT TIME ZONE '${TIME_ZONE}')`;
     case 'date': return `${p}::date`;
+    case 'time': return `${p}::time`;
+    case 'bool': return `(${p})::int::boolean`;
     case 'json': return `${p}::jsonb`;
     default: return p;
   }

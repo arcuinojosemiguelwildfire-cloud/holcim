@@ -38,8 +38,11 @@ export async function mysqlAdmin(db?: string): Promise<mysql.Connection> {
   return mysql.createConnection({ uri: db ? mysqlUrl(db) : MYSQL_ADMIN, multipleStatements: true, dateStrings: true, charset: 'utf8mb4_unicode_ci' });
 }
 
-/** Fresh MySQL database migrated with database/migrations/*.sql, exactly like backend/cli/migrate.php. */
-export async function createMysqlScratch(name: string): Promise<void> {
+/**
+ * Fresh MySQL database migrated with database/migrations/*.sql, exactly like
+ * backend/cli/migrate.php. upTo = last migration prefix to apply (e.g. '032').
+ */
+export async function createMysqlScratch(name: string, upTo?: string): Promise<void> {
   guard(name);
   const admin = await mysqlAdmin();
   await admin.query(`DROP DATABASE IF EXISTS \`${name}\``);
@@ -51,6 +54,7 @@ export async function createMysqlScratch(name: string): Promise<void> {
     ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
   const dir = join(REPO, 'database', 'migrations');
   for (const f of readdirSync(dir).filter((x) => x.endsWith('.sql')).sort()) {
+    if (upTo !== undefined && f.slice(0, 3) > upTo) break;
     await c.query(readFileSync(join(dir, f), 'utf8'));
     await c.query('INSERT INTO schema_migrations (migration) VALUES (?)', [f]);
   }
@@ -70,8 +74,20 @@ export async function pgClient(db: string): Promise<pg.Client> {
   return c;
 }
 
+/** Applies one MySQL migration file (by prefix, e.g. '033') to a scratch database, like migrate.php. */
+export async function applyMysqlMigration(name: string, prefix: string): Promise<void> {
+  guard(name);
+  const dir = join(REPO, 'database', 'migrations');
+  const file = readdirSync(dir).find((f) => f.startsWith(prefix) && f.endsWith('.sql'));
+  if (!file) throw new Error(`migration ${prefix} not found`);
+  const c = await mysqlAdmin(name);
+  await c.query(readFileSync(join(dir, file), 'utf8'));
+  await c.query('INSERT INTO schema_migrations (migration) VALUES (?)', [file]);
+  await c.end();
+}
+
 /** Fresh PostgreSQL database with supabase/migrations/*.sql applied in order. */
-export async function createPgScratch(name: string, applyMigrations = true): Promise<void> {
+export async function createPgScratch(name: string, applyMigrations = true, before?: string): Promise<void> {
   guard(name);
   const admin = new pg.Client({ connectionString: PG_ADMIN });
   await admin.connect();
@@ -88,7 +104,21 @@ export async function createPgScratch(name: string, applyMigrations = true): Pro
   // security baseline migration is what removes it.
   await c.query('GRANT USAGE ON SCHEMA public TO anon, authenticated; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO anon, authenticated');
   const dir = join(REPO, 'supabase', 'migrations');
-  for (const f of readdirSync(dir).filter((x) => x.endsWith('.sql')).sort()) await c.query(readFileSync(join(dir, f), 'utf8'));
+  for (const f of readdirSync(dir).filter((x) => x.endsWith('.sql')).sort()) {
+    if (before !== undefined && f >= before) break; // stop before this migration file
+    await c.query(readFileSync(join(dir, f), 'utf8'));
+  }
+  await c.end();
+}
+
+/** Applies one Supabase migration file (by filename prefix) to a scratch database. */
+export async function applyPgMigration(name: string, prefix: string): Promise<void> {
+  guard(name);
+  const dir = join(REPO, 'supabase', 'migrations');
+  const file = readdirSync(dir).find((f) => f.startsWith(prefix));
+  if (!file) throw new Error(`migration ${prefix} not found`);
+  const c = await pgClient(name);
+  await c.query(readFileSync(join(dir, file), 'utf8'));
   await c.end();
 }
 
@@ -140,6 +170,13 @@ export async function seedMysql(name: string): Promise<{ tokens: string[] }> {
     [2, 1, 2, '2026-10-11', 'Day 2', 'active', '2026-09-01 09:00:00', '2026-10-11 07:00:00'],
     [4, 3, 1, '2026-08-01', null, 'completed', '2026-07-01 00:00:00', '2026-08-01 00:00:00'],
   ]]);
+  // Phase 10 registration sessions: Oct 10 one session; Oct 11 8:00 AM (Minor only) + 5:00 PM (Major).
+  await c.query('INSERT INTO registration_sessions (id, event_id, event_day_id, label, session_date, start_time, description, sort_order, is_enabled, counts_for_major, is_current, created_at, updated_at) VALUES ?', [[
+    [5, 1, 1, 'Oct 10 - 5:00 PM', '2026-10-10', '17:00:00', 'Required for Major | day 1', 1, 1, 1, 1, '2026-09-01 09:00:00', '2026-09-01 09:00:00'],
+    [6, 1, 2, 'Oct 11 - 8:00 AM', '2026-10-11', '08:00:00', null, 1, 1, 0, 0, '2026-09-01 09:00:00', '2026-09-01 09:00:00'],
+    [7, 1, 2, 'Oct 11 - 5:00 PM', '2026-10-11', '17:00:00', null, 2, 1, 1, 1, '2026-09-01 09:00:00', '2026-10-11 16:59:00'],
+    [9, 3, 4, 'Registration', '2026-08-01', null, null, 1, 0, 1, 0, '2026-07-01 00:00:00', '2026-07-01 00:00:00'],
+  ]]);
   await c.query('INSERT INTO import_batches (id, event_id, event_day_id, import_type, original_filename, status, total_rows, successful_rows, failed_rows, column_mapping, error_summary, imported_by, created_at, completed_at) VALUES ?', [[
     [1, 1, null, 'attendees', 'Attendees – final (v2).xlsx', 'completed', 250, 250, 0, JSON.stringify({ name: 'Full Name', code: 'Employee No.', zeta: 1, alpha: [1, 2, { b: 'x', a: 'y' }] }), null, 1, '2026-09-02 10:00:00', '2026-09-02 10:00:05'],
     [2, 1, 2, 'major_entries', 'major.csv', 'failed', 3, 1, 2, '{"b": 2, "a": 1}', '[{"row": 2, "error": "Ünknown \\"name\\""}]', 5, '2026-09-03 10:00:00', null],
@@ -182,6 +219,26 @@ export async function seedMysql(name: string): Promise<{ tokens: string[] }> {
   logs.push([121, 1, 2, 2, null, 'invalid_qr', '2026-10-11 23:59:59']);
   await c.query('INSERT INTO registration_scans (id, event_id, event_day_id, attendee_id, qr_code_id, scanner_user_id, scanned_at, created_at) VALUES ?', [scans]);
   await c.query('INSERT INTO scan_logs (id, event_id, event_day_id, user_id, attendee_id, result, scanned_at) VALUES ?', [logs]);
+  // Session registrations: day 1 -> session 5; day 2 -> 8:00 AM (6) and, for some, 5:00 PM (7) too.
+  const regs: unknown[][] = [];
+  const changes: unknown[][] = [];
+  let regId = 100;
+  for (const s of scans) {
+    const [, , day, attendee, , scanner, scannedAt] = s as [number, number, number, number, number, number, string];
+    const sessions = day === 1 ? [5] : attendee % 3 === 0 ? [6, 7] : [6];
+    for (const session of sessions) {
+      regId++;
+      const removed = attendee === 99 && session === 6;
+      regs.push([regId, 1, day, session, attendee, removed ? 'removed' : 'active', attendee % 17 === 0 ? 'manual' : 'scan', scannedAt, scanner,
+        removed ? '2026-10-11 10:00:00' : null, removed ? 1 : null, removed ? 'Left early | "test"' : null, scannedAt, scannedAt]);
+      changes.push([regId * 10, regId, 1, 'scanned', 'active', scanner, null, scannedAt]);
+      if (removed) changes.push([regId * 10 + 1, regId, 1, 'removed', 'removed', 1, 'Left early | "test"', '2026-10-11 10:00:00']);
+    }
+  }
+  await c.query('INSERT INTO session_registrations (id, event_id, event_day_id, registration_session_id, attendee_id, status, source, registered_at, registered_by, removed_at, removed_by, removal_reason, created_at, updated_at) VALUES ?', [regs]);
+  await c.query('INSERT INTO session_registration_changes (id, session_registration_id, event_id, action, status_after, performed_by, reason, created_at) VALUES ?', [changes]);
+  await c.query("UPDATE scan_logs SET registration_session_id = IF(event_day_id = 1, 5, 7) WHERE id > 100");
+  await c.query("UPDATE scan_logs SET result = 'registration_removed' WHERE id = 121");
   await c.query('INSERT INTO minor_manual_entries (id, event_id, event_day_id, attendee_id, added_by, reason, created_at) VALUES ?', [[
     [1, 1, 1, 150, 1, 'Late arrival – manual', '2026-10-10 12:00:00'], [2, 1, 2, 151, null, null, '2026-10-11 12:00:00']]]);
   await c.query('INSERT INTO major_eligibility (id, event_id, event_day_id, attendee_id, import_batch_id, source, added_by, reason, imported_at) VALUES ?', [[
@@ -208,7 +265,7 @@ export async function seedMysql(name: string): Promise<{ tokens: string[] }> {
 /** MySQL CHECKSUM TABLE of every table: proves the source was not modified. */
 export async function mysqlChecksums(name: string): Promise<string> {
   const c = await mysqlAdmin(name);
-  const [rows] = await c.query('CHECKSUM TABLE users, events, event_days, import_batches, attendees, attendee_qr_codes, registration_scans, scan_logs, minor_manual_entries, major_eligibility, major_entries, randomizer_draws, audit_logs, login_attempts, schema_migrations');
+  const [rows] = await c.query('CHECKSUM TABLE users, events, event_days, registration_sessions, import_batches, attendees, attendee_qr_codes, registration_scans, session_registrations, session_registration_changes, scan_logs, minor_manual_entries, major_eligibility, major_entries, randomizer_draws, audit_logs, login_attempts, schema_migrations');
   const [ai] = await c.query('SELECT table_name, auto_increment FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY table_name');
   await c.end();
   return JSON.stringify([rows, ai]);

@@ -10,12 +10,14 @@ use App\Core\Database;
  * Day-specific randomizer participants: pool listing with source, candidate
  * search for "+ Add Participant", and manual additions.
  *
- * Phase 9.2: registration is the source of eligibility for both raffles.
- * Manual additions are an exception for attendees who could not be scanned
- * and affect ONE randomizer only (minor -> minor_manual_entries, major ->
- * major_eligibility with source = 'manual'). They never touch the attendee
- * record, its QR, or registration_scans. Pools exclude anyone with a valid
- * draw of the same randomizer that day.
+ * Registration is the source of eligibility (Phase 10: per registration
+ * session - any session of the day for Minor, a session that counts for
+ * Major for Major; see RandomizerDraw). Manual additions are an exception
+ * for attendees who could not be scanned and affect ONE randomizer only
+ * (minor -> minor_manual_entries, major -> major_eligibility with
+ * source = 'manual'). They never touch the attendee record, its QR, or the
+ * registrations. Pools exclude anyone with a valid draw of the same
+ * randomizer that day. Each attendee is listed once.
  */
 final class RandomizerParticipant
 {
@@ -42,7 +44,7 @@ final class RandomizerParticipant
         $like = '%' . addcslashes($search, '%_\\') . '%';
         $statement = Database::connection()->prepare(
             "SELECT a.id, a.attendee_code, a.full_name, a.company, a.department, a.email,
-                    (EXISTS (SELECT 1 FROM registration_scans r WHERE r.event_day_id = :d1 AND r.attendee_id = a.id)
+                    (EXISTS (" . SessionRegistration::eligibleSql($type, 'd1') . " AND sr.attendee_id = a.id)
                      OR EXISTS (SELECT 1 FROM (" . self::MANUAL[$type] . ") m WHERE m.attendee_id = a.id)) AS already_eligible,
                     EXISTS (SELECT 1 FROM randomizer_draws w WHERE w.event_day_id = :d3 AND w.randomizer_type = :wtype
                             AND w.attendee_id = a.id AND " . RandomizerDraw::EXCLUDES . ") AS already_won
@@ -71,19 +73,19 @@ final class RandomizerParticipant
     {
         $type = self::type($type);
         $inner = "SELECT a.id, a.attendee_code, a.full_name, a.company, a.department, a.email,
-                    'registration' AS source, r.scanned_at AS added_at, u.name AS added_by, NULL AS reason
-                 FROM registration_scans r
-                 JOIN attendees a ON a.id = r.attendee_id
-                 LEFT JOIN users u ON u.id = r.scanner_user_id
-                 WHERE r.event_day_id = :d1 AND a.status = 'active'
+                    'registration' AS source, reg.registered_at AS added_at, u.name AS added_by, NULL AS reason, reg.session_label
+                 FROM (" . SessionRegistration::firstEligibleSql($type, 'd1') . ") reg
+                 JOIN attendees a ON a.id = reg.attendee_id
+                 LEFT JOIN users u ON u.id = reg.registered_by
+                 WHERE a.status = 'active'
                  UNION ALL
                  SELECT a.id, a.attendee_code, a.full_name, a.company, a.department, a.email,
-                    'manual' AS source, m.created_at AS added_at, u.name AS added_by, m.reason
+                    'manual' AS source, m.created_at AS added_at, u.name AS added_by, m.reason, NULL AS session_label
                  FROM (" . self::MANUAL[$type] . ") m
                  JOIN attendees a ON a.id = m.attendee_id
                  LEFT JOIN users u ON u.id = m.added_by
                  WHERE a.status = 'active'
-                   AND NOT EXISTS (SELECT 1 FROM registration_scans r2 WHERE r2.event_day_id = :d4 AND r2.attendee_id = m.attendee_id)";
+                   AND NOT EXISTS (" . SessionRegistration::eligibleSql($type, 'd4', 'r2') . " AND r2.attendee_id = m.attendee_id)";
         $params = ['d1' => $dayId, 'd2' => $dayId, 'd4' => $dayId, 'd3' => $dayId, 'wtype' => $type];
 
         $where = "WHERE NOT EXISTS (SELECT 1 FROM randomizer_draws w WHERE w.event_day_id = :d3 AND w.randomizer_type = :wtype

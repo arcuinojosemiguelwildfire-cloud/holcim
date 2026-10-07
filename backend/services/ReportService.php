@@ -27,24 +27,25 @@ final class ReportService
         [$event, $day] = self::context($scope);
         [$dayJoin, $params] = self::dayJoin($event, $day);
         $statement = Database::connection()->prepare(
-            "SELECT d.day_number, d.event_date AS day_date,
-                    a.attendee_code, a.full_name, a.company, a.department, a.email, a.status,
-                    r.scanned_at, u.name AS scanned_by
+            "SELECT d.id AS day_id, d.day_number, d.event_date AS day_date,
+                    a.id, a.attendee_code, a.full_name, a.company, a.department, a.email, a.status
              FROM attendees a
              {$dayJoin}
-             LEFT JOIN registration_scans r ON r.attendee_id = a.id AND r.event_day_id = d.id
-             LEFT JOIN users u ON u.id = r.scanner_user_id
              WHERE a.event_id = :event_id
              ORDER BY d.day_number, a.attendee_code"
         );
         $statement->execute($params);
+        $registrations = self::sessionRegistrations((int) $event['id'], $day !== null ? (int) $day['id'] : null);
 
         $rows = [];
         foreach ($statement->fetchAll() as $row) {
+            $list = $registrations[(int) $row['id']][(int) $row['day_id']] ?? [];
+            $first = $list[0] ?? null;
             $rows[] = [
                 self::dayCell($row), $row['attendee_code'], $row['full_name'], $row['company'], $row['department'], $row['email'],
-                $row['scanned_at'] !== null ? 'Registered' : 'Not registered',
-                $row['scanned_at'], $row['scanned_by'], ucfirst((string) $row['status']),
+                $first !== null ? 'Registered' : 'Not registered',
+                $first['registered_at'] ?? null, $first['registered_by'] ?? null, ucfirst((string) $row['status']),
+                self::sessionList($list),
             ];
         }
 
@@ -52,24 +53,25 @@ final class ReportService
             $event,
             $day,
             'registration',
-            ['Event Day', 'Attendee Code', 'Full Name', 'Company', 'Cluster', 'Email', 'Registration Status', 'Registered At', 'Registered By', 'Attendee Status'],
+            ['Event Day', 'Attendee Code', 'Full Name', 'Company', 'Cluster', 'Email', 'Registration Status', 'Registered At', 'Registered By', 'Attendee Status', 'Registration Sessions'],
             $rows
         );
     }
 
     /**
-     * Raffle eligibility per attendee per day (Phase 9.2): registration makes
-     * an attendee eligible for BOTH Minor and Major; a manual addition counts
-     * for its own randomizer only. "Won" = valid (not void) draw that day.
+     * Raffle eligibility per attendee per day (Phase 10): a registration in
+     * ANY session of the day makes an attendee eligible for Minor; only a
+     * registration in a session that counts for Major makes them eligible for
+     * Major. A manual addition counts for its own randomizer only. "Won" =
+     * valid (not void) draw that day. Same rules as the draw pools.
      */
     public static function eligibility(string $scope): Response
     {
         [$event, $day] = self::context($scope);
         [$dayJoin, $params] = self::dayJoin($event, $day);
         $statement = Database::connection()->prepare(
-            "SELECT d.day_number, d.event_date AS day_date,
-                    a.attendee_code, a.full_name, a.company, a.department, a.email, a.status,
-                    (r.id IS NOT NULL) AS registered,
+            "SELECT d.id AS day_id, d.day_number, d.event_date AS day_date,
+                    a.id, a.attendee_code, a.full_name, a.company, a.department, a.email, a.status,
                     (mm.id IS NOT NULL) AS minor_manual,
                     (mj.id IS NOT NULL) AS major_manual,
                     EXISTS (SELECT 1 FROM randomizer_draws w WHERE w.event_day_id = d.id AND w.attendee_id = a.id
@@ -78,36 +80,41 @@ final class ReportService
                             AND w2.randomizer_type = 'major' AND w2.voided_at IS NULL) AS won_major
              FROM attendees a
              {$dayJoin}
-             LEFT JOIN registration_scans r ON r.attendee_id = a.id AND r.event_day_id = d.id
              LEFT JOIN minor_manual_entries mm ON mm.attendee_id = a.id AND mm.event_day_id = d.id
              LEFT JOIN major_eligibility mj ON mj.attendee_id = a.id AND mj.event_day_id = d.id AND mj.source = 'manual'
              WHERE a.event_id = :event_id
-             ORDER BY d.day_number, (r.id IS NULL), a.attendee_code"
+             ORDER BY d.day_number, a.attendee_code"
         );
         $statement->execute($params);
+        $registrations = self::sessionRegistrations((int) $event['id'], $day !== null ? (int) $day['id'] : null);
 
         $rows = [];
         foreach ($statement->fetchAll() as $row) {
+            $list = $registrations[(int) $row['id']][(int) $row['day_id']] ?? [];
+            $registered = $list !== [];
+            $majorRegistered = array_filter($list, static fn (array $r): bool => $r['counts_for_major']) !== [];
             $active = $row['status'] === 'active';
-            $source = static fn (bool $manual): string => $row['registered'] ? 'Registration' : ($manual ? 'Manual' : '');
-            $minor = $active && ($row['registered'] || $row['minor_manual']);
-            $major = $active && ($row['registered'] || $row['major_manual']);
-            $rows[] = [
+            $minor = $active && ($registered || $row['minor_manual']);
+            $major = $active && ($majorRegistered || $row['major_manual']);
+            $rows[] = ['sort' => [(int) $row['day_number'], $registered ? 0 : 1, (string) $row['attendee_code']], 'cells' => [
                 self::dayCell($row), $row['attendee_code'], $row['full_name'], $row['company'], $row['department'], $row['email'],
-                $row['registered'] ? 'Yes' : 'No',
-                $minor ? 'Yes' : 'No', $minor ? $source((bool) $row['minor_manual']) : '', $row['won_minor'] ? 'Yes' : 'No',
-                $major ? 'Yes' : 'No', $major ? $source((bool) $row['major_manual']) : '', $row['won_major'] ? 'Yes' : 'No',
+                $registered ? 'Yes' : 'No',
+                $minor ? 'Yes' : 'No', $minor ? ($registered ? 'Registration' : 'Manual') : '', $row['won_minor'] ? 'Yes' : 'No',
+                $major ? 'Yes' : 'No', $major ? ($majorRegistered ? 'Registration' : 'Manual') : '', $row['won_major'] ? 'Yes' : 'No',
                 ucfirst((string) $row['status']),
-            ];
+                self::sessionList($list),
+            ]];
         }
+        // Registered first within each day (as before), then by attendee code.
+        usort($rows, static fn (array $x, array $y): int => $x['sort'] <=> $y['sort']);
 
         return self::csv(
             $event,
             $day,
             'raffle-eligibility',
             ['Event Day', 'Attendee Code', 'Full Name', 'Company', 'Cluster', 'Email', 'Registered',
-                'Minor Eligible', 'Minor Source', 'Won Minor', 'Major Eligible', 'Major Source', 'Won Major', 'Attendee Status'],
-            $rows
+                'Minor Eligible', 'Minor Source', 'Won Minor', 'Major Eligible', 'Major Source', 'Won Major', 'Attendee Status', 'Registration Sessions'],
+            array_map(static fn (array $r): array => $r['cells'], $rows)
         );
     }
 
@@ -147,24 +154,26 @@ final class ReportService
             throw HttpException::notFound('Event day not found in the active event.');
         }
         $statement = Database::connection()->prepare(
-            "SELECT a.attendee_code, a.full_name, a.company, a.department, a.external_identifier, a.email, r.scanned_at
+            "SELECT a.id, a.attendee_code, a.full_name, a.company, a.department, a.external_identifier, a.email
              FROM attendees a
-             LEFT JOIN registration_scans r ON r.attendee_id = a.id AND r.event_day_id = :day_id
              WHERE a.event_id = :event_id AND a.status = 'active'
              ORDER BY a.full_name, a.attendee_code"
         );
-        $statement->execute(['day_id' => (int) $day['id'], 'event_id' => (int) $event['id']]);
+        $statement->execute(['event_id' => (int) $event['id']]);
+        $dayId = (int) $day['id'];
+        $registrations = self::sessionRegistrations((int) $event['id'], $dayId);
 
         $rows = [];
         foreach ($statement->fetchAll() as $row) {
+            $list = $registrations[(int) $row['id']][$dayId] ?? [];
             $rows[] = [
                 $row['attendee_code'], $row['full_name'], $row['company'], $row['department'], $row['external_identifier'], $row['email'],
-                $row['scanned_at'] !== null ? 'Registered' : 'Not registered', $row['scanned_at'],
+                $list !== [] ? 'Registered' : 'Not registered', $list[0]['registered_at'] ?? null, self::sessionList($list),
             ];
         }
         $xlsx = (new XlsxWriter())->addSheet(
             "Day {$day['day_number']} Attendees",
-            ['Attendee Code', 'Full Name', 'Company', 'Cluster', 'Employee ID', 'Email', 'Registration Status', 'Registered At'],
+            ['Attendee Code', 'Full Name', 'Company', 'Cluster', 'Employee ID', 'Email', 'Registration Status', 'Registered At', 'Registration Sessions'],
             $rows
         );
 
@@ -197,6 +206,51 @@ final class ReportService
         );
 
         return self::xlsx($xlsx, $day !== null ? "Winners - Day {$day['day_number']}.xlsx" : 'Winners.xlsx');
+    }
+
+    /**
+     * Active session registrations of an event (one day or all), earliest
+     * first: [attendee_id][event_day_id] => list of {label, registered_at,
+     * registered_by, counts_for_major, source}. One query; no per-row lookups.
+     *
+     * @return array<int, array<int, list<array<string, mixed>>>>
+     */
+    private static function sessionRegistrations(int $eventId, ?int $dayId): array
+    {
+        $sql = "SELECT r.attendee_id, r.event_day_id, r.registered_at, r.source, u.name AS registered_by,
+                       s.label, s.counts_for_major
+                FROM session_registrations r
+                JOIN registration_sessions s ON s.id = r.registration_session_id
+                LEFT JOIN users u ON u.id = r.registered_by
+                WHERE r.event_id = :event_id AND r.status = 'active'";
+        $params = ['event_id' => $eventId];
+        if ($dayId !== null) {
+            $sql .= ' AND r.event_day_id = :day_id';
+            $params['day_id'] = $dayId;
+        }
+        $statement = Database::connection()->prepare($sql . ' ORDER BY r.registered_at, r.id');
+        $statement->execute($params);
+        $map = [];
+        foreach ($statement->fetchAll() as $row) {
+            $map[(int) $row['attendee_id']][(int) $row['event_day_id']][] = [
+                'label' => $row['label'],
+                'registered_at' => $row['registered_at'],
+                'registered_by' => $row['registered_by'],
+                'counts_for_major' => (bool) $row['counts_for_major'],
+                'source' => $row['source'],
+            ];
+        }
+
+        return $map;
+    }
+
+    /** "Oct 15 - 8:00 AM; Oct 15 - 5:00 PM (manual)" */
+    private static function sessionList(array $list): string
+    {
+        return implode('; ', array_map(
+            static fn (array $r): string => $r['label'] . ($r['source'] === 'manual' ? ' (manual)' : ''),
+            $list
+        ));
     }
 
     private static function xlsx(XlsxWriter $xlsx, string $filename): Response

@@ -39,12 +39,17 @@ export function CurrentDayChip() {
   return (
     <span
       className="hidden min-w-0 items-center gap-1.5 truncate rounded-full bg-brand-50 px-3 py-1 text-xs font-medium text-brand-800 ring-1 ring-inset ring-brand-200 md:inline-flex"
-      title={`${current.event.name} — ${current.eventDay.displayName}`}
+      title={`${current.event.name} — ${current.eventDay.displayName}${current.registrationSession ? ` — ${current.registrationSession.label}` : ''}`}
       data-testid="current-day"
     >
       <CalendarCheck className="size-3.5 shrink-0" aria-hidden />
       <span className="truncate">
         Current Event Day: <b>{current.eventDay.displayName}</b>
+        {current.registrationSession && (
+          <>
+            {' · '}Registration: <b data-testid="current-session">{current.registrationSession.label}</b>
+          </>
+        )}
       </span>
     </span>
   )

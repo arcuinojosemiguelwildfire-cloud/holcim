@@ -8,7 +8,7 @@ use App\Models\Attendee;
 use App\Models\Event;
 use App\Models\EventDay;
 use App\Models\RandomizerDraw;
-use App\Models\RegistrationScan;
+use App\Models\SessionRegistration;
 
 /**
  * Builds the dashboard summary for the ACTIVE DAY of the ACTIVE event.
@@ -16,9 +16,12 @@ use App\Models\RegistrationScan;
  * Every metric reports whether it is backed by a working module:
  *   available = true  -> value comes from real database rows
  *   available = false -> the module that defines it is not built yet; value is 0
- * Registered / Minor / Major are counted for the current Event Day only:
- *   Minor eligible = registered today OR manually added today (active attendees)
- *   Major eligible = imported or manually added for today (active attendees)
+ * Registered / Minor / Major are counted for the current Event Day only
+ * (Phase 10, see RandomizerDraw; winners of the day excluded from the pools):
+ *   Registered     = registered in ANY registration session today (each attendee once)
+ *   Minor eligible = registered today OR manually added to Minor today
+ *   Major eligible = registered today in a session that counts for Major
+ *                    OR manually added to Major today
  */
 final class DashboardService
 {
@@ -44,7 +47,7 @@ final class DashboardService
                 'available' => true,
             ],
             'registered' => [
-                'value' => $dayId !== null ? RegistrationScan::countRegisteredForDay($dayId) : 0,
+                'value' => $dayId !== null ? SessionRegistration::countForDay($dayId) : 0,
                 'available' => true,
             ],
             'minorEligible' => [

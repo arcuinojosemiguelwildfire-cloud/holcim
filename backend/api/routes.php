@@ -21,6 +21,7 @@ use App\Controllers\HealthController;
 use App\Controllers\QrCodeController;
 use App\Controllers\RandomizerController;
 use App\Controllers\RegistrationController;
+use App\Controllers\RegistrationSessionController;
 use App\Controllers\ReportController;
 use App\Controllers\SettingsController;
 use App\Core\Router;
@@ -62,6 +63,13 @@ return static function (Router $router): void {
     $router->put('/event-days/{id}', [EventDayController::class, 'update'], [$adminOnly]);
     $router->patch('/event-days/{id}/activate', [EventDayController::class, 'activate'], [$adminOnly]);
 
+    // Registration sessions (Phase 10): admin only. Scanners never choose the
+    // session; scans always go to the current session of the active day.
+    $router->get('/event-days/{id}/sessions', [RegistrationSessionController::class, 'index'], [$adminOnly]);
+    $router->post('/event-days/{id}/sessions', [RegistrationSessionController::class, 'store'], [$adminOnly]);
+    $router->put('/registration-sessions/{id}', [RegistrationSessionController::class, 'update'], [$adminOnly]);
+    $router->patch('/registration-sessions/{id}/activate', [RegistrationSessionController::class, 'activate'], [$adminOnly]);
+
     // Attendees (scoped to the active event). Import is a 3-step flow:
     // parse (upload) -> preview (validate + duplicates) -> import (commit).
     $router->get('/attendees', [AttendeeController::class, 'index'], [$staff]);
@@ -74,6 +82,9 @@ return static function (Router $router): void {
     $router->get('/attendees/{id}', [AttendeeController::class, 'show'], [$staff]);
     $router->put('/attendees/{id}', [AttendeeController::class, 'update'], [$adminOnly]);
     $router->patch('/attendees/{id}/status', [AttendeeController::class, 'updateStatus'], [$adminOnly]);
+    // Registration history + eligibility (Phase 10): staff can view; only admins manage / renew.
+    $router->get('/attendees/{id}/registrations', [AttendeeController::class, 'registrations'], [$staff]);
+    $router->put('/attendees/{id}/registrations', [AttendeeController::class, 'updateRegistrations'], [$adminOnly]);
 
     // Attendee QR codes (active event). Viewing/printing: admin + registration
     // staff. Generating/regenerating: admin only.

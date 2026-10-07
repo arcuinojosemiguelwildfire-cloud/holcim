@@ -16,4 +16,6 @@ export interface EventDay {
 export interface CurrentEventDay {
   event: { id: number; name: string } | null
   eventDay: EventDay | null
+  /** Current registration session of the current day (Phase 10). */
+  registrationSession: import('./registrationSession').DeskSession | null
 }

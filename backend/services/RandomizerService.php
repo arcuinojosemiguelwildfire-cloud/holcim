@@ -15,10 +15,12 @@ use App\Models\RandomizerParticipant;
 /**
  * Minor and Major Randomizers for the ACTIVE DAY of the ACTIVE event.
  *
- * Draw pool (queried server-side on every draw, current day only; Phase 9.2):
- *   active attendees registered today (or manually added to THIS randomizer
- *   today) MINUS anyone with a valid draw of THIS randomizer today.
- * Registration makes an attendee eligible for both Minor and Major. Winning
+ * Draw pool (queried server-side on every draw, current day only):
+ *   Minor: active attendees registered today in ANY registration session
+ *   Major: active attendees registered today in a session that counts for
+ *          Major (Phase 10: e.g. Oct 15 5:00 PM, not Oct 15 8:00 AM)
+ *   ...plus attendees manually added to THIS randomizer today, MINUS anyone
+ *   with a valid draw of THIS randomizer today. Each attendee once. Winning
  * Minor removes them from Minor only (and Major from Major only); voiding the
  * draw puts them back. The winner is chosen here with random_int() (CSPRNG)
  * inside a transaction that locks the event day, so two simultaneous draws
@@ -189,6 +191,7 @@ final class RandomizerService
                 'addedAt' => $row['added_at'],
                 'addedBy' => $row['added_by'],
                 'reason' => $row['reason'],
+                'sessionLabel' => $row['session_label'] ?? null,
             ], $result['items']),
             'pagination' => [
                 'page' => $page,

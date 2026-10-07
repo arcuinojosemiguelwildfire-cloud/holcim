@@ -63,6 +63,17 @@ Run `php backend/cli/migrate.php` to apply migration 032 (adds `randomizer_draws
 
 Attendee QR codes now contain only the token. Printed labels do not depend on `APP_URL` or the domain. When moving the local data online, transfer the `attendee_qr_codes` table together with `attendees` and `events` (a full dump/restore keeps every ID and link); do **not** re-import and generate QR codes again online.
 
+### Phase 10 (migration 033): registration sessions
+
+1. Take a database backup.
+2. Run `php backend/cli/migrate.php`. Migration 033 adds `registration_sessions`, `session_registrations` and `session_registration_changes`, plus a session column on `scan_logs`. Every existing day gets one default session that counts for Major, and its existing check-ins are copied into it, so nothing changes until sessions are configured. Attendees and QR tokens are not touched.
+3. Configure the event:
+   - Dry run: `php backend/cli/configure-registration-sessions.php --file=database/registration-sessions/holcim-2026.json`
+   - Save: the same command with `--apply`.
+4. Check the result in Events › Days › Sessions, then run `php backend/cli/check-readiness.php`. It lists the current day's sessions.
+
+On Supabase, apply `supabase/migrations/20261007090000_holcim_registration_sessions.sql`; the MySQL → PostgreSQL import now requires source migration 033. See docs/REGISTRATION_SESSIONS.md.
+
 ### Moving the local database online (QR codes already printed)
 
 Before: `php backend/cli/verify-qr-migration.php --save` on the local machine, then `mysqldump`. After restoring the full dump online: `php backend/cli/verify-qr-migration.php --compare=<manifest.json>` must print `RESULT: PASS`. See README §9m. The tool is read-only.

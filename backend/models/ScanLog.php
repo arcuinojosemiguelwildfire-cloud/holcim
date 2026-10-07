@@ -9,28 +9,31 @@ use App\Core\Database;
 /**
  * Data access for `scan_logs` (Phase 8): every scan attempt per event day,
  * successful or not, for the scanner's Recent Scans list and filters.
- * Check-in counts always come from registration_scans.
+ * Phase 10: each log row also records the registration session the scan
+ * was made in (NULL for scans made before sessions existed). Registration
+ * counts come from session_registrations.
  */
 final class ScanLog
 {
-    public const RESULTS = ['registered', 'already_registered', 'invalid_qr', 'wrong_event', 'attendee_inactive'];
+    public const RESULTS = ['registered', 'already_registered', 'invalid_qr', 'wrong_event', 'attendee_inactive', 'registration_removed'];
 
     /** Filter name => result values. */
     public const FILTERS = [
         'all' => [],
         'successful' => ['registered'],
         'already_registered' => ['already_registered'],
-        'invalid' => ['invalid_qr', 'wrong_event', 'attendee_inactive'],
+        'invalid' => ['invalid_qr', 'wrong_event', 'attendee_inactive', 'registration_removed'],
     ];
 
-    public static function record(int $eventId, int $dayId, ?int $userId, ?int $attendeeId, string $result): void
+    public static function record(int $eventId, int $dayId, ?int $userId, ?int $attendeeId, string $result, ?int $sessionId = null): void
     {
         Database::connection()->prepare(
-            'INSERT INTO scan_logs (event_id, event_day_id, user_id, attendee_id, result, scanned_at)
-             VALUES (:event_id, :day_id, :user_id, :attendee_id, :result, NOW())'
+            'INSERT INTO scan_logs (event_id, event_day_id, registration_session_id, user_id, attendee_id, result, scanned_at)
+             VALUES (:event_id, :day_id, :session_id, :user_id, :attendee_id, :result, NOW())'
         )->execute([
             'event_id' => $eventId,
             'day_id' => $dayId,
+            'session_id' => $sessionId,
             'user_id' => $userId,
             'attendee_id' => $attendeeId,
             'result' => $result,
@@ -67,8 +70,10 @@ final class ScanLog
         $count->execute($params);
 
         $statement = $pdo->prepare(
-            "SELECT l.id, l.result, l.scanned_at, a.attendee_code, a.full_name, a.company, a.department, u.name AS scanned_by
+            "SELECT l.id, l.result, l.scanned_at, a.attendee_code, a.full_name, a.company, a.department, u.name AS scanned_by,
+                    s.label AS session_label
              FROM scan_logs l
+             LEFT JOIN registration_sessions s ON s.id = l.registration_session_id
              LEFT JOIN attendees a ON a.id = l.attendee_id
              LEFT JOIN users u ON u.id = l.user_id
              WHERE {$whereSql}

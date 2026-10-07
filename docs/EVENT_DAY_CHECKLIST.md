@@ -7,6 +7,7 @@
 - [ ] If this server was used for testing: Settings › **System Reset** (type `RESET EVENT DATA` + your password) **once, before** setting up the real event. Then recreate staff / event operator / scanner operator accounts. Never use it during or after the event.
 - [ ] Events page: the correct event is **Active**.
 - [ ] Events › **Days**: every event day is listed with the right date (Day 1, Day 2, …).
+- [ ] Events › Days › **Sessions**: Oct 14 has "Oct 14 - 5:00 PM" (Counts for Major). Oct 15 has "Oct 15 - 8:00 AM" (Minor only) and "Oct 15 - 5:00 PM" (Counts for Major). To set these up, run `php backend/cli/configure-registration-sessions.php --file=database/registration-sessions/holcim-2026.json --apply`.
 - [ ] Settings › **Scanner Operators**: one enabled account per scanning device/person; each one can sign in with its username.
 - [ ] Attendees imported (Attendees › Import attendees). For the client's workbook, the `External Attendees` sheet is detected automatically (Name 1 = Company, Cluster = location, one attendee per Attendee column); review invalid/duplicate rows.
 - [ ] QR / ID Generator: **Generate missing QR codes** → QR missing = 0 (no "Do not print" warning shown).
@@ -17,17 +18,25 @@
 
 ## Before each event day
 - [ ] Database backup taken (end of the previous day or now).
-- [ ] Events › **Days** › **Set as current** on today's day. The top bar must show **Current Event Day: Day N — today's date**.
+- [ ] Events › **Days** › **Set as current** on today's day. The top bar must show **Current Event Day: Day N — today's date · Registration: <session>**.
+- [ ] Events › Days › **Sessions**: the right session is **Current**. On Oct 15 that is 8:00 AM in the morning.
 - [ ] `php backend/cli/check-readiness.php` → "Current event day" shows today's date (no "not today's date" warning).
 - [ ] Registration page shows Registered = 0 for the new day (previous days' check-ins are kept, not reset).
 - [ ] Scanner operators signed in on each device; disable any account that should not be used today.
 - [ ] Major: import today's form responses only after today's form closes (imports apply to the current day).
 
+## Switching registration sessions (Oct 15)
+- [ ] At **5:00 PM** an admin opens Events › Days › Sessions (Day 2) and clicks **Make current** → **Confirm** on "Oct 15 - 5:00 PM". The Registration page banner must then show **October 15 · 5:00 PM Registration**.
+- [ ] Scans made while 8:00 AM is still current count as 8:00 AM, which is **not Major-eligible**. The registration page shows an amber warning once 5:00 PM has passed and the session has not been switched.
+- [ ] Wrong session for someone? An admin fixes it in Attendees › attendee › **Registration sessions** (check 5:00 PM → Save). History is kept.
+
 ## During registration
 - [ ] Open **Registration**; the **Scan Attendee QR** box must show "Ready to scan" (amber warning = click the box once).
 - [ ] Scan the attendee's QR with the scanner → green "Registration Successful". No mouse needed between attendees.
 - [ ] Watch Registered / Remaining (current day). Red result = invalid/other event/archived: check the attendee at the desk.
-- [ ] "Already registered for Day N" = this attendee already checked in **today**; no action needed.
+- [ ] "Already registered for October 15 - 5:00 PM" = this attendee already registered in **this session**; no action needed. The same person scanning at 8:00 AM and again at 5:00 PM is two valid registrations.
+- [ ] Red "Registration Removed" = an admin removed this person's registration for the session; send them to an admin.
+- [ ] The result shows **Major Randomizer: ELIGIBLE / NOT ELIGIBLE** for the current session's rules.
 - [ ] Use **Attendee lookup** on the scanner page to check whether someone is registered today.
 - [ ] Recent Scans: **My Scans** / **All Scans** and the result filter help find problem scans.
 
@@ -44,7 +53,7 @@
 - [ ] Not present? **Void draw** (reason e.g. "Winner not present") → **Next draw**.
 
 ## Raffle eligibility (no Major QR, form or import)
-- [ ] Registration is all that is needed: everyone scanned **today** is in both the Minor and the Major pool.
+- [ ] Minor pool: everyone registered **today** in any session. Major pool: only people registered in a session marked **Counts for Major** (Oct 14 5:00 PM, Oct 15 5:00 PM). Each person appears once.
 - [ ] A Minor winner leaves the Minor pool but stays in the Major pool (and vice versa). Voiding a draw puts the person back in that pool.
 - [ ] Check the eligible counts on the Minor / Major Randomizer pages before each draw.
 

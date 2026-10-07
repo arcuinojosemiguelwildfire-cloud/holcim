@@ -20,6 +20,7 @@ const RESULT_LABELS: Record<ScanLogResult, { label: string; tone: BadgeTone }> =
   invalid_qr: { label: 'Invalid QR', tone: 'danger' },
   wrong_event: { label: 'Wrong event', tone: 'danger' },
   attendee_inactive: { label: 'Inactive', tone: 'danger' },
+  registration_removed: { label: 'Removed by admin', tone: 'danger' },
 }
 
 const FILTERS: { value: ScanFilter; label: string }[] = [
@@ -108,6 +109,7 @@ export function RecentScansCard({ refreshKey }: RecentScansCardProps) {
                   <span className="block truncate text-xs text-slate-500">
                     {row.attendeeCode && <span className="font-mono">{row.attendeeCode}</span>}
                     {row.company && ` · ${row.company}`}{row.department && ` · ${row.department}`}
+                    {row.sessionLabel && ` · ${row.sessionLabel}`}
                     {view === 'all' && row.scannedBy && ` · by ${row.scannedBy}`}
                   </span>
                 </span>

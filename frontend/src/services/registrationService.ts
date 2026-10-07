@@ -1,14 +1,17 @@
 import type { Pagination } from '../types/attendee'
 import type { EventDay } from '../types/eventDay'
+import type { DeskSession } from '../types/registrationSession'
 import { apiClient } from './apiClient'
 
+/** registered / remaining = the CURRENT session; registeredToday = any session of the day. */
 export interface RegistrationCounts {
   total: number
   registered: number
   remaining: number
+  registeredToday: number
 }
 
-/** Successful check-ins today: by the signed-in user / by everyone. */
+/** Successful QR registrations in the current session: by the signed-in user / by everyone. */
 export interface ScanCounts {
   mine: number
   all: number
@@ -17,10 +20,13 @@ export interface ScanCounts {
 export interface ScanSuccess {
   status: 'registered' | 'already_registered'
   eventDay: EventDay
+  registrationSession: DeskSession
   attendee: { code: string; fullName: string; company: string | null; department: string | null }
   registeredAt: string | null
   registeredBy: string | null
   minorEligible: boolean
+  /** Derived on the server from the day's registration sessions. */
+  majorEligible: boolean
   counts: RegistrationCounts
   scanCounts: ScanCounts
 }
@@ -32,17 +38,21 @@ export interface RecentRegistration {
   company: string | null
   department: string | null
   scannedBy: string | null
+  source: 'scan' | 'manual'
 }
 
 export interface RegistrationSummary {
   event: { id: number; name: string }
   eventDay: EventDay
+  registrationSession: DeskSession
+  /** A later session has started while this one is still current (ask an admin to switch). */
+  pendingSession: DeskSession | null
   counts: RegistrationCounts
   scanCounts: ScanCounts
   recent: RecentRegistration[]
 }
 
-export type ScanLogResult = 'registered' | 'already_registered' | 'invalid_qr' | 'wrong_event' | 'attendee_inactive'
+export type ScanLogResult = 'registered' | 'already_registered' | 'invalid_qr' | 'wrong_event' | 'attendee_inactive' | 'registration_removed'
 export type ScanView = 'mine' | 'all'
 export type ScanFilter = 'all' | 'successful' | 'already_registered' | 'invalid'
 
@@ -55,6 +65,7 @@ export interface ScanLogRow {
   company: string | null
   department: string | null
   scannedBy: string | null
+  sessionLabel: string | null
 }
 
 export interface ScanLogPage {
@@ -72,6 +83,7 @@ export interface AttendeeStatusRow {
   department: string | null
   attendeeStatus: 'active' | 'archived'
   registeredToday: boolean
+  registeredThisSession: boolean
   registeredAt: string | null
   registeredBy: string | null
 }
@@ -101,5 +113,5 @@ export const registrationService = {
   scans: (view: ScanView, filter: ScanFilter, page: number) =>
     apiClient.get<ScanLogPage>(`/registration/scans?${new URLSearchParams({ view, result: filter, page: String(page) }).toString()}`),
   searchAttendees: (search: string) =>
-    apiClient.get<{ eventDay: EventDay; items: AttendeeStatusRow[] }>(`/registration/attendees?${new URLSearchParams({ search }).toString()}`),
+    apiClient.get<{ eventDay: EventDay; registrationSession: DeskSession | null; items: AttendeeStatusRow[] }>(`/registration/attendees?${new URLSearchParams({ search }).toString()}`),
 }

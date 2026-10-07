@@ -46,6 +46,8 @@ export interface PoolParticipant {
   addedAt: string
   addedBy: string | null
   reason: string | null
+  /** Registration session that made them eligible (registration source only). */
+  sessionLabel: string | null
 }
 
 export interface ParticipantPage {

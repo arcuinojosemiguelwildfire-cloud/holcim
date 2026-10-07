@@ -39,7 +39,7 @@ export function AttendeeStatusSearch() {
 
   return (
     <Card>
-      <CardHeader title="Attendee lookup" description="Check whether an attendee is registered today. Read-only." />
+      <CardHeader title="Attendee lookup" description="Check whether an attendee is registered in the current session (or earlier today). Read-only." />
       <div className="px-5 py-4">
         <label className="relative block">
           <span className="sr-only">Search attendees</span>
@@ -69,8 +69,10 @@ export function AttendeeStatusSearch() {
                 </span>
                 {row.attendeeStatus !== 'active' ? (
                   <Badge tone="muted">Archived</Badge>
+                ) : row.registeredThisSession ? (
+                  <Badge tone="success">Registered this session</Badge>
                 ) : row.registeredToday ? (
-                  <Badge tone="success">Registered today</Badge>
+                  <Badge tone="warning">Registered earlier today</Badge>
                 ) : (
                   <Badge tone="neutral">Not yet registered</Badge>
                 )}

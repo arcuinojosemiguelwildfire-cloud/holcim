@@ -86,6 +86,7 @@ export function ParticipantsCard({ type, refreshKey }: { type: RandomizerType; r
                   <td className="px-5 py-2.5 text-slate-600">{row.department ?? '—'}</td>
                   <td className="px-5 py-2.5">
                     <Badge tone={SOURCES[row.source].tone}>{SOURCES[row.source].label}</Badge>
+                    {row.sessionLabel && <span className="ml-2 text-xs text-slate-500">{row.sessionLabel}</span>}
                     {row.reason && <span className="ml-2 text-xs text-slate-500">{row.reason}</span>}
                   </td>
                   <td className="whitespace-nowrap px-5 py-2.5 text-xs text-slate-500">

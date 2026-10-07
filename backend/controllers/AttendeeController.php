@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Core\HttpException;
 use App\Core\Request;
 use App\Core\Response;
 use App\Models\Attendee;
 use App\Services\AttendeeImportService;
+use App\Services\AttendeeRegistrationService;
 use App\Services\AttendeeService;
 use App\Utils\Validator;
 
@@ -78,6 +80,52 @@ final class AttendeeController
         $data = Validator::make($request->body())->in('status', Attendee::STATUSES, required: true)->validate();
 
         return Response::success(['attendee' => AttendeeService::setStatus($request, $id, $data['status'])]);
+    }
+
+    /** GET /attendees/{id}/registrations - registration sessions, history and eligibility per day (Phase 10) */
+    public static function registrations(Request $request): Response
+    {
+        $id = Validator::id($request->param('id'), 'Attendee');
+
+        return Response::success(AttendeeRegistrationService::overview($id));
+    }
+
+    /**
+     * PUT /attendees/{id}/registrations (admin) - Manage / renew registration.
+     * {sessions: [{session_id, registered: bool}], reason?}
+     * Only WHICH sessions the attendee is registered for is accepted; any
+     * eligibility value sent by the client is ignored (eligibility is derived
+     * on the server from the stored registrations).
+     */
+    public static function updateRegistrations(Request $request): Response
+    {
+        $id = Validator::id($request->param('id'), 'Attendee');
+        $body = $request->body();
+        $data = Validator::make($body)->string('reason', max: 200, label: 'Reason')->validate();
+        $raw = $body['sessions'] ?? null;
+        if (!is_array($raw) || $raw === [] || count($raw) > 50) {
+            throw HttpException::validation(['sessions' => ['Choose the registration sessions to save.']]);
+        }
+        $changes = [];
+        $seen = [];
+        foreach ($raw as $item) {
+            $sessionId = is_array($item) ? ($item['session_id'] ?? null) : null;
+            $registered = is_array($item) && array_key_exists('registered', $item)
+                ? filter_var($item['registered'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) : null;
+            if (!is_int($sessionId) && !(is_string($sessionId) && ctype_digit($sessionId)) || $registered === null) {
+                throw HttpException::validation(['sessions' => ['Each session needs a session_id and registered (true/false).']]);
+            }
+            $sessionId = (int) $sessionId;
+            if (isset($seen[$sessionId])) {
+                throw HttpException::validation(['sessions' => ['A session is listed more than once.']]);
+            }
+            $seen[$sessionId] = true;
+            $changes[] = ['session_id' => $sessionId, 'registered' => $registered];
+        }
+        $result = AttendeeRegistrationService::update($request, $id, $changes, $data['reason'] ?? null);
+        $count = count($result['applied']);
+
+        return Response::success($result, message: $count === 0 ? 'No changes to save.' : "Saved {$count} registration change(s).");
     }
 
     /** POST /attendees/import/parse (admin, multipart "file") */

@@ -1,4 +1,5 @@
 import type { AttendeeQr } from '../types/qr'
+import type { AttendeeRegistrations } from '../types/registrationSession'
 import type {
   AttendeeCreateInput,
   AttendeeDetail,
@@ -47,6 +48,19 @@ export const attendeeService = {
 
   async setStatus(id: number, status: AttendeeStatus): Promise<AttendeeDetail> {
     return (await apiClient.patch<{ attendee: AttendeeDetail }>(`/attendees/${id}/status`, { status })).attendee
+  },
+
+  /** Registration sessions, history and eligibility per day (Phase 10). */
+  registrations(id: number): Promise<AttendeeRegistrations> {
+    return apiClient.get<AttendeeRegistrations>(`/attendees/${id}/registrations`)
+  },
+
+  /**
+   * Admin: which sessions the attendee is registered for. Eligibility is
+   * never sent - the server derives it from the registrations.
+   */
+  updateRegistrations(id: number, sessions: { session_id: number; registered: boolean }[], reason: string): Promise<AttendeeRegistrations> {
+    return apiClient.put<AttendeeRegistrations>(`/attendees/${id}/registrations`, { sessions, reason })
   },
 
   parseFile(file: File): Promise<ParsedFile> {

@@ -107,6 +107,66 @@ final class Validator
         return $this;
     }
 
+    /** Validates a wall-clock time "HH:MM" (24-hour); stored as "HH:MM:00". */
+    public function time(string $field, bool $required = false, string $label = ''): self
+    {
+        $label = $label !== '' ? $label : self::label($field);
+        $this->string($field, $required, 8, 0, $label);
+
+        $value = $this->clean[$field] ?? null;
+        if (is_string($value)) {
+            if (preg_match('/^([01]\d|2[0-3]):([0-5]\d)(:00)?$/', $value, $m) !== 1) {
+                unset($this->clean[$field]);
+                $this->addError($field, "{$label} must be a time (HH:MM, 24-hour).");
+            } else {
+                $this->clean[$field] = "{$m[1]}:{$m[2]}:00";
+            }
+        }
+
+        return $this;
+    }
+
+    /** Accepts true/false (JSON booleans, 0/1, "true"/"false"). */
+    public function boolean(string $field, bool $required = false, string $label = ''): self
+    {
+        $label = $label !== '' ? $label : self::label($field);
+        if (!array_key_exists($field, $this->input) || $this->input[$field] === null) {
+            if ($required) {
+                $this->addError($field, "{$label} is required.");
+            }
+
+            return $this;
+        }
+        $value = filter_var($this->input[$field], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        if ($value === null) {
+            $this->addError($field, "{$label} must be true or false.");
+        } else {
+            $this->clean[$field] = $value;
+        }
+
+        return $this;
+    }
+
+    public function integer(string $field, bool $required = false, int $min = 0, int $max = PHP_INT_MAX, string $label = ''): self
+    {
+        $label = $label !== '' ? $label : self::label($field);
+        $value = $this->input[$field] ?? null;
+        if ($value === null || $value === '') {
+            if ($required) {
+                $this->addError($field, "{$label} is required.");
+            }
+
+            return $this;
+        }
+        if (!(is_int($value) || (is_string($value) && preg_match('/^-?\d{1,10}$/', $value) === 1)) || (int) $value < $min || (int) $value > $max) {
+            $this->addError($field, "{$label} must be a whole number between {$min} and {$max}.");
+        } else {
+            $this->clean[$field] = (int) $value;
+        }
+
+        return $this;
+    }
+
     /** @param list<string> $allowed */
     public function in(string $field, array $allowed, bool $required = false, string $label = ''): self
     {

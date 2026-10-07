@@ -95,7 +95,8 @@ echo "System reset test against TEST database '{$database}'\n";
 
 $tables = $pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN);
 $required = ['events', 'event_days', 'attendees', 'attendee_qr_codes', 'registration_scans', 'scan_logs', 'randomizer_draws',
-    'minor_manual_entries', 'major_eligibility', 'major_entries', 'import_batches', 'login_attempts', 'audit_logs', 'users', 'schema_migrations'];
+    'minor_manual_entries', 'major_eligibility', 'major_entries', 'import_batches', 'login_attempts', 'audit_logs', 'users', 'schema_migrations',
+    'registration_sessions', 'session_registrations', 'session_registration_changes'];
 if (array_diff($required, $tables) !== []) {
     fwrite(STDERR, "The test database is not fully migrated. Run: DB_DATABASE={$database} php backend/cli/migrate.php\n");
     exit(1);
@@ -130,6 +131,15 @@ foreach ([1, 2, 3] as $i) {
 }
 insert($pdo, 'registration_scans', ['event_id' => $eventId, 'event_day_id' => $day2, 'attendee_id' => $attendees[1], 'scanner_user_id' => $staffId]);
 insert($pdo, 'scan_logs', ['event_id' => $eventId, 'event_day_id' => $day2, 'attendee_id' => null, 'result' => 'invalid_qr', 'user_id' => $staffId]);
+// Phase 10: registration sessions (two on Day 2), session registrations + history.
+$session1 = insert($pdo, 'registration_sessions', ['event_id' => $eventId, 'event_day_id' => $day1, 'label' => 'Day 1 - 5:00 PM', 'session_date' => '2026-12-01', 'start_time' => '17:00:00', 'counts_for_major' => 1, 'is_current' => 1]);
+$session2am = insert($pdo, 'registration_sessions', ['event_id' => $eventId, 'event_day_id' => $day2, 'label' => 'Day 2 - 8:00 AM', 'session_date' => '2026-12-02', 'start_time' => '08:00:00', 'counts_for_major' => 0, 'is_current' => 0]);
+$session2pm = insert($pdo, 'registration_sessions', ['event_id' => $eventId, 'event_day_id' => $day2, 'label' => 'Day 2 - 5:00 PM', 'session_date' => '2026-12-02', 'start_time' => '17:00:00', 'counts_for_major' => 1, 'is_current' => 1, 'sort_order' => 2]);
+foreach ([[$day1, $session1, 1], [$day1, $session1, 2], [$day2, $session2am, 1], [$day2, $session2pm, 1]] as [$d, $sid, $i]) {
+    $rid = insert($pdo, 'session_registrations', ['event_id' => $eventId, 'event_day_id' => $d, 'registration_session_id' => $sid, 'attendee_id' => $attendees[$i], 'source' => 'scan', 'registered_by' => $scannerId]);
+    insert($pdo, 'session_registration_changes', ['session_registration_id' => $rid, 'event_id' => $eventId, 'action' => 'scanned', 'status_after' => 'active', 'performed_by' => $scannerId]);
+}
+insert($pdo, 'scan_logs', ['event_id' => $eventId, 'event_day_id' => $day2, 'registration_session_id' => $session2pm, 'attendee_id' => $attendees[1], 'result' => 'registered', 'user_id' => $scannerId]);
 insert($pdo, 'minor_manual_entries', ['event_id' => $eventId, 'event_day_id' => $day1, 'attendee_id' => $attendees[5], 'added_by' => $operatorId]);
 insert($pdo, 'major_eligibility', ['event_id' => $eventId, 'event_day_id' => $day1, 'attendee_id' => $attendees[6], 'source' => 'manual']);
 insert($pdo, 'major_eligibility', ['event_id' => $eventId, 'event_day_id' => $day1, 'attendee_id' => $attendees[4], 'source' => 'import']);

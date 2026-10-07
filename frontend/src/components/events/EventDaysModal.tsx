@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { CalendarPlus, Check, Pencil, Play, X } from 'lucide-react'
+import { CalendarPlus, Check, Clock, Pencil, Play, X } from 'lucide-react'
+import { DaySessionsPanel } from './DaySessionsPanel'
 import { Alert } from '../ui/Alert'
 import { Badge, type BadgeTone } from '../ui/Badge'
 import { Button } from '../ui/Button'
@@ -31,8 +32,9 @@ interface EventDaysModalProps {
 }
 
 /**
- * Admin: days of an event. Add a day, edit its date/label, and set the
- * current (active) day. Switching days never deletes any day's records.
+ * Admin: days of an event. Add a day, edit its date/label, set the current
+ * (active) day and manage each day's registration sessions (Phase 10).
+ * Switching days or sessions never deletes any records.
  */
 export function EventDaysModal({ event, onClose }: EventDaysModalProps) {
   const [days, setDays] = useState<EventDay[] | null>(null)
@@ -43,6 +45,7 @@ export function EventDaysModal({ event, onClose }: EventDaysModalProps) {
   const [newDay, setNewDay] = useState<{ date: string; label: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [fieldError, setFieldError] = useState<string | null>(null)
+  const [sessionsFor, setSessionsFor] = useState<number | null>(null)
 
   const load = useCallback(() => {
     eventDayService.list(event.id).then(setDays, (e: unknown) => setError(errorMessage(e)))
@@ -100,7 +103,7 @@ export function EventDaysModal({ event, onClose }: EventDaysModalProps) {
   const inputClass = 'h-9 rounded-lg border-0 px-2.5 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600'
 
   return (
-    <Modal open title={`Event days — ${event.name}`} description="The current day is used for registration, eligibility and draws." onClose={onClose}>
+    <Modal open size="lg" title={`Event days — ${event.name}`} description="The current day and its current registration session are used for registration, eligibility and draws." onClose={onClose}>
       <div className="space-y-4">
         {notice && <Alert tone="success" onDismiss={() => setNotice(null)}>{notice}</Alert>}
         {error && <Alert tone="error">{error}</Alert>}
@@ -130,6 +133,17 @@ export function EventDaysModal({ event, onClose }: EventDaysModalProps) {
                     </div>
                     <Badge tone={STATUS[day.status].tone} dot={day.status === 'active'}>{STATUS[day.status].label}</Badge>
                     <Button
+                      key={`sessions-${day.id}`}
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      aria-expanded={sessionsFor === day.id}
+                      onClick={() => setSessionsFor(sessionsFor === day.id ? null : day.id)}
+                      icon={<Clock className="size-4" aria-hidden />}
+                    >
+                      Sessions
+                    </Button>
+                    <Button
                       key={`edit-${day.id}`}
                       type="button"
                       variant="ghost"
@@ -154,6 +168,7 @@ export function EventDaysModal({ event, onClose }: EventDaysModalProps) {
                       ))}
                   </div>
                 )}
+                {sessionsFor === day.id && <DaySessionsPanel day={day} />}
               </li>
             ))}
           </ul>

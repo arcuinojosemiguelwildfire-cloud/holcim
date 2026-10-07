@@ -1,6 +1,7 @@
 import { useCallback, useState, type FormEvent, type ReactNode } from 'react'
 import { Archive, ArchiveRestore, Pencil } from 'lucide-react'
 import { AttendeeQrPanel } from '../qr/AttendeeQrPanel'
+import { AttendeeRegistrationsPanel } from './AttendeeRegistrationsPanel'
 import { Alert } from '../ui/Alert'
 import { Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
@@ -159,6 +160,7 @@ export function AttendeeDetailModal({ attendeeId, onClose, onChanged }: Attendee
               )}
             </dl>
           )}
+          {!editing && <AttendeeRegistrationsPanel attendeeId={attendee.id} canManage={canManage} />}
           {!editing && <AttendeeQrPanel attendeeId={attendee.id} attendeeStatus={attendee.status} />}
         </div>
       ) : null}

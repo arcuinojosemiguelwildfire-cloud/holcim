@@ -75,7 +75,7 @@ try {
         $add($missingQr === 0 ? 'OK' : 'WARN', 'Attendees without a QR', (string) $missingQr);
 
         // Phase 8: event days of the active event and the current day.
-        $days = $pdo->prepare('SELECT day_number, event_date, status FROM event_days WHERE event_id = :id ORDER BY day_number');
+        $days = $pdo->prepare('SELECT id, day_number, event_date, status FROM event_days WHERE event_id = :id ORDER BY day_number');
         $days->execute(['id' => $id]);
         $dayRows = $days->fetchAll();
         $activeDay = array_values(array_filter($dayRows, static fn (array $d): bool => $d['status'] === 'active'))[0] ?? null;
@@ -88,6 +88,18 @@ try {
         $add($activeDay !== null ? 'OK' : 'FAIL', 'Current event day', $activeDay !== null
             ? "Day {$activeDay['day_number']} - {$activeDay['event_date']}" . ($activeDay['event_date'] !== date('Y-m-d') ? ' (not today\'s date - check before doors open)' : '')
             : 'none - activate a day on the Events page');
+        if ($activeDay !== null) {
+            // Phase 10: registration sessions of the current day (scans go to the current one).
+            $ss = $pdo->prepare('SELECT label, start_time, counts_for_major, is_current, is_enabled FROM registration_sessions WHERE event_day_id = :d ORDER BY sort_order, start_time, id');
+            $ss->execute(['d' => (int) $activeDay['id']]);
+            $sessionRows = $ss->fetchAll();
+            $current = array_values(array_filter($sessionRows, static fn (array $r): bool => (bool) $r['is_current']))[0] ?? null;
+            $add($current !== null ? 'OK' : 'FAIL', 'Registration sessions', $sessionRows === [] ? 'none for the current day' : implode(', ', array_map(
+                static fn (array $r): string => $r['label'] . ((bool) $r['counts_for_major'] ? ' [Major]' : ' [Minor only]')
+                    . ((bool) $r['is_current'] ? ' (CURRENT)' : '') . ((bool) $r['is_enabled'] ? '' : ' (disabled)') . ($r['start_time'] === null ? ' (no start time)' : ''),
+                $sessionRows
+            )) . ($current === null ? ' - an admin must select the current session' : ''));
+        }
         $s = $pdo->prepare('SELECT COUNT(*) FROM attendee_qr_codes q JOIN attendees a ON a.id = q.attendee_id WHERE a.event_id = :id');
         $s->execute(['id' => $id]);
         $add('INFO', 'Attendee QR codes', $s->fetchColumn() . ' issued; each QR contains only its token');

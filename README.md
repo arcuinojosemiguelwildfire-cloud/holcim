@@ -613,6 +613,16 @@ Tests: `php backend/tests/qr-migration-test.php --confirm` (creates and drops th
 
 Work toward React/Vite on Vercel + Supabase has started. **Phase 1** adds the PostgreSQL schema (`supabase/migrations/`), a one-time MySQL → PostgreSQL import with built-in verification (`tools/import-mysql-to-postgres.ts`), and a TypeScript port of the read-only QR verifier (`tools/verify-qr-migration.ts`) that works against MySQL and PostgreSQL. Its manifests are interchangeable with the PHP tool's. The PHP/MySQL system is unchanged and stays the live system and fallback. See **docs/SUPABASE_MIGRATION.md** for the translation rules, the Asia/Manila time-zone handling, the security baseline and the step-by-step procedure.
 
+## 9o. Registration sessions and Major eligibility (Phase 10, migration 033)
+
+An event day can have several registration sessions, for example Oct 14 5:00 PM, Oct 15 8:00 AM and Oct 15 5:00 PM. Each attendee has **one** record and **one** QR code across all sessions. Every scan is recorded in the **current session**, which only an admin selects (Events › Days › Sessions). A session can be marked **Counts for the Major Randomizer**:
+
+- **Major pool:** a registration in a session that counts for Major, so Oct 15 8:00 AM alone is not enough.
+- **Minor pool:** a registration in any session of the day.
+- **One entry each:** each attendee appears once in a pool.
+
+Admins can add, restore or remove an attendee's session registrations in Attendee details. Every change keeps its history. Run `php backend/cli/migrate.php`, then configure the event with `php backend/cli/configure-registration-sessions.php --file=database/registration-sessions/holcim-2026.json` (dry run; add `--apply`). Details: **docs/REGISTRATION_SESSIONS.md**. Test: `php backend/tests/registration-session-test.php <api-url> --write` (development database).
+
 ## 10. Creating the first admin
 
 There are **no default or hard-coded credentials**. Create accounts from the

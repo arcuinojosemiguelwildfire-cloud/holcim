@@ -9,18 +9,24 @@ use App\Core\Database;
 /**
  * Day-specific draw pools (read-only) and the randomizer_draws history.
  *
- * Phase 9.2 rules, always for ONE event day and ACTIVE attendees only:
- *   base pool (type)  = registered that day (registration_scans)
- *                       UNION manual additions for that type and day
- *                       (minor: minor_manual_entries; major: major_eligibility
- *                       rows with source = 'manual')
+ * Rules, always for ONE event day and ACTIVE attendees only:
+ *   base pool (Minor) = an active registration in ANY registration session
+ *                       of that day (Phase 10: session_registrations)
+ *                       UNION Minor manual additions for that day
+ *   base pool (Major) = an active registration in a session of that day with
+ *                       counts_for_major = 1 (e.g. Oct 15 5:00 PM, NOT
+ *                       Oct 15 8:00 AM)
+ *                       UNION Major manual additions for that day
+ *                       (major_eligibility rows with source = 'manual')
  *   draw pool (type)  = base pool MINUS attendees with an EXCLUDING draw of
  *                       the same type on the same day (not void and not
  *                       reset - see EXCLUDES)
- * Registration is the single source of eligibility for BOTH raffles. A
- * Minor win excludes from Minor only; a Major win from Major only. Voiding a
- * draw returns the attendee to that pool. Imported Major rows from earlier
- * phases (source = 'import') are kept as history but no longer count.
+ * UNION removes duplicates, so an attendee with several registrations that
+ * day (8:00 AM and 5:00 PM) is ONE candidate. A Minor win excludes from
+ * Minor only; a Major win from Major only. Voiding a draw returns the
+ * attendee to that pool. Imported Major rows from earlier phases
+ * (source = 'import') are kept as history but no longer count. Eligibility
+ * is computed here from stored rows only - never from client input.
  */
 final class RandomizerDraw
 {
@@ -49,7 +55,7 @@ final class RandomizerDraw
     private static function poolFrom(string $type): string
     {
         return 'FROM (
-                SELECT attendee_id FROM registration_scans WHERE event_day_id = :d1
+                ' . SessionRegistration::eligibleSql(self::normalise($type), 'd1') . '
                 UNION ' . self::MANUAL_SQL[self::normalise($type)] . '
             ) p
             JOIN attendees a ON a.id = p.attendee_id
@@ -90,11 +96,11 @@ final class RandomizerDraw
         return array_map('intval', $statement->fetchAll(\PDO::FETCH_COLUMN));
     }
 
-    /** Registered today, or already manually added to this type's pool today. */
+    /** Eligible from registration today (per type), or already manually added to this type's pool today. */
     public static function inBasePool(int $dayId, string $type, int $attendeeId): bool
     {
         $statement = Database::connection()->prepare(
-            'SELECT (EXISTS (SELECT 1 FROM registration_scans WHERE event_day_id = :d1 AND attendee_id = :a1)
+            'SELECT (EXISTS (' . SessionRegistration::eligibleSql(self::normalise($type), 'd1') . ' AND sr.attendee_id = :a1)
                  OR EXISTS (SELECT 1 FROM (' . self::MANUAL_SQL[self::normalise($type)] . ') m WHERE m.attendee_id = :a2))'
         );
         $statement->execute(['d1' => $dayId, 'd2' => $dayId, 'a1' => $attendeeId, 'a2' => $attendeeId]);

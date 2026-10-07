@@ -333,7 +333,7 @@ try {
     check('Other event QR -> 422 WRONG_EVENT', $r['status'] === 422 && ($r['body']['error']['code'] ?? '') === 'WRONG_EVENT');
     $s = $sc1->data('GET', '/registration/summary');
     check('Day 1 summary is for Day 1', ($s['eventDay']['id'] ?? null) === $day1);
-    check('Day 1: Registered = 2, Remaining = 2 (of 4 active)', ($s['counts'] ?? null) === ['total' => 4, 'registered' => 2, 'remaining' => 2], $s['counts'] ?? null);
+    check('Day 1: Registered = 2, Remaining = 2 (of 4 active)', ($s['counts'] ?? null) === ['total' => 4, 'registered' => 2, 'remaining' => 2, 'registeredToday' => 2], $s['counts'] ?? null);
     check('Day 1: Personal Scans = 2, General Scans = 2', ($s['scanCounts'] ?? null) === ['mine' => 2, 'all' => 2], $s['scanCounts'] ?? null);
     $page = static fn (string $view, string $result) => $sc1->data('GET', "/registration/scans?view={$view}&result={$result}");
     check('My Scans (all results) = 6 attempts', ($page('mine', 'all')['pagination']['total'] ?? null) === 6);
@@ -528,7 +528,7 @@ try {
             'rows' => array_map(static fn (array $cells): array => array_combine(array_values($headers), array_map(static fn ($col) => $cells[$col] ?? '', array_keys($headers))), $rows)];
     };
     $x1 = $sheet($admin, "/reports/day-attendees.xlsx?day_id={$day1}");
-    check('Day 1 Attendees.xlsx: headers', $x1['headers'] === ['Attendee Code', 'Full Name', 'Company', 'Cluster', 'Employee ID', 'Email', 'Registration Status', 'Registered At'], $x1['headers']);
+    check('Day 1 Attendees.xlsx: headers', $x1['headers'] === ['Attendee Code', 'Full Name', 'Company', 'Cluster', 'Employee ID', 'Email', 'Registration Status', 'Registered At', 'Registration Sessions'], $x1['headers']);
     $st1 = array_column($x1['rows'], 'Registration Status', 'Attendee Code');
     check('Day 1 Attendees.xlsx: 4 active attendees, A/B registered, C/E not, D (archived) absent', count($x1['rows']) === 4
         && ($st1[$codeOf('A')] ?? '') === 'Registered' && ($st1[$codeOf('E')] ?? '') === 'Not registered' && !isset($st1[$codeOf('D')]), $st1);
@@ -1043,7 +1043,7 @@ try {
     check('Draw CSV report still valid with the appended reset columns', $dcsv !== [] && array_key_exists('Exclusion Reset At', $dcsv[0]) && array_key_exists('Void Reason', $dcsv[0]));
     $el = $admin->csv('/reports/eligibility.csv?scope=all');
     check('Raffle eligibility report still valid (same columns, Won Minor kept as history)', $el !== [] && array_keys($el[0]) === ['Event Day', 'Attendee Code', 'Full Name', 'Company', 'Cluster', 'Email', 'Registered',
-        'Minor Eligible', 'Minor Source', 'Won Minor', 'Major Eligible', 'Major Source', 'Won Major', 'Attendee Status'], array_keys($el[0] ?? []));
+        'Minor Eligible', 'Minor Source', 'Won Minor', 'Major Eligible', 'Major Source', 'Won Major', 'Attendee Status', 'Registration Sessions'], array_keys($el[0] ?? []));
     $x1 = $sheet($admin, "/reports/day-attendees.xlsx?day_id={$day1}");
     check('Day 1 Attendees.xlsx unchanged by resets (same headers, A registered)', ($x1['headers'][6] ?? '') === 'Registration Status'
         && (array_column($x1['rows'], 'Registration Status', 'Attendee Code')[$codeOf('A')] ?? '') === 'Registered');

@@ -8,13 +8,15 @@ interface ModalProps {
   onClose: () => void
   children: ReactNode
   footer?: ReactNode
+  /** 'lg' for dialogs with denser content (e.g. event days + sessions). */
+  size?: 'md' | 'lg'
 }
 
 /**
  * Accessible dialog built on the native <dialog> element
  * (focus trapping, Esc to close and backdrop come from the browser).
  */
-export function Modal({ open, title, description, onClose, children, footer }: ModalProps) {
+export function Modal({ open, title, description, onClose, children, footer, size = 'md' }: ModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const titleId = useId()
 
@@ -33,7 +35,7 @@ export function Modal({ open, title, description, onClose, children, footer }: M
         event.preventDefault()
         onClose()
       }}
-      className="m-auto w-[calc(100%-2rem)] max-w-lg rounded-xl bg-white p-0 shadow-xl ring-1 ring-slate-200 backdrop:bg-slate-900/40"
+      className={`m-auto w-[calc(100%-2rem)] ${size === 'lg' ? 'max-w-2xl' : 'max-w-lg'} rounded-xl bg-white p-0 shadow-xl ring-1 ring-slate-200 backdrop:bg-slate-900/40`}
     >
       {open && (
         <>

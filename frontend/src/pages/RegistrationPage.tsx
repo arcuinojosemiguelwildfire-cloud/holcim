@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { CircleAlert, CircleCheck, CircleX, ScanBarcode, Volume2, VolumeX } from 'lucide-react'
+import { CircleAlert, CircleCheck, CircleX, Clock, ScanBarcode, TriangleAlert, Volume2, VolumeX } from 'lucide-react'
 import { Alert } from '../components/ui/Alert'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -17,6 +17,7 @@ import { beep } from '../utils/beep'
 import { cn } from '../utils/cn'
 import { formatNumber, formatTime } from '../utils/format'
 import { cleanText } from '../utils/qr'
+import type { DeskSession } from '../types/registrationSession'
 
 /**
  * Registration with a physical QR scanner (Phase 9.1).
@@ -25,6 +26,11 @@ import { cleanText } from '../utils/qr'
  * value into the focused input and press Enter. No camera is used. The
  * input keeps focus between scans, so the operator never needs the mouse:
  * scan -> result -> input cleared and focused -> next scan.
+ *
+ * Phase 10: every scan is recorded in the CURRENT REGISTRATION SESSION that an
+ * admin selected (shown prominently here); operators cannot choose it. The
+ * result shows the session and the attendee's Major Randomizer eligibility,
+ * which the server derives from the registration sessions.
  */
 
 /** How long a result stays large on screen before the panel returns to "Ready". */
@@ -40,6 +46,13 @@ const ERROR_TITLES: Record<string, string> = {
   ATTENDEE_INACTIVE: 'Attendee Inactive',
   NO_ACTIVE_EVENT: 'No active event',
   NO_ACTIVE_DAY: 'No active event day',
+  NO_ACTIVE_SESSION: 'No registration session',
+  REGISTRATION_REMOVED: 'Registration Removed',
+}
+
+/** "October 15 - 5:00 PM" (or the session name when it has no start time). */
+function sessionWhen(session: DeskSession): string {
+  return session.timeLabel ? `${session.dateLabel} - ${session.timeLabel}` : `${session.dateLabel} - ${session.label}`
 }
 
 /** True when keystrokes already go to a control that needs them. */
@@ -205,12 +218,24 @@ export function RegistrationPage() {
 
       {summaryError && <Alert tone="error">{summaryError}</Alert>}
 
-      <div className="grid grid-cols-3 gap-3 lg:grid-cols-5">
+      {summary && <CurrentSessionBanner session={summary.registrationSession} />}
+      {summary?.pendingSession && (
+        <div role="alert" className="flex items-start gap-3 rounded-xl bg-amber-50 px-4 py-3 text-amber-900 ring-1 ring-amber-300" data-testid="pending-session">
+          <TriangleAlert className="mt-0.5 size-5 shrink-0" aria-hidden />
+          <p className="text-sm">
+            <b>{summary.pendingSession.label}</b> has started, but scans are still recorded for <b>{summary.registrationSession.label}</b>.
+            Ask an admin to switch the registration session.
+          </p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-3 gap-3 lg:grid-cols-6">
         <Counter label="Total attendees" value={counts?.total} />
-        <Counter label="Registered today" value={counts?.registered} tone="good" />
-        <Counter label="Remaining" value={counts?.remaining} />
-        <Counter label="My scans today" value={scanCounts?.mine} testId="personal-scans" />
-        <Counter label="All scans today" value={scanCounts?.all} testId="general-scans" />
+        <Counter label="Registered this session" value={counts?.registered} tone="good" testId="session-registered" />
+        <Counter label="Remaining this session" value={counts?.remaining} />
+        <Counter label="Registered today (all sessions)" value={counts?.registeredToday} />
+        <Counter label="My scans this session" value={scanCounts?.mine} testId="personal-scans" />
+        <Counter label="All scans this session" value={scanCounts?.all} testId="general-scans" />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
@@ -271,6 +296,23 @@ export function RegistrationPage() {
   )
 }
 
+/** CURRENT REGISTRATION - October 15 - 5:00 PM Registration */
+function CurrentSessionBanner({ session }: { session: DeskSession }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-brand-700 px-5 py-3 text-white shadow-sm" data-testid="current-session-banner">
+      <Clock className="size-6 shrink-0 text-white/80" aria-hidden />
+      <div className="min-w-0">
+        <p className="text-xs font-semibold uppercase tracking-wider text-white/75">Current registration</p>
+        <p className="text-xl font-bold leading-tight sm:text-2xl">
+          {session.dateLabel}
+          <span className="font-semibold text-white/90"> · {session.timeLabel ? `${session.timeLabel} Registration` : session.label}</span>
+        </p>
+      </div>
+      {session.timeLabel && <p className="ml-auto text-sm text-white/80">{session.label}</p>}
+    </div>
+  )
+}
+
 function Counter({ label, value, tone, testId }: { label: string; value: number | undefined; tone?: 'good'; testId?: string }) {
   return (
     <Card className="px-4 py-3 sm:px-5 sm:py-4" data-testid={testId}>
@@ -314,10 +356,21 @@ function ResultPanel({ result }: { result: ScanResult }) {
       {registered && company && <p className="text-xl font-semibold sm:text-2xl">{company}</p>}
       {registered && department && <p className="text-lg font-medium text-white/90 sm:text-xl">{department}</p>}
       {registered ? (
-        <p className="mt-2 rounded-full bg-white/20 px-4 py-1 text-sm font-bold uppercase tracking-wide">Minor &amp; Major draws: eligible</p>
+        <>
+          <p className="mt-2 text-base font-semibold sm:text-lg" data-testid="scan-session">Registered: {sessionWhen(data.registrationSession)}</p>
+          <p
+            className={cn(
+              'mt-1 rounded-full px-4 py-1 text-sm font-bold uppercase tracking-wide',
+              data.majorEligible ? 'bg-white text-emerald-700' : 'bg-white/20 text-white',
+            )}
+            data-testid="scan-major"
+          >
+            Major Randomizer: {data.majorEligible ? 'Eligible' : 'Not eligible'}
+          </p>
+        </>
       ) : (
         <p className="mt-2 text-base">
-          Already registered for Day {data.eventDay.dayNumber} at {formatTime(data.registeredAt)}
+          Already registered for {sessionWhen(data.registrationSession)} at {formatTime(data.registeredAt)}
           {data.registeredBy ? ` by ${data.registeredBy}` : ''}.
         </p>
       )}

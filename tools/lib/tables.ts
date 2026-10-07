@@ -4,7 +4,8 @@
 //   * rows ordered by id; columns in a fixed (alphabetical) order
 //   * NULL -> \N; "\", "|", LF, CR escaped (same scheme as the QR manifest)
 //   * DATETIME / timestamptz -> Asia/Manila wall time 'YYYY-MM-DD HH:MM:SS[.ffffff]'
-//   * DATE -> 'YYYY-MM-DD'; integers -> decimal text
+//   * DATE -> 'YYYY-MM-DD'; TIME -> 'HH:MM:SS'; integers -> decimal text
+//   * TINYINT(1) flags / boolean -> '1' or '0'
 //   * JSON -> parsed and re-serialised with sorted object keys (jsonb reorders keys)
 // Text is compared byte for byte (case and whitespace preserved).
 import { createHash } from 'node:crypto';
@@ -14,13 +15,13 @@ export const TIME_ZONE = 'Asia/Manila';
 
 /** Copy order: every table comes after the tables its foreign keys point to. */
 export const TABLES = [
-  'users', 'events', 'event_days', 'import_batches', 'attendees', 'attendee_qr_codes',
-  'registration_scans', 'scan_logs', 'minor_manual_entries', 'major_eligibility',
-  'major_entries', 'randomizer_draws', 'audit_logs', 'login_attempts',
+  'users', 'events', 'event_days', 'registration_sessions', 'import_batches', 'attendees', 'attendee_qr_codes',
+  'registration_scans', 'session_registrations', 'session_registration_changes', 'scan_logs',
+  'minor_manual_entries', 'major_eligibility', 'major_entries', 'randomizer_draws', 'audit_logs', 'login_attempts',
 ] as const;
 export type TableName = (typeof TABLES)[number];
 
-export type ColumnKind = 'int' | 'text' | 'datetime' | 'date' | 'json';
+export type ColumnKind = 'int' | 'bool' | 'text' | 'datetime' | 'date' | 'time' | 'json';
 export interface Column { name: string; kind: ColumnKind }
 
 const JSON_COLUMNS = new Set(['import_batches.column_mapping', 'import_batches.error_summary', 'attendees.extra_data',
@@ -29,13 +30,15 @@ const JSON_COLUMNS = new Set(['import_batches.column_mapping', 'import_batches.e
 /** Columns of a MySQL table (generated columns such as active_lock are skipped: PostgreSQL derives them). */
 export async function mysqlColumns(db: Db, table: string): Promise<Column[]> {
   const rows = await db.query(
-    `SELECT column_name AS name, data_type AS type FROM information_schema.columns
+    `SELECT column_name AS name, data_type AS type, column_type AS ctype FROM information_schema.columns
       WHERE table_schema = DATABASE() AND table_name = ? AND extra NOT LIKE '%GENERATED%' ORDER BY column_name`, [table]);
   return sortColumns(rows.map((r) => {
     const name = String(r.name);
     const type = String(r.type).toLowerCase();
     let kind: ColumnKind = 'text';
     if (JSON_COLUMNS.has(`${table}.${name}`) || type === 'json') kind = 'json';
+    else if (/^tinyint\(1\)/i.test(String(r.ctype))) kind = 'bool';
+    else if (type === 'time') kind = 'time';
     else if (/int$/.test(type) || type === 'decimal') kind = 'int';
     else if (type === 'datetime' || type === 'timestamp') kind = 'datetime';
     else if (type === 'date') kind = 'date';
@@ -50,6 +53,8 @@ export async function postgresColumns(db: Db, table: string): Promise<Column[]> 
   return sortColumns(rows.map((r) => {
     const type = String(r.type);
     const kind: ColumnKind = type === 'jsonb' || type === 'json' ? 'json'
+      : type === 'boolean' ? 'bool'
+      : type.startsWith('time without') ? 'time'
       : ['integer', 'bigint', 'smallint', 'numeric'].includes(type) ? 'int'
       : type.startsWith('timestamp') ? 'datetime'
       : type === 'date' ? 'date' : 'text';
@@ -73,6 +78,8 @@ export function selectCanonical(kind: 'mysql' | 'postgres', table: string, colum
     switch (c.kind) {
       case 'datetime': return `replace(to_char(${col} AT TIME ZONE '${TIME_ZONE}', 'YYYY-MM-DD HH24:MI:SS.US'), '.000000', '') AS ${col}`;
       case 'date': return `to_char(${col}, 'YYYY-MM-DD') AS ${col}`;
+      case 'bool': return `(${col})::int::text AS ${col}`;
+      case 'time': return `to_char(${col}, 'HH24:MI:SS') AS ${col}`;
       case 'json': return `${col}::text AS ${col}`;
       default: return `${col}::text AS ${col}`;
     }

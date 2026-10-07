@@ -9,6 +9,7 @@ use App\Core\HttpException;
 use App\Core\Request;
 use App\Models\Event;
 use App\Models\EventDay;
+use App\Models\RegistrationSession;
 
 /**
  * Event days (Phase 8). The system always works on the ACTIVE day of the
@@ -38,9 +39,13 @@ final class EventDayService
         $event = Event::findActive();
         $day = $event !== null ? EventDay::findActiveForEvent((int) $event['id']) : null;
 
+        $session = $day !== null ? RegistrationSession::currentForDay((int) $day['id']) : null;
+
         return [
             'event' => $event !== null ? ['id' => (int) $event['id'], 'name' => $event['name']] : null,
             'eventDay' => $day !== null ? EventDay::toPublic($day) : null,
+            // Phase 10: the current registration session of the current day.
+            'registrationSession' => $session !== null ? RegistrationSession::toDesk($session) : null,
         ];
     }
 
@@ -70,8 +75,11 @@ final class EventDayService
         $event = self::eventOrFail($eventId);
         $id = self::guardUnique(static function () use ($eventId, $data): int {
             EventDay::lockForEvent($eventId);
+            $dayId = EventDay::create($eventId, EventDay::nextDayNumber($eventId), $data['event_date'], $data['label'] ?? null, EventDay::STATUS_UPCOMING);
+            // Phase 10: every day starts with one default registration session.
+            RegistrationSessionService::createDefaultForDay($eventId, $dayId, $data['event_date']);
 
-            return EventDay::create($eventId, EventDay::nextDayNumber($eventId), $data['event_date'], $data['label'] ?? null, EventDay::STATUS_UPCOMING);
+            return $dayId;
         });
         $day = EventDay::find($id) ?? [];
 
@@ -87,7 +95,15 @@ final class EventDayService
     public static function update(Request $request, int $dayId, array $data): array
     {
         $before = self::dayOrFail($dayId);
-        EventDay::updateDetails($dayId, $data['event_date'], $data['label'] ?? null);
+        Database::transaction(static function () use ($dayId, $data, $before): void {
+            EventDay::updateDetails($dayId, $data['event_date'], $data['label'] ?? null);
+            // Sessions dated on the day's old date move with the day (Phase 10).
+            if ($before['event_date'] !== $data['event_date']) {
+                Database::connection()->prepare(
+                    'UPDATE registration_sessions SET session_date = :new_date WHERE event_day_id = :day_id AND session_date = :old_date'
+                )->execute(['new_date' => $data['event_date'], 'day_id' => $dayId, 'old_date' => $before['event_date']]);
+            }
+        });
         $after = self::dayOrFail($dayId);
 
         if ($before['event_date'] !== $after['event_date'] || $before['label'] !== $after['label']) {
@@ -153,7 +169,8 @@ final class EventDayService
     /** Creates Day 1 for a new event (inside the event-create transaction). */
     public static function createFirstDay(int $eventId, string $date, bool $active): void
     {
-        EventDay::create($eventId, 1, $date, null, $active ? EventDay::STATUS_ACTIVE : EventDay::STATUS_UPCOMING);
+        $dayId = EventDay::create($eventId, 1, $date, null, $active ? EventDay::STATUS_ACTIVE : EventDay::STATUS_UPCOMING);
+        RegistrationSessionService::createDefaultForDay($eventId, $dayId, $date);
     }
 
     /**

@@ -15,7 +15,8 @@ use App\Models\User;
  *
  * Preserved: every admin account (name, email/username, password, role,
  * status), the schema, schema_migrations and configuration.
- * Removed: events, event days, attendees, QR tokens, registrations, scan
+ * Removed: events, event days, registration sessions, attendees, QR tokens,
+ * registrations (day check-ins and session registrations + history), scan
  * logs, randomizer draws, manual raffle participants, Major eligibility
  * (incl. legacy imported rows), legacy major_entries, import batches,
  * audit logs, login attempts and every non-admin user (registration staff,
@@ -37,6 +38,8 @@ final class SystemResetService
      */
     private const DELETE_ORDER = [
         ['scan_logs', ''],
+        ['session_registration_changes', ''],
+        ['session_registrations', ''],
         ['randomizer_draws', ''],
         ['minor_manual_entries', ''],
         ['major_eligibility', ''],
@@ -45,6 +48,7 @@ final class SystemResetService
         ['attendee_qr_codes', ''],
         ['attendees', ''],
         ['import_batches', ''],
+        ['registration_sessions', ''],
         ['event_days', ''],
         ['audit_logs', ''],
         ['events', ''],

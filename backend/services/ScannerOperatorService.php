@@ -9,6 +9,7 @@ use App\Core\HttpException;
 use App\Core\Request;
 use App\Models\Event;
 use App\Models\EventDay;
+use App\Models\SessionRegistration;
 use App\Models\User;
 
 /**
@@ -35,14 +36,8 @@ final class ScannerOperatorService
         $event = Event::findActive();
         $day = $event !== null ? EventDay::findActiveForEvent((int) $event['id']) : null;
         if ($day !== null) {
-            $statement = Database::connection()->prepare(
-                'SELECT scanner_user_id, COUNT(*) AS total FROM registration_scans
-                 WHERE event_day_id = :day_id AND scanner_user_id IS NOT NULL GROUP BY scanner_user_id'
-            );
-            $statement->execute(['day_id' => (int) $day['id']]);
-            foreach ($statement->fetchAll() as $row) {
-                $today[(int) $row['scanner_user_id']] = (int) $row['total'];
-            }
+            // Phase 10: QR registrations in every session of the day.
+            $today = SessionRegistration::scansPerUserForDay((int) $day['id']);
         }
 
         return [

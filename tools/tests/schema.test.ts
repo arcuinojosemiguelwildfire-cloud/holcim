@@ -38,12 +38,12 @@ describe('PostgreSQL schema mirrors MySQL', { skip: skipBoth }, () => {
 
   test('same columns, nullability and types family in every table', async () => {
     for (const t of TABLES) {
-      const my = await myRows(`SELECT column_name AS c, is_nullable AS n, data_type AS d FROM information_schema.columns
+      const my = await myRows(`SELECT column_name AS c, is_nullable AS n, IF(column_type = 'tinyint(1)', 'boolean', data_type) AS d FROM information_schema.columns
         WHERE table_schema = DATABASE() AND table_name = '${t}' AND extra NOT LIKE '%GENERATED%'`);
       const pgc = (await p.query(`SELECT column_name AS c, is_nullable AS n, data_type AS d FROM information_schema.columns
         WHERE table_schema = 'public' AND table_name = $1`, [t])).rows;
-      const fam = (d: string): string => /int|numeric/.test(d) ? 'int' : /datetime|timestamp/.test(d) ? 'time' : d === 'date' ? 'date'
-        : d === 'jsonb' ? 'json' : 'text';
+      const fam = (d: string): string => d === 'boolean' ? 'bool' : /int|numeric/.test(d) ? 'int' : /datetime|timestamp/.test(d) ? 'datetime'
+        : d === 'date' ? 'date' : /^time/.test(d) ? 'time' : d === 'jsonb' ? 'json' : 'text';
       const norm = (rows: Record<string, unknown>[], json: string[]): string[] => rows.map((x) => {
         const c = String(x.c);
         return `${c}:${x.n}:${json.includes(c) ? 'json' : fam(String(x.d))}`;
@@ -96,6 +96,9 @@ describe('PostgreSQL schema mirrors MySQL', { skip: skipBoth }, () => {
       if (cols.includes('active_lock')) {
         // generated active_lock + UNIQUE -> partial unique index on status = 'active'
         found = pgi.find((g) => g.t === t && g.u && /WHERE \(status = 'active'::text\)/.test(g.def));
+      } else if (cols.includes('current_lock')) {
+        // generated current_lock + UNIQUE -> partial unique index WHERE is_current
+        found = pgi.find((g) => g.t === t && g.u && /WHERE is_current/.test(g.def));
       } else {
         found = pgi.find((g) => g.t === t && (!unique || g.u)
           && cols.every((c, n) => (g.cols.split(',')[n] === c) || new RegExp(`lower\\(\\(?${c}\\)?`).test(g.def))

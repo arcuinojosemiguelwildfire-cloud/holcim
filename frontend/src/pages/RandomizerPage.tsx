@@ -19,7 +19,7 @@ const COPY: Record<RandomizerType, { title: string; intro: string; history: stri
   },
   major: {
     title: 'Major Randomizer',
-    intro: 'Draws from attendees registered today who have not won the Major draw today.',
+    intro: 'Draws from attendees registered today in a registration session that counts for the Major draw (e.g. the 5:00 PM registration) who have not won the Major draw today.',
     history: 'Latest 10 Major draws for the current event day. A Major winner cannot win Major again today (unless the draw is voided) but stays in the Minor draw.',
   },
 }

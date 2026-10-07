@@ -1,0 +1,21 @@
+{
+  "description": "Holcim event registration sessions. Apply with: php backend/cli/configure-registration-sessions.php --file=database/registration-sessions/holcim-2026.json (dry run), then add --apply.",
+  "days": [
+    {
+      "date": "2026-10-14",
+      "sessions": [
+        { "label": "Oct 14 - 5:00 PM", "start_time": "17:00", "counts_for_major": true, "current": true,
+          "description": "Required registration for the Oct 14 Major Randomizer." }
+      ]
+    },
+    {
+      "date": "2026-10-15",
+      "sessions": [
+        { "label": "Oct 15 - 8:00 AM", "start_time": "08:00", "counts_for_major": false, "current": true,
+          "description": "Morning registration. Counts for the Minor Randomizer only." },
+        { "label": "Oct 15 - 5:00 PM", "start_time": "17:00", "counts_for_major": true,
+          "description": "Required registration for the Oct 15 Major Randomizer." }
+      ]
+    }
+  ]
+}

@@ -194,6 +194,16 @@ Every scan attempt per day: `event_id`, `event_day_id`, `user_id`, `attendee_id`
 - No schema change. Manually added attendees use the existing `attendees` columns (`import_batch_id` NULL) and `attendee_qr_codes`; the code is `MAX(ATT-####) + 1` for the event, generated while the event row is locked (`SELECT … FOR UPDATE`), the same as imports.
 - System Reset deletes, in one transaction and in this order: `scan_logs`, `randomizer_draws`, `minor_manual_entries`, `major_eligibility`, `major_entries`, `registration_scans`, `attendee_qr_codes`, `attendees`, `import_batches`, `event_days`, `audit_logs`, `events`, `login_attempts`, then `users WHERE role <> 'admin'`. Children go before parents, so no RESTRICT foreign key fails and no orphans remain (SET NULL references to users are already gone with their rows). `schema_migrations` and admin users are never touched. Uses DELETE (not TRUNCATE) so it can roll back.
 
+## Phase 10: registration sessions (migration 033)
+
+- **`registration_sessions`:** sessions per event day, with `counts_for_major` and one `is_current` session per day.
+- **`session_registrations`:** one row per attendee per session (UNIQUE attendee + session), status `active` or `removed`, source `scan` or `manual`.
+- **`session_registration_changes`:** append-only history.
+- **`scan_logs.registration_session_id`:** the session each scan was made in.
+- **`registration_scans`:** stays the day-level check-in log.
+
+Pools: Minor = registered in any session of the day; Major = registered in a session that counts for Major. Manual additions work as before. See docs/REGISTRATION_SESSIONS.md.
+
 ## Phase 9.4: Randomizer Reset (migration 032)
 
 - `randomizer_draws.reset_at` DATETIME NULL and `reset_by` INT UNSIGNED NULL (FK `users`, ON DELETE SET NULL) — additive; existing rows stay NULL.
