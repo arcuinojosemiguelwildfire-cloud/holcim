@@ -14,6 +14,7 @@ exports.
 | `supabase/migrations/20261005090000_holcim_foundation_helpers.sql` | `extensions` schema + pgcrypto, `app_time_zone()`, `set_updated_at()` trigger, `generate_qr_token()` |
 | `supabase/migrations/20261005090100_holcim_schema.sql` | the 14 application tables + `migration_import_runs` |
 | `supabase/migrations/20261005090200_holcim_security_baseline.sql` | RLS on every table, no policies, all privileges revoked from `anon`/`authenticated` |
+| `supabase/migrations/20261008090000_holcim_auth_roles_rls.sql` | Phase 2: Supabase Auth profiles, roles, RLS SELECT policies, auth RPCs (docs/SUPABASE_AUTH.md). Requires Supabase's `auth` schema. |
 | `supabase/migrations/20261007090000_holcim_registration_sessions.sql` | Phase 10 registration sessions (twin of MySQL 033), with the same RLS/revoke baseline. The import requires source migration 033. |
 | `tools/import-mysql-to-postgres.ts` | one-time MySQL → PostgreSQL copy with built-in verification |
 | `tools/verify-qr-migration.ts` | READ-ONLY QR verifier (MySQL or PostgreSQL); manifests compatible with `backend/cli/verify-qr-migration.php` |

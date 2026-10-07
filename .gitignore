@@ -53,3 +53,6 @@ database/qr-migration/
 # --- Supabase CLI local state ------------------------------------------------
 supabase/.temp/
 supabase/.branches/
+
+# --- Supabase Auth migration plans (identifiers; may contain password hashes) ---
+database/auth-plan*.json

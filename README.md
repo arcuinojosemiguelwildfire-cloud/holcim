@@ -623,6 +623,16 @@ An event day can have several registration sessions, for example Oct 14 5:00 PM,
 
 Admins can add, restore or remove an attendee's session registrations in Attendee details. Every change keeps its history. Run `php backend/cli/migrate.php`, then configure the event with `php backend/cli/configure-registration-sessions.php --file=database/registration-sessions/holcim-2026.json` (dry run; add `--apply`). Details: **docs/REGISTRATION_SESSIONS.md**. Test: `php backend/tests/registration-session-test.php <api-url> --write` (development database).
 
+## 9p. Supabase migration Phase 2: Auth, roles and RLS (not live)
+
+Built in parallel; the PHP login is unchanged.
+- **Supabase Auth** authenticates.
+- **`public.profiles`** is the source of truth for role and active status.
+- **Row Level Security** gives SELECT-only, role-based access. There are no client writes, and no client access to QR tokens or legacy credentials.
+- **Admin RPCs** manage roles and activation.
+
+`tools/plan-auth-users.ts` plans the account migration read-only. See **docs/SUPABASE_AUTH.md**.
+
 ## 10. Creating the first admin
 
 There are **no default or hard-coded credentials**. Create accounts from the

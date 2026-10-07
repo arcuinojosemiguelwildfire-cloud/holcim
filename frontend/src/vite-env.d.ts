@@ -9,6 +9,8 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL?: string
   /** Supabase anon / publishable key (public). NEVER the service-role key. */
   readonly VITE_SUPABASE_ANON_KEY?: string
+  /** Internal email domain for username (scanner) logins in Supabase Auth (public). */
+  readonly VITE_SUPABASE_USERNAME_EMAIL_DOMAIN?: string
 }
 
 interface ImportMeta {

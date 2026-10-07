@@ -46,11 +46,17 @@ export async function mysqlColumns(db: Db, table: string): Promise<Column[]> {
   }));
 }
 
+/**
+ * Columns that exist only in PostgreSQL (added by later Supabase phases, nullable, never
+ * filled from MySQL). The import neither copies nor fingerprints them.
+ */
+export const PG_ONLY_COLUMNS = new Set(['audit_logs.actor_id']);
+
 export async function postgresColumns(db: Db, table: string): Promise<Column[]> {
   const rows = await db.query(
     `SELECT column_name AS name, data_type AS type FROM information_schema.columns
       WHERE table_schema = 'public' AND table_name = $1 AND is_generated = 'NEVER' ORDER BY column_name`, [table]);
-  return sortColumns(rows.map((r) => {
+  return sortColumns(rows.filter((r) => !PG_ONLY_COLUMNS.has(`${table}.${String(r.name)}`)).map((r) => {
     const type = String(r.type);
     const kind: ColumnKind = type === 'jsonb' || type === 'json' ? 'json'
       : type === 'boolean' ? 'bool'

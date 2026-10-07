@@ -97,12 +97,20 @@ export async function createPgScratch(name: string, applyMigrations = true, befo
     // Supabase has these roles; create them locally so the grants are testable.
     await admin.query(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${role}') THEN CREATE ROLE ${role} NOLOGIN; END IF; END $$`);
   }
+  // As in Supabase: service_role bypasses RLS; PostgREST logs in as authenticator and
+  // switches to anon / authenticated / service_role per request.
+  await admin.query('ALTER ROLE service_role BYPASSRLS');
+  await admin.query(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticator') THEN
+    CREATE ROLE authenticator LOGIN NOINHERIT PASSWORD 'authenticator-test-only'; END IF; END $$`);
+  await admin.query('GRANT anon, authenticated, service_role TO authenticator');
   await admin.end();
   if (!applyMigrations) return;
   const c = await pgClient(name);
   // Supabase grants the API roles access to public by default; mimic that so the
   // security baseline migration is what removes it.
   await c.query('GRANT USAGE ON SCHEMA public TO anon, authenticated; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO anon, authenticated');
+  // Supabase-provided pieces (auth schema, auth.uid()) - test stand-in only.
+  await c.query(readFileSync(join(TOOLS, 'tests', 'sql', 'supabase-auth-shim.sql'), 'utf8'));
   const dir = join(REPO, 'supabase', 'migrations');
   for (const f of readdirSync(dir).filter((x) => x.endsWith('.sql')).sort()) {
     if (before !== undefined && f >= before) break; // stop before this migration file

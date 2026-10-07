@@ -6,7 +6,7 @@ import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import type pg from 'pg';
 import type mysql from 'mysql2/promise';
-import { TABLES } from '../lib/tables.ts';
+import { PG_ONLY_COLUMNS, TABLES } from '../lib/tables.ts';
 import { createMysqlScratch, createPgScratch, dropMysql, dropPg, mysqlAdmin, pgClient, skipBoth } from './helpers.ts';
 
 const MY = 'holcim_migtest_schema_my';
@@ -30,10 +30,10 @@ describe('PostgreSQL schema mirrors MySQL', { skip: skipBoth }, () => {
 
   const myRows = async (sql: string): Promise<Record<string, unknown>[]> => (await m.query(sql))[0] as Record<string, unknown>[];
 
-  test('all application tables exist (plus migration_import_runs), schema_migrations is not copied', async () => {
+  test('all application tables exist (plus migration_import_runs and the Phase 2 profiles), schema_migrations is not copied', async () => {
     const r = await p.query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'");
     const names = r.rows.map((x) => x.table_name).sort();
-    assert.deepEqual(names, [...TABLES, 'migration_import_runs'].sort());
+    assert.deepEqual(names, [...TABLES, 'migration_import_runs', 'profiles'].sort());
   });
 
   test('same columns, nullability and types family in every table', async () => {
@@ -41,7 +41,7 @@ describe('PostgreSQL schema mirrors MySQL', { skip: skipBoth }, () => {
       const my = await myRows(`SELECT column_name AS c, is_nullable AS n, IF(column_type = 'tinyint(1)', 'boolean', data_type) AS d FROM information_schema.columns
         WHERE table_schema = DATABASE() AND table_name = '${t}' AND extra NOT LIKE '%GENERATED%'`);
       const pgc = (await p.query(`SELECT column_name AS c, is_nullable AS n, data_type AS d FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = $1`, [t])).rows;
+        WHERE table_schema = 'public' AND table_name = $1`, [t])).rows.filter((x) => !PG_ONLY_COLUMNS.has(`${t}.${x.c}`));
       const fam = (d: string): string => d === 'boolean' ? 'bool' : /int|numeric/.test(d) ? 'int' : /datetime|timestamp/.test(d) ? 'datetime'
         : d === 'date' ? 'date' : /^time/.test(d) ? 'time' : d === 'jsonb' ? 'json' : 'text';
       const norm = (rows: Record<string, unknown>[], json: string[]): string[] => rows.map((x) => {
@@ -79,7 +79,9 @@ describe('PostgreSQL schema mirrors MySQL', { skip: skipBoth }, () => {
       assert.equal(pgDel, String(f.del), `ON DELETE of ${k}`);
       assert.equal(pgUpd, String(f.upd), `ON UPDATE of ${k}`);
     }
-    assert.equal(pgfk.length, my.length, 'no extra foreign keys');
+    // PostgreSQL-only (Supabase phases): profiles -> auth.users / users, audit_logs.actor_id -> profiles.
+    const mirrored = pgfk.filter((f) => f.t !== 'profiles' && !(f.t === 'audit_logs' && f.cols === 'actor_id'));
+    assert.equal(mirrored.length, my.length, 'no extra foreign keys');
   });
 
   test('every MySQL unique key and index has a PostgreSQL equivalent', async () => {
@@ -141,14 +143,24 @@ describe('PostgreSQL schema mirrors MySQL', { skip: skipBoth }, () => {
     for (const r of my) assert.ok(pgt.includes(r.t), `trigger on ${r.t}`);
   });
 
-  test('security baseline: RLS on every table, no privileges for anon/authenticated', async () => {
+  test('security baseline: RLS on every table; anon has nothing; authenticated only SELECT through SELECT policies', async () => {
     const rls = await p.query("SELECT relname, relrowsecurity FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind = 'r'");
     for (const r of rls.rows) assert.equal(r.relrowsecurity, true, `RLS on ${r.relname}`);
-    const pol = await p.query("SELECT count(*)::int AS n FROM pg_policies WHERE schemaname = 'public'");
-    assert.equal(pol.rows[0].n, 0, 'Phase 1 has no policies (deny all)');
+    const pol = await p.query("SELECT tablename, cmd, roles::text AS roles FROM pg_policies WHERE schemaname = 'public'");
+    assert.ok(pol.rows.length >= 15);
+    for (const r of pol.rows) {
+      assert.equal(r.cmd, 'SELECT', `only SELECT policies (${r.tablename})`);
+      assert.equal(r.roles, '{authenticated}', `policies apply to authenticated only (${r.tablename})`);
+    }
+    const anon = await p.query("SELECT count(*)::int AS n FROM information_schema.role_table_grants WHERE grantee = 'anon' AND table_schema = 'public'");
+    assert.equal(anon.rows[0].n, 0, 'anon has no table privileges');
+    const auth = await p.query("SELECT DISTINCT privilege_type FROM information_schema.role_table_grants WHERE grantee = 'authenticated' AND table_schema = 'public'");
+    assert.deepEqual(auth.rows.map((r) => r.privilege_type), ['SELECT'], 'authenticated may only SELECT');
+    for (const t of ['users', 'login_attempts', 'attendee_qr_codes']) {
+      const g = await p.query("SELECT has_table_privilege('authenticated', $1, 'SELECT') AS x", [`public.${t}`]);
+      assert.equal(g.rows[0].x, false, `no client access to ${t}`);
+    }
     for (const role of ['anon', 'authenticated']) {
-      const g = await p.query(`SELECT count(*)::int AS n FROM information_schema.role_table_grants WHERE grantee = $1 AND table_schema = 'public'`, [role]);
-      assert.equal(g.rows[0].n, 0, `${role} has no table privileges`);
       const f = await p.query(`SELECT has_function_privilege($1, 'public.generate_qr_token()', 'execute') AS x`, [role]);
       assert.equal(f.rows[0].x, false, `${role} cannot call generate_qr_token()`);
     }
