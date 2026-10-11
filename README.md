@@ -535,6 +535,16 @@ Minor eligible  +  Major eligible
   - Layout `Cluster | Name 1 | Attendee 1 | Attendee 2 | … | Attendee N` (any number of Attendee columns) is detected from the headers. **`Name 1` is the Company, never an attendee.** Every non-empty `Attendee X` cell becomes one attendee with that row's Company and Cluster. Blank Attendee cells are skipped; `Attendee 1` may be blank while later ones are filled.
   - The upload is shown as Full Name / Company / Cluster rows (with the original sheet row number) and then goes through the normal mapping → validation → duplicate check → import steps.
   - Duplicates: same name + company + cluster (case/space-insensitive) is the same person; the same name in a different company or cluster is a different person. Re-importing the file skips everyone already imported.
+- **Standard guest sheet** (migration 034; same Attendees › Import flow, `.xlsx` or `.csv`):
+  - Columns `GUEST NO. | SURNAME | FIRST NAME | MIDDLE NAME | INTERNAL/EXTERNAL | DESIGNATION / COMPANY` are recognised automatically (case, spacing and punctuation do not matter; aliases such as `Guest Number`, `Last Name`, `Given Name`, `Middle Initial`, `Internal / External` also work).
+  - **Full Name** is built as FIRST + MIDDLE + SURNAME (trimmed, extra spaces collapsed, a blank middle name skipped): `Gerry | sample | Casiano` → `Gerry sample Casiano`. Each row needs a first name and a surname; the combined name must be ≤ 200 characters. No FULL NAME column is needed.
+  - **Precedence:** when the file also has a Full Name column, that column is used and the name-part columns are ignored for the name (kept as extra information), so a name is never combined twice.
+  - **GUEST NO.** → Employee ID / external identifier: kept as text (leading zeros kept, also for Excel numbers formatted `000`), unique per event, duplicates detected against existing attendees and within the file. It is never the attendee code or QR token; blank is allowed.
+  - **INTERNAL/EXTERNAL** → `attendees.attendee_type` (`internal` / `external`, any case; blank allowed; anything else makes the row invalid). Shown in the import preview, attendee details and as the last column of `Day N Attendees.xlsx`.
+  - **DESIGNATION / COMPANY** → Company.
+  - **Template:** Attendees › Import › **Download guest template** (`GET /api/attendees/import/template.xlsx`, admin) gives exactly these six columns — no Email — with the DESIGNATION / COMPANY column highlighted red (header and data cells) and GUEST NO. formatted as text. The example row is on a second "How to fill" sheet that the importer does not read.
+  - **Which sheet is read:** a sheet named `External Attendees` if present, otherwise the **first visible** sheet. Hidden sheets are never read; the upload screen lists the sheets that were not read and the spreadsheet rows that were (e.g. "361 data rows (rows 2–362)"). Fully blank and formatted-but-empty rows are skipped and never count toward the 5,000-row limit.
+  - Files with exactly these columns are shown as a dedicated "standard guest sheet": only the six fields are mapped (Email, Cluster and Full Name are hidden; "Show all fields" reveals them). Invalid rows show the spreadsheet row, Guest No. and a reason naming the column (names and email addresses are not echoed in reasons).
 - **Excel lists** (Reports › Excel lists, admin):
   - `Day N Attendees.xlsx` (`GET /api/reports/day-attendees.xlsx?day_id=`): one file per day of the active event (Day 1, Day 2, … — not limited to two). Same attendee list every day (all active attendees) with that day's registration status. Columns: Attendee Code, Full Name, Company, Cluster, Employee ID, Email, Registration Status, Registered At.
   - `Winners.xlsx` (`GET /api/reports/winners.xlsx?scope=all|day`): one sheet, columns Event Day, Randomizer (Minor/Major), Attendee Code, Full Name, Company, Cluster, Drawn At, Drawn By, Status (VALID/VOID), Voided At, Voided By, Void Reason.
@@ -632,6 +642,27 @@ Built in parallel; the PHP login is unchanged.
 - **Admin RPCs** manage roles and activation.
 
 `tools/plan-auth-users.ts` plans the account migration read-only. See **docs/SUPABASE_AUTH.md**.
+
+## 9q. Randomizer background
+
+**Settings › Randomizer Background** (admin) changes the background image of the Minor and Major Randomizer screens, including fullscreen. Nothing else on the screen changes: layout, animations, draws, eligibility and winners are untouched.
+
+- **Upload:** JPG, JPEG, PNG or WebP, up to **10 MB**, up to 12,000 px per side. The page shows the file name and a preview before saving. The server checks the real file content (not just the name): type, extension match, complete file, and that the PHP GD extension can decode it without errors. Scripts, SVG, GIF, damaged or truncated images are refused. A failed upload keeps the current background.
+- **Display:** `background-size: cover`, `background-position: center` (no distortion) with a dark overlay so names stay readable. If the image cannot be loaded, the default background is shown.
+- **Restore Default Background** (with confirmation) returns to the built-in background and removes the uploaded image file. Other files and settings are not touched.
+- **Permissions:** only admins can upload or restore (`POST` / `DELETE /api/settings/randomizer-background`, CSRF-protected). Admins and event operators can view it (`GET /api/randomizers/background`, image at `GET /api/randomizers/background/image`). Changes are written to the audit log.
+- **Storage:** images in `backend/storage/randomizer-backgrounds/` with generated names (`bg-<random>.jpg|png|webp`); the active one is recorded in `backend/storage/settings.json` (file name and size only; no database change). The folder is never served or executed directly — `backend/` routes every request to `index.php` and `backend/storage/.htaccess` denies access — the API streams the image after the permission check. Set `STORAGE_PATH` in `backend/.env` to use another folder. The folder contents are git-ignored.
+
+**One-time setup (XAMPP on macOS):** Apache usually runs as the user `daemon`, so it must be able to write the storage folder and read the app files:
+
+```bash
+cd /Applications/XAMPP/xamppfiles/htdocs/Holcim
+mkdir -p backend/storage
+chmod 777 backend/storage            # or: sudo chown daemon backend/storage && chmod 755 backend/storage
+php backend/cli/check-readiness.php   # "PHP extension gd" should be OK
+```
+
+Upload limits: PHP's `upload_max_filesize` must be at least `10M` and `post_max_size` a little larger (e.g. `12M`) in `/Applications/XAMPP/xamppfiles/etc/php.ini` (XAMPP's defaults are usually higher); restart Apache after changing them. If the folder is not writable the page shows "The server cannot save files…" and nothing changes.
 
 ## 10. Creating the first admin
 

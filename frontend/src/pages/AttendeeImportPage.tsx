@@ -1,14 +1,16 @@
 import { useRef, useState, type ChangeEvent, type ReactNode } from 'react'
-import { ArrowLeft, CircleCheck, FileSpreadsheet, FileUp, Upload } from 'lucide-react'
+import { ArrowLeft, CircleCheck, Download, FileSpreadsheet, FileUp, Upload } from 'lucide-react'
 import { Alert } from '../components/ui/Alert'
 import { Badge } from '../components/ui/Badge'
 import { Button, ButtonLink } from '../components/ui/Button'
 import { Card, CardHeader } from '../components/ui/Card'
 import { PageHeader } from '../components/ui/PageHeader'
-import { ApiError, errorMessage } from '../services/apiClient'
+import { API_BASE_URL, ApiError, errorMessage } from '../services/apiClient'
 import { attendeeService } from '../services/attendeeService'
 import {
+  GUEST_LIST_FIELDS,
   IMPORT_FIELDS,
+  NAME_PART_FIELDS,
   type ColumnMapping,
   type DuplicateRow,
   type ImportField,
@@ -23,15 +25,38 @@ const MAX_FILE_BYTES = 5 * 1024 * 1024
 const PREVIEW_ROWS = 8
 
 const FIELD_INFO: Record<ImportField, { label: string; required: boolean; hint: string }> = {
-  full_name: { label: 'Full Name', required: true, hint: 'Required' },
-  company: { label: 'Company', required: false, hint: 'Optional ("Name 1" in External Attendees)' },
+  full_name: { label: 'Full Name', required: false, hint: 'Required, or First Name + Surname' },
+  first_name: { label: 'First Name', required: false, hint: 'Used when there is no Full Name column' },
+  middle_name: { label: 'Middle Name', required: false, hint: 'Optional name part' },
+  surname: { label: 'Surname', required: false, hint: 'Used when there is no Full Name column' },
+  company: { label: 'Company', required: false, hint: 'Optional ("Name 1" / "Designation / Company")' },
+  attendee_type: { label: 'Internal/External', required: false, hint: 'Optional: INTERNAL or EXTERNAL' },
   department: { label: 'Cluster', required: false, hint: 'Optional (location / region)' },
   email: { label: 'Email', required: false, hint: 'Optional' },
-  external_identifier: { label: 'Employee ID / External ID', required: false, hint: 'Optional' },
+  external_identifier: { label: 'Guest No. / Employee ID', required: false, hint: 'Optional, unique in the event' },
+}
+
+/** Hints on the six-column guest sheet, where the name parts are the name. */
+const GUEST_HINTS: Partial<Record<ImportField, string>> = {
+  first_name: 'Required',
+  surname: 'Required',
+  middle_name: 'Optional (may be blank)',
+}
+
+const EMPTY_MAPPING = Object.fromEntries(IMPORT_FIELDS.map((field) => [field, null])) as ColumnMapping
+
+const isNamePart = (field: ImportField): boolean => (NAME_PART_FIELDS as readonly string[]).includes(field)
+
+/** Same rule as the server: FIRST + MIDDLE + SURNAME, trimmed, empty parts skipped. */
+function combineName(cells: string[], mapping: ColumnMapping): string {
+  return NAME_PART_FIELDS.map((field) => {
+    const index = mapping[field]
+    return index === null ? '' : (cells[index] ?? '').replace(/\s+/g, ' ').trim()
+  }).filter((part) => part !== '').join(' ')
 }
 
 const MATCH_LABELS: Record<DuplicateRow['matchedBy'], string> = {
-  external_identifier: 'same Employee ID / External ID',
+  external_identifier: 'same Guest No. / Employee ID',
   email: 'same email',
   name_department: 'same name, company and cluster',
 }
@@ -51,6 +76,7 @@ export function AttendeeImportPage() {
   const [preview, setPreview] = useState<ImportPreview | null>(null)
   const [result, setResult] = useState<ImportResult | null>(null)
   const [busy, setBusy] = useState(false)
+  const [showAllFields, setShowAllFields] = useState(false)
   const [error, setError] = useState<ApiError | string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
@@ -61,6 +87,7 @@ export function AttendeeImportPage() {
     setPreview(null)
     setResult(null)
     setError(null)
+    setShowAllFields(false)
     if (fileInput.current) fileInput.current.value = ''
   }
 
@@ -95,7 +122,7 @@ export function AttendeeImportPage() {
     void run(async () => {
       const data = await attendeeService.parseFile(file)
       setParsed(data)
-      setMapping(data.suggestedMapping)
+      setMapping({ ...EMPTY_MAPPING, ...data.suggestedMapping })
       setStep('map')
     })
   }
@@ -116,6 +143,15 @@ export function AttendeeImportPage() {
       setResult(await attendeeService.commit(payload()))
       setStep('done')
     })
+
+  const guestList = parsed?.layout === 'guest_list'
+  // The six-column guest sheet shows only its own six fields (no Email / Cluster / Full Name).
+  const visibleFields: readonly ImportField[] = guestList && !showAllFields ? GUEST_LIST_FIELDS : IMPORT_FIELDS
+  const fullNameMapped = mapping?.full_name != null
+  const nameFromParts = !!mapping && !fullNameMapped && mapping.first_name !== null && mapping.surname !== null
+  const nameSample = nameFromParts && parsed && mapping
+    ? parsed.rows.map((row) => combineName(row.cells, mapping)).find((name) => name !== '')
+    : undefined
 
   const apiError = error instanceof ApiError ? error : null
   const fieldErrors = apiError?.fieldErrors ?? {}
@@ -170,15 +206,27 @@ export function AttendeeImportPage() {
               them to attendee fields in the next step.
             </p>
             <input ref={fileInput} id="attendee-file" type="file" accept=".csv,.xlsx" className="sr-only" onChange={handleFile} disabled={busy} />
-            <label
-              htmlFor="attendee-file"
-              className={cn(
-                'mt-6 inline-flex h-11 cursor-pointer items-center gap-2 rounded-lg bg-brand-700 px-5 text-sm font-medium text-white shadow-sm hover:bg-brand-800',
-                busy && 'pointer-events-none opacity-70',
-              )}
-            >
-              <Upload className="size-4" aria-hidden /> {busy ? 'Reading file…' : 'Choose Excel / CSV'}
-            </label>
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+              <label
+                htmlFor="attendee-file"
+                className={cn(
+                  'inline-flex h-11 cursor-pointer items-center gap-2 rounded-lg bg-brand-700 px-5 text-sm font-medium text-white shadow-sm hover:bg-brand-800',
+                  busy && 'pointer-events-none opacity-70',
+                )}
+              >
+                <Upload className="size-4" aria-hidden /> {busy ? 'Reading file…' : 'Choose Excel / CSV'}
+              </label>
+              <a
+                href={`${API_BASE_URL}/attendees/import/template.xlsx`}
+                className="inline-flex h-11 items-center gap-2 rounded-lg bg-white px-5 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50"
+              >
+                <Download className="size-4" aria-hidden /> Download guest template
+              </a>
+            </div>
+            <p className="mt-3 max-w-lg text-xs text-slate-500">
+              Template columns: GUEST NO. · SURNAME · FIRST NAME · MIDDLE NAME · INTERNAL/EXTERNAL · DESIGNATION / COMPANY (in red).
+              Hidden sheets are never read.
+            </p>
           </div>
         </Card>
       )}
@@ -191,7 +239,7 @@ export function AttendeeImportPage() {
               description={
                 parsed.layout === 'external_attendees'
                   ? `Sheet "${parsed.sheet ?? 'External Attendees'}" · ${formatNumber(parsed.sourceRows ?? 0)} company rows · ${parsed.attendeeColumns ?? 0} Attendee columns → ${formatNumber(parsed.totalRows)} attendees (Name 1 = Company, Cluster = location; Name 1 is not an attendee)`
-                  : `${parsed.fileType.toUpperCase()}${parsed.sheet ? ` · sheet "${parsed.sheet}"` : ''} · ${formatNumber(parsed.totalRows)} data rows · ${parsed.headers.length} columns`
+                  : `${parsed.fileType.toUpperCase()}${parsed.sheet ? ` · sheet "${parsed.sheet}"` : ''} · ${formatNumber(parsed.totalRows)} data rows${rowRange(parsed)} · ${parsed.headers.length} columns${guestList ? ' · standard guest sheet' : ''}`
               }
               actions={<Button variant="secondary" size="sm" onClick={reset}>Choose a different file</Button>}
             />
@@ -203,15 +251,25 @@ export function AttendeeImportPage() {
                 ))}
               </div>
             </div>
+            {(parsed.otherSheets?.length ?? 0) > 0 && (
+              <div className="px-5 pb-4">
+                <Alert tone="info" title={`Only sheet "${parsed.sheet ?? ''}" was read`}>
+                  {formatNumber(parsed.totalRows)} non-empty rows were found below its header row. This workbook also has{' '}
+                  {sheetList(parsed.otherSheets ?? [])}, which {parsed.otherSheets?.length === 1 ? 'was' : 'were'} not read. If you expected
+                  more rows, move them to the first visible sheet (or make that sheet the only visible one) and upload again.
+                </Alert>
+              </div>
+            )}
             <PreviewTable parsed={parsed} />
           </Card>
 
           <Card>
             <CardHeader title="Map columns" description="Choose which column in the file holds each attendee field. Suggestions were made from the column names. Change any that are wrong." />
             <div className="grid gap-5 p-5 sm:grid-cols-2">
-              {IMPORT_FIELDS.map((field) => {
+              {visibleFields.map((field) => {
                 const info = FIELD_INFO[field]
-                const index = mapping[field]
+                const ignored = fullNameMapped && isNamePart(field)
+                const index = ignored ? null : mapping[field]
                 const sample = index === null ? null : parsed.rows.find((row) => (row.cells[index] ?? '') !== '')?.cells[index]
                 return (
                   <div key={field}>
@@ -220,18 +278,19 @@ export function AttendeeImportPage() {
                         {info.label}
                         {info.required && <span className="ml-0.5 text-red-500" aria-hidden>*</span>}
                       </span>
-                      <span className="text-xs font-normal text-slate-400">{info.hint}</span>
+                      <span className="text-xs font-normal text-slate-400">{guestList && GUEST_HINTS[field] ? GUEST_HINTS[field] : info.hint}</span>
                     </label>
                     <select
                       id={`map-${field}`}
                       value={index ?? ''}
+                      disabled={ignored}
                       onChange={(e) => setMapping({ ...mapping, [field]: e.target.value === '' ? null : Number(e.target.value) })}
                       className={cn(
-                        'h-10 w-full rounded-lg border-0 bg-white py-0 pl-3 pr-8 text-sm shadow-sm ring-1 ring-inset focus:ring-2 focus:ring-brand-600',
+                        'h-10 w-full rounded-lg border-0 bg-white py-0 pl-3 pr-8 text-sm shadow-sm ring-1 ring-inset focus:ring-2 focus:ring-brand-600 disabled:bg-slate-50 disabled:text-slate-400',
                         fieldErrors[field] ? 'ring-red-400' : 'ring-slate-300',
                       )}
                     >
-                      <option value="">{info.required ? 'Select a column…' : '— Not in this file —'}</option>
+                      <option value="">{ignored ? '— Not used (Full Name is mapped) —' : field === 'full_name' ? '— None: build from name parts —' : '— Not in this file —'}</option>
                       {parsed.headers.map((header, i) => (
                         <option key={header} value={i}>
                           {header}
@@ -240,6 +299,8 @@ export function AttendeeImportPage() {
                     </select>
                     {fieldErrors[field] ? (
                       <p className="mt-1.5 text-sm text-red-600">{fieldErrors[field][0]}</p>
+                    ) : field === 'full_name' && nameFromParts ? (
+                      <p className="mt-1.5 truncate text-sm text-slate-500">Built from First + Middle + Surname{nameSample ? `, e.g. ${nameSample}` : ''}</p>
                     ) : sample ? (
                       <p className="mt-1.5 truncate text-sm text-slate-500">e.g. {sample}</p>
                     ) : null}
@@ -248,8 +309,18 @@ export function AttendeeImportPage() {
               })}
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4">
-              <p className="text-sm text-slate-500">Columns that are not mapped are kept with each attendee as extra information.</p>
-              <Button onClick={validate} loading={busy} disabled={mapping.full_name === null}>
+              <p className="text-sm text-slate-500">
+                {guestList
+                  ? 'Standard guest sheet: Full Name = First + Middle + Surname (Middle Name may be blank). No Email column is needed.'
+                  : 'A mapped Full Name column is used as is; otherwise Full Name is built from First + Middle + Surname.'}{' '}
+                Columns that are not mapped are kept with each attendee as extra information.
+                {guestList && (
+                  <button type="button" className="ml-1 font-medium text-brand-700 hover:underline" onClick={() => setShowAllFields(!showAllFields)}>
+                    {showAllFields ? 'Show only the guest-sheet fields' : 'Show all fields'}
+                  </button>
+                )}
+              </p>
+              <Button onClick={validate} loading={busy} disabled={!fullNameMapped && !nameFromParts}>
                 Validate and check duplicates
               </Button>
             </div>
@@ -260,6 +331,7 @@ export function AttendeeImportPage() {
       {step === 'review' && preview && parsed && (
         <ReviewStep
           preview={preview}
+          guestList={guestList}
           filename={parsed.filename}
           busy={busy}
           onBack={() => setStep('map')}
@@ -302,6 +374,17 @@ export function AttendeeImportPage() {
   )
 }
 
+function rowRange(parsed: ParsedFile): string {
+  return parsed.firstRowNumber != null && parsed.lastRowNumber != null
+    ? ` (spreadsheet rows ${parsed.firstRowNumber}–${parsed.lastRowNumber})`
+    : ''
+}
+
+function sheetList(sheets: Array<{ name: string; hidden: boolean }>): string {
+  const names = sheets.slice(0, 6).map((s) => `"${s.name}"${s.hidden ? ' (hidden)' : ''}`)
+  return `${sheets.length} other sheet${sheets.length === 1 ? '' : 's'}: ${names.join(', ')}${sheets.length > 6 ? ', …' : ''}`
+}
+
 function PreviewTable({ parsed }: { parsed: ParsedFile }) {
   return (
     <div className="border-t border-slate-200">
@@ -336,6 +419,8 @@ function PreviewTable({ parsed }: { parsed: ParsedFile }) {
 
 interface ReviewStepProps {
   preview: ImportPreview
+  /** Six-column guest sheet: no Cluster / Email columns. */
+  guestList: boolean
   filename: string
   busy: boolean
   onBack: () => void
@@ -343,20 +428,25 @@ interface ReviewStepProps {
   onImport: () => void
 }
 
-function ReviewStep({ preview, filename, busy, onBack, onCancel, onImport }: ReviewStepProps) {
+function ReviewStep({ preview, guestList, filename, busy, onBack, onCancel, onImport }: ReviewStepProps) {
   const { summary, invalid, duplicates, newPreview } = preview
+  const reconciles = summary.valid + summary.invalid + summary.duplicates === summary.total
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader title="Import preview" description={filename} />
         <div className="grid grid-cols-2 gap-px bg-slate-200 sm:grid-cols-4">
-          <SummaryTile label="Total rows" value={summary.total} />
+          <SummaryTile label="Total rows read" value={summary.total} />
           <SummaryTile label="Valid (new)" value={summary.valid} tone="good" />
           <SummaryTile label="Invalid" value={summary.invalid} tone={summary.invalid > 0 ? 'bad' : undefined} />
           <SummaryTile label="Duplicates" value={summary.duplicates} tone={summary.duplicates > 0 ? 'warn' : undefined} />
         </div>
         <div className="space-y-2 px-5 py-4 text-sm text-slate-600">
+          <p className={cn(!reconciles && 'font-medium text-red-700')}>
+            {formatNumber(summary.total)} rows read = {formatNumber(summary.valid)} valid new + {formatNumber(summary.invalid)} invalid + {formatNumber(summary.duplicates)} duplicate
+            {!reconciles && ' — these do not add up; do not import, and report this file.'}
+          </p>
           <p><b className="text-slate-900">What will happen:</b> {formatNumber(summary.valid)} new attendee{summary.valid === 1 ? '' : 's'} will be created, each with a new attendee code.</p>
           {summary.duplicates > 0 && (
             <p>
@@ -380,15 +470,16 @@ function ReviewStep({ preview, filename, busy, onBack, onCancel, onImport }: Rev
 
       {invalid.length > 0 && (
         <RowSection title={`Invalid rows (${formatNumber(invalid.length)})`} description="These rows will not be imported.">
-          <thead><tr><Th>Row</Th><Th>Full name</Th><Th>Company</Th><Th>Cluster</Th><Th>Email</Th><Th>Reason</Th></tr></thead>
+          <thead><tr><Th>Row</Th><Th>Guest No.</Th><Th>Full name</Th><Th>Internal/External</Th><Th>Company</Th>{!guestList && <><Th>Cluster</Th><Th>Email</Th></>}<Th>Reason</Th></tr></thead>
           <tbody className="divide-y divide-slate-100">
             {invalid.map((row, index) => (
               <tr key={`${row.rowNumber}-${index}`}>
                 <Td mono>{row.rowNumber}</Td>
+                <Td>{row.externalIdentifier || '—'}</Td>
                 <Td>{row.fullName || <Empty />}</Td>
-                <Td>{row.company || <Empty />}</Td>
-                <Td>{row.department || <Empty />}</Td>
-                <Td>{row.email || '—'}</Td>
+                <Td>{row.attendeeType || '—'}</Td>
+                <Td>{row.company || (guestList ? '—' : <Empty />)}</Td>
+                {!guestList && <><Td>{row.department || <Empty />}</Td><Td>{row.email || '—'}</Td></>}
                 <td className="px-5 py-2 text-red-700">{row.reasons.join(' ')}</td>
               </tr>
             ))}
@@ -398,14 +489,19 @@ function ReviewStep({ preview, filename, busy, onBack, onCancel, onImport }: Rev
 
       {duplicates.length > 0 && (
         <RowSection title={`Duplicate candidates (${formatNumber(duplicates.length)})`} description="These rows will be skipped.">
-          <thead><tr><Th>Row</Th><Th>Full name</Th><Th>Company</Th><Th>Cluster</Th><Th>Matches</Th><Th>Because of</Th></tr></thead>
+          <thead><tr><Th>Row</Th><Th>Guest No.</Th><Th>Full name</Th><Th>Company</Th>{!guestList && <Th>Cluster</Th>}<Th>Matches</Th><Th>Because of</Th></tr></thead>
           <tbody className="divide-y divide-slate-100">
             {duplicates.map((row, index) => (
               <tr key={`${row.rowNumber}-${index}`}>
                 <Td mono>{row.rowNumber}</Td>
+                <Td>
+                  {row.externalIdentifier
+                    ? <span className={cn(row.matchedBy === 'external_identifier' && 'font-semibold text-amber-800')}>{row.externalIdentifier}</span>
+                    : '—'}
+                </Td>
                 <Td>{row.fullName}</Td>
-                <Td>{row.company || <Empty />}</Td>
-                <Td>{row.department || <Empty />}</Td>
+                <Td>{row.company || (guestList ? '—' : <Empty />)}</Td>
+                {!guestList && <Td>{row.department || <Empty />}</Td>}
                 <Td>
                   {row.matches.type === 'existing' ? (
                     <>
@@ -428,16 +524,16 @@ function ReviewStep({ preview, filename, busy, onBack, onCancel, onImport }: Rev
           title={`New attendees (${formatNumber(summary.valid)})`}
           description={summary.valid > newPreview.length ? `Showing the first ${newPreview.length}.` : undefined}
         >
-          <thead><tr><Th>Row</Th><Th>Full name</Th><Th>Company</Th><Th>Cluster</Th><Th>Email</Th><Th>External ID</Th></tr></thead>
+          <thead><tr><Th>Row</Th><Th>Guest No.</Th><Th>Full name</Th><Th>Internal/External</Th><Th>Company</Th>{!guestList && <><Th>Cluster</Th><Th>Email</Th></>}</tr></thead>
           <tbody className="divide-y divide-slate-100">
             {newPreview.map((row, index) => (
               <tr key={`${row.rowNumber}-${index}`}>
                 <Td mono>{row.rowNumber}</Td>
-                <Td>{row.fullName}</Td>
-                <Td>{row.company || <Empty />}</Td>
-                <Td>{row.department || <Empty />}</Td>
-                <Td>{row.email ?? '—'}</Td>
                 <Td>{row.externalIdentifier ?? '—'}</Td>
+                <Td>{row.fullName}</Td>
+                <Td>{row.attendeeType ?? '—'}</Td>
+                <Td>{row.company || (guestList ? '—' : <Empty />)}</Td>
+                {!guestList && <><Td>{row.department || <Empty />}</Td><Td>{row.email ?? '—'}</Td></>}
               </tr>
             ))}
           </tbody>

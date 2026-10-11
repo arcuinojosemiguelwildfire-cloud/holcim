@@ -154,7 +154,7 @@ final class ReportService
             throw HttpException::notFound('Event day not found in the active event.');
         }
         $statement = Database::connection()->prepare(
-            "SELECT a.id, a.attendee_code, a.full_name, a.company, a.department, a.external_identifier, a.email
+            "SELECT a.id, a.attendee_code, a.full_name, a.company, a.department, a.external_identifier, a.email, a.attendee_type
              FROM attendees a
              WHERE a.event_id = :event_id AND a.status = 'active'
              ORDER BY a.full_name, a.attendee_code"
@@ -169,11 +169,13 @@ final class ReportService
             $rows[] = [
                 $row['attendee_code'], $row['full_name'], $row['company'], $row['department'], $row['external_identifier'], $row['email'],
                 $list !== [] ? 'Registered' : 'Not registered', $list[0]['registered_at'] ?? null, self::sessionList($list),
+                $row['attendee_type'] !== null ? strtoupper((string) $row['attendee_type']) : null,
             ];
         }
+        // "Internal/External" (migration 034) is appended so existing columns keep their positions.
         $xlsx = (new XlsxWriter())->addSheet(
             "Day {$day['day_number']} Attendees",
-            ['Attendee Code', 'Full Name', 'Company', 'Cluster', 'Employee ID', 'Email', 'Registration Status', 'Registered At', 'Registration Sessions'],
+            ['Attendee Code', 'Full Name', 'Company', 'Cluster', 'Employee ID', 'Email', 'Registration Status', 'Registered At', 'Registration Sessions', 'Internal/External'],
             $rows
         );
 

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { KeyRound, ScanLine, UserPlus } from 'lucide-react'
+import { RandomizerBackgroundCard } from '../components/settings/RandomizerBackgroundCard'
 import { RandomizerResetCard } from '../components/settings/RandomizerResetCard'
 import { RESET_SUCCESS, SystemResetCard } from '../components/settings/SystemResetCard'
 import { Alert } from '../components/ui/Alert'
@@ -20,7 +21,7 @@ const fetchOperators = () => settingsService.scannerOperators()
 
 const EMPTY: ScannerOperatorInput = { name: '', username: '', password: '', password_confirmation: '', status: 'active' }
 
-/** Settings (admin). Scanner Operators, Randomizer Reset and System Reset. */
+/** Settings (admin). Scanner Operators, Randomizer Background, Randomizer Reset and System Reset. */
 export function SettingsPage() {
   const { data, error, loading, reload } = useApiQuery(fetchOperators)
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
@@ -116,6 +117,8 @@ export function SettingsPage() {
           </div>
         ) : null}
       </Card>
+
+      <RandomizerBackgroundCard />
 
       <RandomizerResetCard
         onDone={(message) => {

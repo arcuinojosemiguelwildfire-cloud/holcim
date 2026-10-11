@@ -19,6 +19,7 @@ use App\Controllers\EventController;
 use App\Controllers\EventDayController;
 use App\Controllers\HealthController;
 use App\Controllers\QrCodeController;
+use App\Controllers\RandomizerBackgroundController;
 use App\Controllers\RandomizerController;
 use App\Controllers\RegistrationController;
 use App\Controllers\RegistrationSessionController;
@@ -76,6 +77,8 @@ return static function (Router $router): void {
     // Manual Add Attendee (Phase 9.3): admin + event operator only.
     $attendeeCreators = AuthMiddleware::roles(User::ROLE_ADMIN, User::ROLE_EVENT_OPERATOR);
     $router->post('/attendees', [AttendeeController::class, 'create'], [$attendeeCreators]);
+    // Six-column guest-sheet template (.xlsx, DESIGNATION / COMPANY highlighted red). No event needed.
+    $router->get('/attendees/import/template.xlsx', [AttendeeController::class, 'importTemplate'], [$adminOnly]);
     $router->post('/attendees/import/parse', [AttendeeController::class, 'parseImport'], [$adminOnly]);
     $router->post('/attendees/import/preview', [AttendeeController::class, 'previewImport'], [$adminOnly]);
     $router->post('/attendees/import', [AttendeeController::class, 'import'], [$adminOnly]);
@@ -111,6 +114,12 @@ return static function (Router $router): void {
 
     // Randomizers (active event): admin + event operator.
     $randomizerOperators = AuthMiddleware::roles(User::ROLE_ADMIN, User::ROLE_EVENT_OPERATOR);
+    // Randomizer background (custom image or default). Viewing: randomizer operators;
+    // changing / restoring: admin only (Settings > Randomizer Background).
+    $router->get('/randomizers/background', [RandomizerBackgroundController::class, 'show'], [$randomizerOperators]);
+    $router->get('/randomizers/background/image', [RandomizerBackgroundController::class, 'image'], [$randomizerOperators]);
+    $router->post('/settings/randomizer-background', [RandomizerBackgroundController::class, 'upload'], [$adminOnly]);
+    $router->delete('/settings/randomizer-background', [RandomizerBackgroundController::class, 'restore'], [$adminOnly]);
     $router->get('/randomizers/minor', [RandomizerController::class, 'minorSummary'], [$randomizerOperators]);
     $router->post('/randomizers/minor/draw', [RandomizerController::class, 'minorDraw'], [$randomizerOperators]);
     $router->get('/randomizers/major', [RandomizerController::class, 'majorSummary'], [$randomizerOperators]);

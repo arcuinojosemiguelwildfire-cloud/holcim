@@ -8,7 +8,7 @@ use App\Core\HttpException;
 
 /**
  * Reads a CSV or one XLSX worksheet ("External Attendees" if present, else the
- * first sheet) into a header row plus data
+ * first VISIBLE sheet - hidden sheets are skipped) into a header row plus data
  * rows, using only PHP built-ins (no Composer). Cell values are treated as
  * untrusted text: control characters are stripped and lengths are capped.
  *
@@ -27,23 +27,29 @@ final class SpreadsheetReader
 
     /** Name of the XLSX sheet read by the last read() call (null for CSV). */
     private static ?string $lastSheet = null;
+    /** @var list<array{name: string, hidden: bool}> sheets of the last XLSX that were NOT read */
+    private static array $otherSheets = [];
 
     /**
      * Reads the "External Attendees" sheet when the workbook has one,
      * otherwise the first sheet (or the CSV).
      *
-     * @return array{headers: list<string>, rows: list<array{rowNumber: int, cells: list<string>}>, sheet: ?string}
+     * otherSheets lists the workbook's other sheets (not read), so the user
+     * can see when the data they expected is on another sheet.
+     *
+     * @return array{headers: list<string>, rows: list<array{rowNumber: int, cells: list<string>}>, sheet: ?string, otherSheets: list<array{name: string, hidden: bool}>}
      */
     public static function read(string $path, string $type): array
     {
         self::$lastSheet = null;
+        self::$otherSheets = [];
         $raw = match ($type) {
             'csv' => self::readCsv($path),
             'xlsx' => self::readXlsx($path),
             default => throw HttpException::badRequest('Unsupported file type.'),
         };
 
-        return self::normalise($raw) + ['sheet' => self::$lastSheet];
+        return self::normalise($raw) + ['sheet' => self::$lastSheet, 'otherSheets' => self::$otherSheets];
     }
 
     /**
@@ -161,12 +167,12 @@ final class SpreadsheetReader
         $rowNumber = 0;
         while (($cells = fgetcsv($handle, null, $delimiter, '"', '')) !== false) {
             $rowNumber++;
-            if ($cells === [null]) {
-                continue;
+            if ($cells === [null] || trim(implode('', array_map('strval', $cells))) === '') {
+                continue; // blank line (or only separators): not a row, not counted
             }
             $rows[$rowNumber] = array_map('strval', array_slice($cells, 0, self::MAX_COLUMNS + 1));
-            if ($rowNumber > self::MAX_ROWS + 50) {
-                break;
+            if (count($rows) > self::MAX_ROWS + 1) {
+                break; // normalise() reports "more than MAX_ROWS data rows"
             }
         }
         fclose($handle);
@@ -189,6 +195,7 @@ final class SpreadsheetReader
         try {
             $sheetPath = self::sheetPath($zip);
             $sharedStrings = self::sharedStrings($zip);
+            $zeroPad = self::zeroPaddedStyles($zip);
             $sheet = self::loadXml($zip, $sheetPath);
             if ($sheet === null) {
                 throw HttpException::badRequest('The workbook has no readable worksheet.');
@@ -207,7 +214,7 @@ final class SpreadsheetReader
                     if ($index >= self::MAX_COLUMNS + 1) {
                         continue;
                     }
-                    $cells[$index] = self::cellValue($cell, $sharedStrings);
+                    $cells[$index] = self::cellValue($cell, $sharedStrings, $zeroPad);
                 }
                 if ($cells === []) {
                     continue;
@@ -217,9 +224,15 @@ final class SpreadsheetReader
                 for ($i = 0; $i <= $max; $i++) {
                     $list[] = $cells[$i] ?? '';
                 }
+                // Formatted but empty rows (Google Sheets exports 1000 of them) do
+                // not count toward the row limit, so they can never stop the
+                // reading before real rows further down.
+                if (trim(implode('', $list)) === '') {
+                    continue;
+                }
                 $rows[$rowNumber > 0 ? $rowNumber : count($rows) + 1] = $list;
-                if (count($rows) > self::MAX_ROWS + 50) {
-                    break;
+                if (count($rows) > self::MAX_ROWS + 1) {
+                    break; // normalise() reports "more than MAX_ROWS data rows"
                 }
             }
 
@@ -229,7 +242,14 @@ final class SpreadsheetReader
         }
     }
 
-    /** Path of the preferred sheet (see PREFERRED_SHEET), else of the first sheet. */
+    /**
+     * Path of the preferred sheet (see PREFERRED_SHEET), else of the first
+     * visible sheet, else (every sheet hidden) of the first sheet.
+     *
+     * Hidden sheets are skipped because Excel / Google Sheets users never see
+     * them: a workbook whose first tab is a hidden working copy (e.g. an old
+     * customer list) must not be imported instead of the visible guest list.
+     */
     private static function sheetPath(\ZipArchive $zip): string
     {
         $workbook = self::loadXml($zip, 'xl/workbook.xml');
@@ -240,7 +260,8 @@ final class SpreadsheetReader
 
         $workbook->registerXPathNamespace('m', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
         $sheets = $workbook->xpath('//m:sheets/m:sheet') ?: [];
-        $sheet = $sheets[0] ?? null;
+        $hidden = static fn (\SimpleXMLElement $s): bool => in_array(strtolower((string) $s['state']), ['hidden', 'veryhidden'], true);
+        $sheet = null;
         foreach ($sheets as $candidate) {
             $name = preg_replace('/\s+/', ' ', trim((string) $candidate['name'])) ?? '';
             if (strcasecmp($name, self::PREFERRED_SHEET) === 0) {
@@ -248,7 +269,21 @@ final class SpreadsheetReader
                 break;
             }
         }
+        if ($sheet === null) {
+            foreach ($sheets as $candidate) {
+                if (!$hidden($candidate)) {
+                    $sheet = $candidate;
+                    break;
+                }
+            }
+        }
+        $sheet ??= $sheets[0] ?? null;
         self::$lastSheet = $sheet !== null ? (string) $sheet['name'] : null;
+        foreach ($sheets as $candidate) {
+            if ($candidate !== $sheet && (string) $candidate['sheetId'] !== (string) ($sheet['sheetId'] ?? '')) {
+                self::$otherSheets[] = ['name' => mb_substr((string) $candidate['name'], 0, 100), 'hidden' => $hidden($candidate)];
+            }
+        }
         $relationId = $sheet !== null
             ? (string) $sheet->attributes('http://schemas.openxmlformats.org/officeDocument/2006/relationships')['id']
             : '';
@@ -295,8 +330,52 @@ final class SpreadsheetReader
         return $text;
     }
 
-    /** @param list<string> $sharedStrings */
-    private static function cellValue(\SimpleXMLElement $cell, array $sharedStrings): string
+    /**
+     * Cell styles whose number format is only zeros ("000", "00000"): Excel
+     * shows the number 7 as "007". Returns style index => width, so IDs
+     * such as Guest No. 001 keep their leading zeros even when typed as
+     * numbers. (Text cells keep them anyway.)
+     *
+     * @return array<int, int>
+     */
+    private static function zeroPaddedStyles(\ZipArchive $zip): array
+    {
+        $xml = self::loadXml($zip, 'xl/styles.xml');
+        if ($xml === null) {
+            return [];
+        }
+        $ns = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+        $root = $xml->children($ns);
+
+        $widths = []; // numFmtId => width
+        foreach (isset($root->numFmts) ? $root->numFmts->children($ns)->numFmt : [] as $format) {
+            $code = str_replace(['"', '\\'], '', (string) $format->attributes()['formatCode']);
+            if (preg_match('/^0{2,15}$/', $code)) {
+                $widths[(int) $format->attributes()['numFmtId']] = strlen($code);
+            }
+        }
+        if ($widths === [] || !isset($root->cellXfs)) {
+            return [];
+        }
+
+        $styles = [];
+        $index = 0;
+        foreach ($root->cellXfs->children($ns)->xf as $xf) {
+            $id = (int) $xf->attributes()['numFmtId'];
+            if (isset($widths[$id])) {
+                $styles[$index] = $widths[$id];
+            }
+            $index++;
+        }
+
+        return $styles;
+    }
+
+    /**
+     * @param list<string> $sharedStrings
+     * @param array<int, int> $zeroPad style index => width (see zeroPaddedStyles)
+     */
+    private static function cellValue(\SimpleXMLElement $cell, array $sharedStrings, array $zeroPad = []): string
     {
         $ns = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
         $type = (string) $cell->attributes()['t'];
@@ -312,8 +391,14 @@ final class SpreadsheetReader
             's' => $sharedStrings[(int) $value] ?? '',
             'b' => $value === '1' ? 'TRUE' : 'FALSE',
             'str', 'e' => $value,
-            default => self::formatNumber($value),
+            default => self::padNumber(self::formatNumber($value), $zeroPad[(int) $cell->attributes()['s']] ?? 0),
         };
+    }
+
+    /** Whole non-negative numbers shown with a zero-padded format ("000" -> 007). */
+    private static function padNumber(string $value, int $width): string
+    {
+        return $width > 0 && preg_match('/^\d+$/', $value) ? str_pad($value, $width, '0', STR_PAD_LEFT) : $value;
     }
 
     /** Whole numbers lose the ".0" Excel stores (e.g. Employee ID 1023). */

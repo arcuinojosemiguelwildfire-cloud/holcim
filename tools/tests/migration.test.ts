@@ -94,7 +94,7 @@ describe('MySQL -> PostgreSQL import and QR verification', { skip: skipBoth }, (
     assert.equal(run.length, 1);
     assert.equal(run[0].table_counts.attendees, 264);
     assert.equal(run[0].table_counts.attendee_qr_codes, 264);
-    assert.equal(run[0].source_migrations.length, 33);
+    assert.equal(run[0].source_migrations.length, 34);
     // Independent re-check of the per-table fingerprints from fresh connections.
     const my = await connect(mysqlUrl(MY));
     const pgc = await connect(pgUrl(PG));

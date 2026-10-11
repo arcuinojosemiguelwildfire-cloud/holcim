@@ -141,9 +141,10 @@ export function AttendeeDetailModal({ attendeeId, onClose, onChanged }: Attendee
               </Detail>
               <Detail label="Full name">{attendee.fullName}</Detail>
               <Detail label="Company">{attendee.company ?? '—'}</Detail>
+              <Detail label="Internal/External">{attendee.attendeeType ? attendee.attendeeType.toUpperCase() : '—'}</Detail>
               <Detail label="Cluster">{attendee.department ?? '—'}</Detail>
               <Detail label="Email">{attendee.email ?? '—'}</Detail>
-              <Detail label="Employee ID / External ID">{attendee.externalIdentifier ?? '—'}</Detail>
+              <Detail label="Guest No. / Employee ID">{attendee.externalIdentifier ?? '—'}</Detail>
               <Detail label="Created">{attendee.createdAt}</Detail>
 
               {Object.keys(attendee.extraData).length > 0 && (

@@ -150,6 +150,15 @@ and the role matrix is in README §9g. Phase 8 notes:
   `External Attendees` sheet when present and, for the
   `Cluster | Name 1 | Attendee 1..N` layout, returns one row per attendee
   (`layout: "external_attendees"`, headers Full Name / Company / Cluster).
+- Migration 034 (standard guest sheet): import mappings have the fields
+  `full_name, first_name, middle_name, surname, company, attendee_type,
+  department, email, external_identifier` (missing keys = not mapped, so old
+  five-key mappings still work). Without `full_name`, `first_name` and
+  `surname` are required and Full Name = FIRST + MIDDLE + SURNAME; a mapped
+  `full_name` always wins and the name parts are ignored. `attendee_type`
+  accepts INTERNAL / EXTERNAL (any case) or blank. Preview rows and attendee
+  payloads include `attendeeType` (preview: `"INTERNAL"`/`"EXTERNAL"`;
+  attendee: `"internal"`/`"external"`/null).
 - Phase 9.3: `POST /attendees` (admin, event operator) creates one attendee
   `{full_name, company?, department?, external_identifier?, email?}` and their
   QR; returns `201 {attendee, qr}`. Duplicates return

@@ -113,6 +113,33 @@ final class TestApiClient
         return $handle;
     }
 
+    /**
+     * multipart/form-data upload of one file under any field name, with the
+     * client file name and type of your choice.
+     *
+     * @return array{status: int, body: array<string, mixed>, raw: string}
+     */
+    public function uploadField(string $path, string $field, string $file, string $filename, string $mime = 'application/octet-stream'): array
+    {
+        $headers = ['Accept: application/json'];
+        if ($this->csrf !== null) {
+            $headers[] = 'X-CSRF-Token: ' . $this->csrf;
+        }
+        $handle = curl_init($this->baseUrl . $path);
+        curl_setopt_array($handle, [
+            CURLOPT_POST => true,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_COOKIEJAR => $this->cookieFile,
+            CURLOPT_COOKIEFILE => $this->cookieFile,
+            CURLOPT_TIMEOUT => 60,
+            CURLOPT_POSTFIELDS => [$field => new \CURLFile($file, $mime, $filename)],
+        ]);
+        $raw = (string) curl_exec($handle);
+
+        return ['status' => (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE), 'body' => json_decode($raw, true) ?? [], 'raw' => $raw];
+    }
+
     /** multipart/form-data upload of one file as "file"; returns the raw response. */
     public function upload(string $path, string $file, string $filename): string
     {

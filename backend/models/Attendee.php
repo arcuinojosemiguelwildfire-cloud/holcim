@@ -22,7 +22,7 @@ final class Attendee
      * Business fields (Phase 9.2): full_name, company (new), department =
      * Cluster (location/region; the column name is kept for compatibility).
      */
-    private const COLUMNS = 'id, event_id, attendee_code, full_name, company, department, email, external_identifier,
+    private const COLUMNS = 'id, event_id, attendee_code, full_name, company, attendee_type, department, email, external_identifier,
         status, archived_at, extra_data, import_batch_id, created_at, updated_at';
 
     /** Columns an admin may edit. attendee_code is deliberately excluded. */
@@ -153,14 +153,15 @@ final class Attendee
     public static function create(int $eventId, string $code, array $data, ?int $importBatchId): int
     {
         $statement = Database::connection()->prepare(
-            'INSERT INTO attendees (event_id, attendee_code, full_name, company, department, email, external_identifier, extra_data, import_batch_id)
-             VALUES (:event_id, :code, :full_name, :company, :department, :email, :external_identifier, :extra_data, :import_batch_id)'
+            'INSERT INTO attendees (event_id, attendee_code, full_name, company, attendee_type, department, email, external_identifier, extra_data, import_batch_id)
+             VALUES (:event_id, :code, :full_name, :company, :attendee_type, :department, :email, :external_identifier, :extra_data, :import_batch_id)'
         );
         $statement->execute([
             'event_id' => $eventId,
             'code' => $code,
             'full_name' => $data['full_name'],
             'company' => $data['company'] ?? null,
+            'attendee_type' => $data['attendee_type'] ?? null,
             'department' => $data['department'] ?? null,
             'email' => $data['email'] ?? null,
             'external_identifier' => $data['external_identifier'] ?? null,
@@ -221,6 +222,8 @@ final class Attendee
             'attendeeCode' => $row['attendee_code'],
             'fullName' => $row['full_name'],
             'company' => $row['company'],
+            // 'internal' | 'external' | null (migration 034; absent on queries that do not select it).
+            'attendeeType' => $row['attendee_type'] ?? null,
             'department' => $row['department'],
             'email' => $row['email'],
             'externalIdentifier' => $row['external_identifier'],

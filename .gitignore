@@ -56,3 +56,8 @@ supabase/.branches/
 
 # --- Supabase Auth migration plans (identifiers; may contain password hashes) ---
 database/auth-plan*.json
+
+# --- Runtime storage (uploaded randomizer backgrounds, app settings) ---------
+backend/storage/*
+!backend/storage/.htaccess
+!backend/storage/README.md

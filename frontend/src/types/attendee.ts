@@ -1,12 +1,15 @@
 import type { EventRecord } from './event'
 
 export type AttendeeStatus = 'active' | 'archived'
+export type AttendeeType = 'internal' | 'external'
 
 export interface Attendee {
   id: number
   attendeeCode: string
   fullName: string
   company: string | null
+  /** INTERNAL/EXTERNAL column of the guest sheet; null = not specified. */
+  attendeeType?: AttendeeType | null
   /** Cluster (location / region). Stored in `department`. */
   department: string | null
   email: string | null
@@ -61,7 +64,15 @@ export type AttendeeCreateInput = AttendeeUpdateInput
 
 /* ---------- Import ---------- */
 
-export const IMPORT_FIELDS = ['full_name', 'company', 'department', 'email', 'external_identifier'] as const
+/**
+ * Mapping fields. first_name / middle_name / surname are combined into Full Name
+ * (FIRST + MIDDLE + SURNAME) when no Full Name column is mapped; a mapped Full
+ * Name column always wins. attendee_type = the INTERNAL/EXTERNAL column.
+ */
+export const IMPORT_FIELDS = ['full_name', 'first_name', 'middle_name', 'surname', 'company', 'attendee_type', 'department', 'email', 'external_identifier'] as const
+export const NAME_PART_FIELDS = ['first_name', 'middle_name', 'surname'] as const
+/** Fields of the six-column guest sheet, in template order (no Email, Cluster or Full Name). */
+export const GUEST_LIST_FIELDS = ['external_identifier', 'surname', 'first_name', 'middle_name', 'attendee_type', 'company'] as const
 export type ImportField = (typeof IMPORT_FIELDS)[number]
 export type ColumnMapping = Record<ImportField, number | null>
 
@@ -79,8 +90,16 @@ export interface ParsedFile {
   suggestedMapping: ColumnMapping
   /** XLSX sheet that was read ("External Attendees" when present). */
   sheet?: string | null
-  /** external_attendees = Cluster | Name 1 (company) | Attendee 1..N, expanded to one row per attendee. */
-  layout?: 'standard' | 'external_attendees'
+  /**
+   * external_attendees = Cluster | Name 1 (company) | Attendee 1..N, expanded to one row per attendee.
+   * guest_list = GUEST NO. | SURNAME | FIRST NAME | MIDDLE NAME | INTERNAL/EXTERNAL | DESIGNATION / COMPANY.
+   */
+  layout?: 'standard' | 'external_attendees' | 'guest_list'
+  /** Other sheets of the workbook that were NOT read (hidden sheets are never read). */
+  otherSheets?: Array<{ name: string; hidden: boolean }>
+  /** Spreadsheet row numbers of the first and last data row that were read. */
+  firstRowNumber?: number | null
+  lastRowNumber?: number | null
   sourceRows?: number
   attendeeColumns?: number
 }
@@ -98,6 +117,8 @@ interface RowDisplay {
   rowNumber: number
   fullName: string
   company: string
+  /** "INTERNAL" / "EXTERNAL", or the value as written when it is invalid. */
+  attendeeType: string
   department: string
   email: string
   externalIdentifier: string
@@ -124,6 +145,7 @@ export interface ImportPreview {
     rowNumber: number
     fullName: string
     company: string | null
+    attendeeType: string | null
     department: string | null
     email: string | null
     externalIdentifier: string | null

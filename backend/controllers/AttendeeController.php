@@ -128,6 +128,19 @@ final class AttendeeController
         return Response::success($result, message: $count === 0 ? 'No changes to save.' : "Saved {$count} registration change(s).");
     }
 
+    /**
+     * GET /attendees/import/template.xlsx (admin): the standard guest-sheet
+     * template GUEST NO. | SURNAME | FIRST NAME | MIDDLE NAME |
+     * INTERNAL/EXTERNAL | DESIGNATION / COMPANY (Company column in red).
+     */
+    public static function importTemplate(Request $request): Response
+    {
+        return Response::raw(200, AttendeeImportService::guestTemplate(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', [
+            'Content-Disposition' => 'attachment; filename="Holcim Guest Import Template.xlsx"',
+            'Cache-Control' => 'no-store',
+        ]);
+    }
+
     /** POST /attendees/import/parse (admin, multipart "file") */
     public static function parseImport(Request $request): Response
     {

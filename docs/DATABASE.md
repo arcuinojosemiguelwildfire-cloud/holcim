@@ -204,6 +204,11 @@ Every scan attempt per day: `event_id`, `event_day_id`, `user_id`, `attendee_id`
 
 Pools: Minor = registered in any session of the day; Major = registered in a session that counts for Major. Manual additions work as before. See docs/REGISTRATION_SESSIONS.md.
 
+## Internal / External attendee type (migration 034)
+
+- `attendees.attendee_type` ENUM('internal','external') NULL — additive; every existing attendee stays NULL (not specified). PostgreSQL twin: `supabase/migrations/20261011090000_holcim_attendee_type.sql` (text + CHECK).
+- Filled by the attendee import from the `INTERNAL/EXTERNAL` column of the standard guest sheet; shown in attendee details and appended as the last column of `Day N Attendees.xlsx`. It is not a Cluster, Company or Department.
+
 ## Phase 9.4: Randomizer Reset (migration 032)
 
 - `randomizer_draws.reset_at` DATETIME NULL and `reset_by` INT UNSIGNED NULL (FK `users`, ON DELETE SET NULL) — additive; existing rows stay NULL.

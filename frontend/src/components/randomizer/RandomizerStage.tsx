@@ -3,6 +3,7 @@ import { Maximize, Minimize, Trophy, Users } from 'lucide-react'
 import { useFullscreen } from '../../hooks/useFullscreen'
 import { errorMessage } from '../../services/apiClient'
 import { cn } from '../../utils/cn'
+import { stageBackgroundStyle } from '../../services/randomizerBackgroundService'
 import { formatNumber } from '../../utils/format'
 
 export interface DrawWinner {
@@ -29,6 +30,8 @@ interface RandomizerStageProps {
   onDraw: () => Promise<DrawOutcome>
   /** Marks a draw VOID (record is kept). Omit to hide the control. */
   onVoid?: (drawId: number, reason: string) => Promise<void>
+  /** Custom background image URL (Settings > Randomizer Background); null = default. */
+  backgroundUrl?: string | null
 }
 
 type Phase = 'ready' | 'rolling' | 'winner'
@@ -53,9 +56,19 @@ function scramble(name: string): string {
 /**
  * Stage-style draw screen (reusable for the Major Randomizer).
  * The winner is decided by the server; this component only animates it.
- * The stage element itself goes fullscreen, so the admin chrome disappears.
+ *
+ * Two views of the same draw:
+ *   - admin view (in the page): title, event, eligible count, Start draw,
+ *     Void and the fullscreen button, over the background with a dark overlay;
+ *   - presentation screen (the stage element in fullscreen, for the LED wall /
+ *     projector): ONLY the background image, edge to edge, no overlay, no
+ *     text or controls. While a draw runs it shows the rolling names and then
+ *     the winner (the draw itself is unchanged). Keys: Space / Enter = draw,
+ *     Backspace / Delete = hide the winner and show only the background again
+ *     (display only: the draw stays recorded and can still be voided from
+ *     the admin view), Esc = leave fullscreen.
  */
-export function RandomizerStage({ title, eventName, eligibleCount, onDraw, onVoid }: RandomizerStageProps) {
+export function RandomizerStage({ title, eventName, eligibleCount, onDraw, onVoid, backgroundUrl = null }: RandomizerStageProps) {
   const stageRef = useRef<HTMLDivElement>(null)
   const { isFullscreen, supported, enter, exit } = useFullscreen(stageRef)
   const [phase, setPhase] = useState<Phase>('ready')
@@ -67,7 +80,10 @@ export function RandomizerStage({ title, eventName, eligibleCount, onDraw, onVoi
   const [voidReason, setVoidReason] = useState('Winner not present')
   const [voiding, setVoiding] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /** Presentation screen only: the revealed winner was hidden (Backspace); data is untouched. */
+  const [cleared, setCleared] = useState(false)
   const timers = useRef<number[]>([])
+  const presenting = isFullscreen
 
   useEffect(() => () => timers.current.forEach((t) => window.clearTimeout(t)), [])
 
@@ -79,6 +95,7 @@ export function RandomizerStage({ title, eventName, eligibleCount, onDraw, onVoi
     setWinner(null)
     setDrawId(null)
     setVoided(null)
+    setCleared(false)
     setPhase('rolling')
     setRollingName('• • •')
 
@@ -145,6 +162,9 @@ export function RandomizerStage({ title, eventName, eligibleCount, onDraw, onVoi
       if (event.key === ' ' || event.key === 'Enter') {
         event.preventDefault()
         void start()
+      } else if (event.key === 'Backspace' || event.key === 'Delete') {
+        event.preventDefault()
+        setCleared(true) // back to the background only (display, not data)
       }
     }
     document.addEventListener('keydown', onKey)
@@ -157,9 +177,17 @@ export function RandomizerStage({ title, eventName, eligibleCount, onDraw, onVoi
       className={cn(
         'relative flex flex-col overflow-hidden bg-slate-950 text-white',
         'bg-[radial-gradient(ellipse_at_top,rgba(20,184,166,0.28),transparent_60%),radial-gradient(ellipse_at_bottom,rgba(15,118,110,0.25),transparent_55%)]',
-        isFullscreen ? 'h-screen w-screen' : 'min-h-[560px] rounded-2xl shadow-lg ring-1 ring-slate-900/10',
+        isFullscreen ? 'h-screen w-screen cursor-none' : 'min-h-[560px] rounded-2xl shadow-lg ring-1 ring-slate-900/10',
       )}
+      // A custom image replaces only the background. Fullscreen = presentation: the image as uploaded, no overlay.
+      style={stageBackgroundStyle(backgroundUrl, !presenting)}
+      data-background={backgroundUrl ? 'custom' : 'default'}
+      data-presenting={presenting ? 'true' : 'false'}
     >
+      {presenting ? (
+        <PresentationContent phase={phase} rollingName={rollingName} winner={cleared ? null : winner} voided={voided} error={error} />
+      ) : (
+      <>
       {/* Header */}
       <div className={cn('flex items-start justify-between gap-4', isFullscreen ? 'px-[3vw] pt-[3vh]' : 'px-6 pt-6 sm:px-8')}>
         <div className="min-w-0">
@@ -308,11 +336,50 @@ export function RandomizerStage({ title, eventName, eligibleCount, onDraw, onVoi
           {phase === 'rolling' ? 'Drawing…' : phase === 'winner' ? 'Next draw' : 'Start draw'}
         </button>
       </div>
-      {isFullscreen && (
-        <p className="pointer-events-none absolute bottom-2 left-0 right-0 text-center text-[0.8vw] text-white/25">
-          Space / Enter to draw · Esc to exit fullscreen
-        </p>
+      </>
       )}
+    </div>
+  )
+}
+
+/** Readable on any photo without an overlay. */
+const SHADOW = '[text-shadow:0_0.15em_0.6em_rgba(0,0,0,0.9),0_0_0.15em_rgba(0,0,0,0.8)]'
+
+/**
+ * Fullscreen presentation screen: nothing but the background, except while a
+ * draw rolls and for the revealed winner (until Backspace / the next draw).
+ * No titles, counts, instructions, buttons or admin controls.
+ */
+function PresentationContent({ phase, rollingName, winner, voided, error }: {
+  phase: Phase
+  rollingName: string
+  winner: DrawWinner | null
+  voided: string | null
+  error: string | null
+}) {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center px-[4vw] text-center" aria-live="polite">
+      {phase === 'rolling' ? (
+        <p className={cn('max-w-full truncate text-[6vw] font-extrabold uppercase tracking-tight text-white', SHADOW)} data-testid="presentation-rolling">
+          {rollingName}
+        </p>
+      ) : phase === 'winner' && winner ? (
+        <div className={cn('flex max-w-full flex-col items-center', SHADOW)} data-testid="presentation-winner">
+          <p
+            className={cn(
+              'max-w-full break-words text-[7.5vw] font-black uppercase leading-[1.05] tracking-tight text-white',
+              voided && 'text-white/50 line-through decoration-red-500',
+            )}
+          >
+            {winner.fullName}
+          </p>
+          {winner.company && <p className="mt-[1.5vh] text-[3vw] font-semibold text-white">{winner.company}</p>}
+          {winner.department && <p className="mt-[0.8vh] text-[2.2vw] font-medium text-white/90">{winner.department}</p>}
+          <p className="mt-[1.5vh] font-mono text-[2.6vw] font-bold text-white/90">{winner.attendeeCode}</p>
+        </div>
+      ) : null}
+      {/* Operator feedback only when a draw fails (e.g. nobody eligible); hidden otherwise. */}
+      {error && <p className="mt-6 rounded-lg bg-red-600/80 px-4 py-2 text-[1.2vw] text-white">{error}</p>}
     </div>
   )
 }

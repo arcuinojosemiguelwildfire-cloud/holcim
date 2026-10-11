@@ -1,5 +1,5 @@
 // Schema tests: the Supabase migrations build every table, foreign key, unique rule,
-// index, CHECK and trigger of the MySQL schema (after migrations 001-032), plus the
+// index, CHECK and trigger of the MySQL schema (after migrations 001-034), plus the
 // Phase 1 security baseline. MySQL is migrated from database/migrations in a scratch
 // database and compared object by object.
 import { after, before, describe, test } from 'node:test';

@@ -7,6 +7,7 @@ import { Alert } from '../components/ui/Alert'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card, CardHeader } from '../components/ui/Card'
+import { useRandomizerBackground } from '../hooks/useRandomizerBackground'
 import { errorMessage } from '../services/apiClient'
 import { randomizerService, type RandomizerSummary, type RandomizerType, type RecentWinner } from '../services/randomizerService'
 import { formatTime } from '../utils/format'
@@ -33,6 +34,7 @@ export function RandomizerPage({ type }: { type: RandomizerType }) {
   const [adding, setAdding] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [poolVersion, setPoolVersion] = useState(0)
+  const backgroundUrl = useRandomizerBackground()
 
   const load = useCallback(() => {
     randomizerService.summary(type).then(
@@ -83,6 +85,11 @@ export function RandomizerPage({ type }: { type: RandomizerType }) {
             {summary && <span className="font-medium text-slate-700" data-testid="randomizer-day">{summary.eventDay.displayName}. </span>}
             {copy.intro} Press “Enter fullscreen” before showing it on the LED screen or projector.
           </p>
+          <p className="mt-1 text-sm text-slate-500" data-testid="presentation-help">
+            Fullscreen is the presentation screen: it shows only the background image. <b className="font-medium text-slate-700">Space / Enter</b> draws
+            (the rolling names and the winner appear), <b className="font-medium text-slate-700">Backspace</b> hides the winner again,{' '}
+            <b className="font-medium text-slate-700">Esc</b> returns here (Void and history stay on this page).
+          </p>
         </div>
         <Button variant="secondary" onClick={() => setAdding(true)} disabled={!summary} icon={<UserPlus className="size-4" aria-hidden />}>
           Add Participant
@@ -102,6 +109,7 @@ export function RandomizerPage({ type }: { type: RandomizerType }) {
         eligibleCount={summary ? summary.eligibleCount : null}
         onDraw={draw}
         onVoid={voidDraw}
+        backgroundUrl={backgroundUrl}
       />
 
       <Card className="overflow-hidden">

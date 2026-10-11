@@ -41,6 +41,15 @@ foreach (['zip' => 'XLSX imports', 'mbstring' => 'text handling', 'pdo_mysql' =>
     $add(extension_loaded($ext) ? 'OK' : 'FAIL', "PHP extension {$ext}", extension_loaded($ext) ? '' : "missing ({$why})");
 }
 
+// Randomizer background uploads are written by the WEB SERVER user (not by this CLI user).
+$storage = App\Utils\SettingsStore::storagePath();
+$add(extension_loaded('gd') ? 'OK' : 'WARN', 'PHP extension gd', extension_loaded('gd')
+    ? (function_exists('imagewebp') ? 'JPG, PNG and WebP backgrounds' : 'JPG and PNG backgrounds (no WebP support)')
+    : 'missing - randomizer background uploads are refused until it is enabled');
+$add(is_dir($storage) ? 'INFO' : 'WARN', 'Storage folder (randomizer background)', is_dir($storage)
+    ? 'exists - it must be writable by the web server user (README > Randomizer background)'
+    : 'missing - create backend/storage and make it writable by the web server (README > Randomizer background)');
+
 try {
     $pdo = Database::connection();
     $add('OK', 'Database connection', (string) Config::get('database.database'));

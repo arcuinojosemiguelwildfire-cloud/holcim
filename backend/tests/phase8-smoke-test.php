@@ -528,7 +528,7 @@ try {
             'rows' => array_map(static fn (array $cells): array => array_combine(array_values($headers), array_map(static fn ($col) => $cells[$col] ?? '', array_keys($headers))), $rows)];
     };
     $x1 = $sheet($admin, "/reports/day-attendees.xlsx?day_id={$day1}");
-    check('Day 1 Attendees.xlsx: headers', $x1['headers'] === ['Attendee Code', 'Full Name', 'Company', 'Cluster', 'Employee ID', 'Email', 'Registration Status', 'Registered At', 'Registration Sessions'], $x1['headers']);
+    check('Day 1 Attendees.xlsx: headers (Internal/External appended by migration 034)', $x1['headers'] === ['Attendee Code', 'Full Name', 'Company', 'Cluster', 'Employee ID', 'Email', 'Registration Status', 'Registered At', 'Registration Sessions', 'Internal/External'], $x1['headers']);
     $st1 = array_column($x1['rows'], 'Registration Status', 'Attendee Code');
     check('Day 1 Attendees.xlsx: 4 active attendees, A/B registered, C/E not, D (archived) absent', count($x1['rows']) === 4
         && ($st1[$codeOf('A')] ?? '') === 'Registered' && ($st1[$codeOf('E')] ?? '') === 'Not registered' && !isset($st1[$codeOf('D')]), $st1);

@@ -10,6 +10,7 @@ use App\Core\Request;
 use App\Models\Attendee;
 use App\Models\ImportBatch;
 use App\Utils\SpreadsheetReader;
+use App\Utils\XlsxWriter;
 
 /**
  * Attendee import: UPLOAD -> READ -> PREVIEW -> MAPPING -> VALIDATION ->
@@ -30,36 +31,68 @@ use App\Utils\SpreadsheetReader;
  *      different people.
  * Duplicates are skipped: existing attendees are never modified, and their
  * attendee codes stay stable.
+ *
+ * Standard guest sheet (client format):
+ *   GUEST NO. | SURNAME | FIRST NAME | MIDDLE NAME | INTERNAL/EXTERNAL | DESIGNATION / COMPANY
+ * GUEST NO. -> external_identifier (text, leading zeros kept; never the
+ * attendee code or QR token), DESIGNATION / COMPANY -> company,
+ * INTERNAL/EXTERNAL -> attendee_type ('internal' | 'external'), and the
+ * name parts are combined into Full Name as FIRST + MIDDLE + SURNAME.
+ *
+ * Name precedence: a mapped Full Name column always wins. The name-part
+ * fields are then ignored (their columns are kept as extra information, as
+ * before), so a name is never combined twice. Without a Full Name column,
+ * First Name and Surname must be mapped (Middle Name is optional) and every
+ * row needs both a first name and a surname.
  */
 final class AttendeeImportService
 {
     public const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
-    public const FIELDS = ['full_name', 'company', 'department', 'email', 'external_identifier'];
-    /** Full Name is the only required attendee field; everything else is optional. */
-    private const REQUIRED = ['full_name'];
+    /**
+     * Mapping fields. first_name / middle_name / surname are not columns:
+     * they are combined into full_name (see NAME_PARTS). attendee_type is
+     * the Internal / External column (migration 034).
+     */
+    public const FIELDS = ['full_name', 'first_name', 'middle_name', 'surname', 'company', 'attendee_type',
+        'department', 'email', 'external_identifier'];
+    /** Combined into Full Name in this order when no Full Name column is mapped. */
+    public const NAME_PARTS = ['first_name', 'middle_name', 'surname'];
+    /** Name parts each row must have when Full Name is built from parts. */
+    private const REQUIRED_NAME_PARTS = ['first_name', 'surname'];
+    public const ATTENDEE_TYPES = ['internal', 'external'];
     private const LABELS = [
         'full_name' => 'Full Name',
+        'first_name' => 'First Name',
+        'middle_name' => 'Middle Name',
+        'surname' => 'Surname',
         'company' => 'Company',
+        'attendee_type' => 'Internal/External',
         // Stored in attendees.department; shown as "Cluster" (location / region) since Phase 9.2.
         'department' => 'Cluster',
         'email' => 'Email',
-        'external_identifier' => 'Employee ID / External Identifier',
+        'external_identifier' => 'Guest No. / Employee ID / External Identifier',
     ];
+    /** The combined Full Name is checked against full_name's limit (name parts have no limit of their own). */
     private const MAX_LENGTHS = ['full_name' => 200, 'company' => 200, 'department' => 150, 'email' => 190, 'external_identifier' => 190];
 
     /** Normalised header names that map directly to a field. */
     private const SYNONYMS = [
         'full_name' => ['fullname', 'name', 'employeename', 'completename', 'attendeename', 'participantname',
             'staffname', 'nameofemployee', 'employeefullname', 'nameofattendee', 'guestname'],
+        'first_name' => ['firstname', 'givenname', 'fname', 'forename'],
+        'middle_name' => ['middlename', 'middleinitial', 'mname'],
+        'surname' => ['surname', 'lastname', 'familyname', 'lname'],
         'company' => ['company', 'companyname', 'name1', 'organization', 'organisation', 'organizationname',
-            'employer', 'firm', 'agency', 'corporation', 'businessname'],
+            'employer', 'firm', 'agency', 'corporation', 'businessname', 'designationcompany', 'companydesignation'],
+        'attendee_type' => ['internalexternal', 'internalorexternal', 'externalinternal', 'externalorinternal',
+            'attendeetype', 'guesttype'],
         'department' => ['cluster', 'clustername', 'region', 'location', 'area', 'territory',
             'department', 'dept', 'departmentname', 'deptname', 'division', 'unit', 'section',
             'team', 'businessunit', 'group', 'office', 'departmentdivision'],
         'email' => ['email', 'emailaddress', 'mail', 'workemail', 'companyemail', 'officialemail', 'emailadd'],
         'external_identifier' => ['employeeid', 'employeeno', 'employeenumber', 'empid', 'empno', 'idno', 'idnumber',
             'id', 'staffid', 'staffno', 'badgeno', 'badgenumber', 'employeecode', 'empcode', 'personnelno',
-            'externalid', 'externalidentifier', 'employeeidno'],
+            'externalid', 'externalidentifier', 'employeeidno', 'guestno', 'guestnumber', 'guestnum', 'guestid', 'guestidno'],
     ];
 
     /**
@@ -90,34 +123,105 @@ final class AttendeeImportService
         $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
         $type = self::detectType((string) $file['tmp_name'], $extension);
 
-        $sheet = SpreadsheetReader::read((string) $file['tmp_name'], $type);
+        return self::describe(SpreadsheetReader::read((string) $file['tmp_name'], $type), $filename, $type);
+    }
+
+    /**
+     * The parse result for a sheet that was read: headers, rows, layout and the
+     * suggested mapping, plus what was read (sheet, first/last spreadsheet row,
+     * the workbook's other sheets that were NOT read) so the user can check
+     * the row count against the file.
+     *
+     * Layouts: external_attendees (Cluster | Name 1 | Attendee 1..N),
+     * guest_list (the standard six-column guest sheet) or standard.
+     *
+     * @param array{headers: list<string>, rows: list<array{rowNumber: int, cells: list<string>}>, sheet: ?string, otherSheets?: list<array{name: string, hidden: bool}>} $sheet
+     * @return array<string, mixed>
+     */
+    public static function describe(array $sheet, string $filename, string $type): array
+    {
+        $read = [
+            'sheet' => $sheet['sheet'],
+            'otherSheets' => $sheet['otherSheets'] ?? [],
+            'firstRowNumber' => $sheet['rows'][0]['rowNumber'] ?? null,
+            'lastRowNumber' => $sheet['rows'] !== [] ? $sheet['rows'][count($sheet['rows']) - 1]['rowNumber'] : null,
+        ];
 
         $external = self::expandExternalAttendees($sheet['headers'], $sheet['rows']);
         if ($external !== null) {
-            return [
+            return $read + [
                 'filename' => $filename,
                 'fileType' => $type,
-                'sheet' => $sheet['sheet'],
                 'layout' => 'external_attendees',
                 'sourceRows' => count($sheet['rows']),
                 'attendeeColumns' => $external['attendeeColumns'],
                 'headers' => $external['headers'],
                 'rows' => $external['rows'],
                 'totalRows' => count($external['rows']),
-                'suggestedMapping' => ['full_name' => 0, 'company' => 1, 'department' => 2, 'email' => null, 'external_identifier' => null],
+                'suggestedMapping' => array_merge(array_fill_keys(self::FIELDS, null), ['full_name' => 0, 'company' => 1, 'department' => 2]),
             ];
         }
 
-        return [
+        $mapping = self::suggestMapping($sheet['headers']);
+
+        return $read + [
             'filename' => $filename,
             'fileType' => $type,
-            'sheet' => $sheet['sheet'],
-            'layout' => 'standard',
+            'layout' => self::isGuestList($mapping) ? 'guest_list' : 'standard',
             'headers' => $sheet['headers'],
             'rows' => $sheet['rows'],
             'totalRows' => count($sheet['rows']),
-            'suggestedMapping' => self::suggestMapping($sheet['headers']),
+            'suggestedMapping' => $mapping,
         ];
+    }
+
+    /**
+     * The standard guest sheet: Full Name comes from First Name + Surname
+     * (no Full Name column) and there is no Email or Cluster column. The UI
+     * then shows only the guest-sheet fields (no Email / Cluster / Full Name).
+     *
+     * @param array<string, int|null> $mapping
+     */
+    public static function isGuestList(array $mapping): bool
+    {
+        return $mapping['full_name'] === null && $mapping['first_name'] !== null && $mapping['surname'] !== null
+            && $mapping['email'] === null && $mapping['department'] === null;
+    }
+
+    /** Headers of the downloadable guest-sheet template, in order. */
+    public const GUEST_TEMPLATE_HEADERS = ['GUEST NO.', 'SURNAME', 'FIRST NAME', 'MIDDLE NAME', 'INTERNAL/EXTERNAL', 'DESIGNATION / COMPANY'];
+    /** 0-based index of DESIGNATION / COMPANY in the template (highlighted red). */
+    public const GUEST_TEMPLATE_COMPANY_COLUMN = 5;
+
+    /**
+     * Downloadable import template for the standard guest sheet: exactly the
+     * six columns (no Email), DESIGNATION / COMPANY highlighted red (header
+     * and data cells), GUEST NO. formatted as text so 001 keeps its zeros.
+     * The first sheet holds only the header row (no sample person, so nothing
+     * is imported by accident); the example is on the second sheet, which the
+     * importer does not read.
+     */
+    public static function guestTemplate(): string
+    {
+        $options = [
+            'highlightColumns' => [self::GUEST_TEMPLATE_COMPANY_COLUMN],
+            'textColumns' => [0],
+            'blankRows' => 500,
+        ];
+
+        return (new XlsxWriter())
+            ->addSheet('Guests', self::GUEST_TEMPLATE_HEADERS, [], $options)
+            ->addSheet('How to fill', self::GUEST_TEMPLATE_HEADERS, [
+                ['1', 'Casiano', 'Gerry', '', 'EXTERNAL', 'AB Casiano Gravel & Sand'],
+                [],
+                ['One guest per row on the "Guests" sheet. Keep the header row and column order.'],
+                ['GUEST NO.: optional, unique per event; leading zeros are kept (001).'],
+                ['SURNAME and FIRST NAME: required. MIDDLE NAME: optional (may be blank).'],
+                ['Full Name is built as FIRST NAME + MIDDLE NAME + SURNAME, e.g. "Gerry Casiano".'],
+                ['INTERNAL/EXTERNAL: INTERNAL, EXTERNAL or blank.'],
+                ['DESIGNATION / COMPANY (red column): the guest\'s company.'],
+            ], ['highlightColumns' => [self::GUEST_TEMPLATE_COMPANY_COLUMN], 'textColumns' => [0]])
+            ->toString();
     }
 
     /**
@@ -300,8 +404,9 @@ final class AttendeeImportService
                 || str_contains($n, 'department') || str_contains($n, 'dept') || str_contains($n, 'division'),
             'external_identifier' => static fn (string $n): bool => (str_contains($n, 'employee') || str_contains($n, 'emp') || str_contains($n, 'staff'))
                 && (str_ends_with($n, 'id') || str_ends_with($n, 'no') || str_contains($n, 'number') || str_contains($n, 'code')),
+            // Never a name part: "SURNAME" alone is not a Full Name.
             'full_name' => static fn (string $n): bool => str_contains($n, 'name')
-                && !preg_match('/dept|department|company|cluster|email|user|first|last|middle|nick|division|^name\d+$/', $n),
+                && !preg_match('/dept|department|company|cluster|email|user|first|last|middle|nick|division|sur|given|family|^name\d+$/', $n),
         ];
         foreach ($rules as $field => $matches) {
             if ($mapping[$field] !== null) {
@@ -316,7 +421,45 @@ final class AttendeeImportService
             }
         }
 
+        // Precedence: a Full Name column wins; name-part columns then stay
+        // unmapped (kept as extra information, exactly as before).
+        if ($mapping['full_name'] !== null) {
+            foreach (self::NAME_PARTS as $part) {
+                $mapping[$part] = null;
+            }
+        }
+
         return $mapping;
+    }
+
+    /**
+     * FIRST + MIDDLE + SURNAME, trimmed, whitespace collapsed, empty parts
+     * skipped (never "null", "undefined" or double spaces).
+     *
+     * @param array<string, string> $values
+     */
+    public static function combineName(array $values): string
+    {
+        $parts = [];
+        foreach (self::NAME_PARTS as $part) {
+            $value = trim(preg_replace('/\s+/u', ' ', (string) ($values[$part] ?? '')) ?? '');
+            if ($value !== '') {
+                $parts[] = $value;
+            }
+        }
+
+        return implode(' ', $parts);
+    }
+
+    /** 'internal' | 'external' for a recognised value (any case / spacing), '' for blank, null when invalid. */
+    public static function normaliseAttendeeType(string $value): ?string
+    {
+        $value = mb_strtolower(trim(preg_replace('/\s+/u', ' ', $value) ?? ''));
+        if ($value === '') {
+            return '';
+        }
+
+        return in_array($value, self::ATTENDEE_TYPES, true) ? $value : null;
     }
 
     public static function normaliseText(?string $value): string
@@ -348,6 +491,12 @@ final class AttendeeImportService
         $fileByExt = $fileByEmail = $fileByName = [];
         $newRecords = $invalid = $duplicates = [];
         $mappedIndexes = array_filter($mapping, static fn ($i) => $i !== null);
+        $nameFromParts = $mapping['full_name'] === null;
+        // Header of the column each field comes from (for row-specific reasons).
+        $columns = [];
+        foreach (self::FIELDS as $field) {
+            $columns[$field] = $mapping[$field] !== null ? ($headers[$mapping[$field]] ?? null) : null;
+        }
 
         foreach ($rows as $row) {
             $cells = $row['cells'];
@@ -356,17 +505,23 @@ final class AttendeeImportService
                 $index = $mapping[$field];
                 $values[$field] = $index !== null ? SpreadsheetReader::cleanCell($cells[$index] ?? '') : '';
             }
+            if ($nameFromParts) {
+                $values['full_name'] = self::combineName($values);
+            }
+            $type = self::normaliseAttendeeType($values['attendee_type']);
 
             $display = [
                 'rowNumber' => $row['rowNumber'],
                 'fullName' => $values['full_name'],
                 'company' => $values['company'],
+                // Normalised as "INTERNAL" / "EXTERNAL"; an invalid value is shown as written.
+                'attendeeType' => $type !== null ? mb_strtoupper($type) : $values['attendee_type'],
                 'department' => $values['department'],
                 'email' => $values['email'],
                 'externalIdentifier' => $values['external_identifier'],
             ];
 
-            $errors = self::validateRow($values);
+            $errors = self::validateRow($values, $nameFromParts, $columns);
             if ($errors !== []) {
                 $invalid[] = $display + ['reasons' => $errors];
                 continue;
@@ -399,6 +554,7 @@ final class AttendeeImportService
                 'rowNumber' => $row['rowNumber'],
                 'full_name' => $values['full_name'],
                 'company' => $values['company'] !== '' ? $values['company'] : null,
+                'attendee_type' => $type !== null && $type !== '' ? $type : null,
                 'department' => $values['department'] !== '' ? $values['department'] : null,
                 'email' => $values['email'] !== '' ? mb_strtolower($values['email']) : null,
                 'external_identifier' => $values['external_identifier'] !== '' ? $values['external_identifier'] : null,
@@ -423,6 +579,7 @@ final class AttendeeImportService
                 'rowNumber' => $r['rowNumber'],
                 'fullName' => $r['full_name'],
                 'company' => $r['company'],
+                'attendeeType' => $r['attendee_type'] !== null ? mb_strtoupper($r['attendee_type']) : null,
                 'department' => $r['department'],
                 'email' => $r['email'],
                 'externalIdentifier' => $r['external_identifier'],
@@ -436,21 +593,44 @@ final class AttendeeImportService
      * @param array<string, string> $values
      * @return list<string>
      */
-    private static function validateRow(array $values): array
+    /**
+     * Row-specific, actionable reasons. Each names the spreadsheet column it
+     * is about; cell values are only echoed for Internal/External (a short
+     * code), never names or email addresses.
+     *
+     * @param array<string, string> $values
+     * @param array<string, string|null> $columns field => header of its column
+     * @return list<string>
+     */
+    private static function validateRow(array $values, bool $nameFromParts, array $columns = []): array
     {
+        $in = static fn (string $field): string => isset($columns[$field]) && $columns[$field] !== null
+            ? ' (column "' . $columns[$field] . '")' : '';
         $errors = [];
-        foreach (self::REQUIRED as $field) {
-            if ($values[$field] === '') {
-                $errors[] = self::LABELS[$field] . ' is required.';
+        if ($nameFromParts) {
+            foreach (self::REQUIRED_NAME_PARTS as $part) {
+                if ($values[$part] === '') {
+                    $errors[] = self::LABELS[$part] . ' is empty' . $in($part) . '. Fill it in; Full Name is built from First Name + Middle Name + Surname.';
+                }
             }
+        }
+        if ($values['full_name'] === '' && $errors === []) {
+            $errors[] = 'Full Name is empty' . $in('full_name') . '.';
+        }
+        if (self::normaliseAttendeeType($values['attendee_type']) === null) {
+            $errors[] = 'Internal/External "' . mb_substr($values['attendee_type'], 0, 40) . '"' . $in('attendee_type')
+                . ' is not valid. Use INTERNAL or EXTERNAL (or leave it blank).';
         }
         foreach (self::MAX_LENGTHS as $field => $max) {
             if (mb_strlen($values[$field]) > $max) {
-                $errors[] = self::LABELS[$field] . " may not be longer than {$max} characters.";
+                $label = $field === 'full_name' && $nameFromParts ? 'Full Name (First + Middle + Surname)' : self::LABELS[$field];
+                $errors[] = $label . $in($field) . " may not be longer than {$max} characters (it has " . mb_strlen($values[$field]) . ').';
             }
         }
         if ($values['email'] !== '' && filter_var($values['email'], FILTER_VALIDATE_EMAIL) === false) {
-            $errors[] = 'Email "' . mb_substr($values['email'], 0, 60) . '" is not a valid email address.';
+            $ats = substr_count($values['email'], '@');
+            $errors[] = 'Email' . $in('email') . ' is not a valid email address: '
+                . ($ats === 0 ? 'it has no "@".' : ($ats > 1 ? 'the cell holds more than one address. Keep one address per cell.' : 'check its spelling.'));
         }
 
         return $errors;
@@ -552,13 +732,16 @@ final class AttendeeImportService
         $cleanMapping = [];
         $errors = [];
         $used = [];
+        // Precedence: when Full Name is mapped the name-part fields are ignored
+        // (never combined a second time); their columns stay extra information.
+        $fullNameMapped = ($mapping['full_name'] ?? null) !== null && ($mapping['full_name'] ?? null) !== '';
         foreach (self::FIELDS as $field) {
             $value = $mapping[$field] ?? null;
+            if ($fullNameMapped && in_array($field, self::NAME_PARTS, true)) {
+                $value = null;
+            }
             if ($value === null || $value === '') {
                 $cleanMapping[$field] = null;
-                if (in_array($field, self::REQUIRED, true)) {
-                    $errors[$field][] = 'Choose the column that contains ' . self::LABELS[$field] . '.';
-                }
                 continue;
             }
             if (!is_int($value) || $value < 0 || $value >= $width) {
@@ -571,6 +754,19 @@ final class AttendeeImportService
             }
             $used[$value] = $field;
             $cleanMapping[$field] = $value;
+        }
+        if (!$fullNameMapped) {
+            $missing = array_values(array_filter(
+                self::REQUIRED_NAME_PARTS,
+                static fn (string $part): bool => !isset($errors[$part]) && ($cleanMapping[$part] ?? null) === null
+            ));
+            if (count($missing) === count(self::REQUIRED_NAME_PARTS)) {
+                $errors['full_name'][] = 'Choose the column that contains Full Name, or the First Name and Surname columns.';
+            } else {
+                foreach ($missing as $part) {
+                    $errors[$part][] = 'Choose the column that contains ' . self::LABELS[$part] . ', or choose a Full Name column.';
+                }
+            }
         }
         if ($errors !== []) {
             throw HttpException::validation($errors, 'Check the column mapping.');
