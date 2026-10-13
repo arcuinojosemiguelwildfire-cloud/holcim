@@ -10,7 +10,7 @@ export type PredrawnStatus = 'assigned' | 'revealed' | 'voided'
 
 export interface PredrawnAssignment {
   id: number
-  /** Live rows: is the winner registered in the selected sessions? false = reveal blocked. null = not computed (voided rows). */
+  /** Live rows: is the winner registered in the selected sessions? Information only (never blocks). null = not computed (voided rows). */
   inPool: boolean | null
   /** Always "Pre-Drawn Winner" (never a random draw). */
   category: string
@@ -56,7 +56,7 @@ export interface RandomizerPool {
   size: number
 }
 
-/** An assignment whose winner is outside the (new) pool. */
+/** A live assignment whose winner is not registered in the (new) selection - information only. */
 export interface PoolConflict {
   letter: string
   fullName: string
@@ -73,6 +73,8 @@ export interface PoolCandidate {
   externalIdentifier: string | null
   /** Letter already assigned to this attendee today (live), if any. */
   assignedLetter: string | null
+  /** Registered in a selected session of today (information only; anyone active can be assigned). */
+  inPool: boolean
 }
 
 export interface PredrawnOverview {
@@ -115,12 +117,12 @@ export const predrawnService = {
     return (await apiClient.post<{ assignment: PredrawnAssignment }>(`/predrawn/assignments/${id}/void`, { reason })).assignment
   },
   /**
-   * Admin: replace the day's selected sessions. 409 POOL_CONFLICTS (details.conflicts)
-   * when unrevealed assignments would leave the pool, unless confirmConflicts.
+   * Admin: replace the day's selected sessions (rolling names). Never blocks or changes
+   * assignments; `outOfPool` lists winners not registered in the new selection (information).
    */
-  savePool: (sessionIds: number[], confirmConflicts = false) =>
-    apiClient.put<{ pool: RandomizerPool; outOfPool: PoolConflict[] }>('/predrawn/pool', { session_ids: sessionIds, confirm_conflicts: confirmConflicts }),
-  /** Admin: pool attendees matching a search (assignment picker). */
+  savePool: (sessionIds: number[]) =>
+    apiClient.put<{ pool: RandomizerPool; outOfPool: PoolConflict[] }>('/predrawn/pool', { session_ids: sessionIds }),
+  /** Admin: active attendees of the active event matching a search (assignment picker), with `inPool`. */
   async poolCandidates(search: string): Promise<PoolCandidate[]> {
     return (await apiClient.get<{ items: PoolCandidate[] }>(`/predrawn/pool/candidates?search=${encodeURIComponent(search)}`)).items
   },

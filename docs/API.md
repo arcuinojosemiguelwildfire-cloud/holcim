@@ -163,15 +163,18 @@ and the role matrix is in README §9g. Phase 8 notes:
   enabled, current, selected, registered}], selectedSessionIds, configured, size}`
   and `inPool` on each live assignment; `PUT /predrawn/pool` (admin, CSRF)
   `{session_ids: int[], confirm_conflicts?: bool}` → `{pool, outOfPool}`
-  (422 `session_ids` for sessions not of the current day; 409 `POOL_CONFLICTS`
-  with `details.conflicts: [{letter, fullName, attendeeCode, status}]` when
-  unrevealed assignments would leave the pool and `confirm_conflicts` is not
-  true); `GET /predrawn/pool/candidates?search=` (admin) → `{items: [{id,
+  (422 `session_ids` for sessions not of the current day; never blocks or
+  changes assignments; `outOfPool: [{letter, fullName, attendeeCode, status}]`
+  lists live assignments whose winner is not registered in the selection,
+  for information; `confirm_conflicts` is accepted and ignored);
+  `GET /predrawn/pool/candidates?search=` (admin) → `{items: [{id,
   attendeeCode, fullName, company, department, externalIdentifier,
-  assignedLetter}]}`. Roll names, assignments and reveals return
-  `409 NO_POOL` when no session is selected; assignments whose attendee is
-  not in the pool return 422 `attendee_id`; revealing an out-of-pool
-  assignment returns `409 NOT_IN_POOL`. The report file is now
+  assignedLetter, inPool}]}` = ACTIVE attendees of the active event,
+  registered or not. Roll names and reveals return `409 NO_POOL` when no
+  session is selected. Assignments and reveals do NOT require the winner to
+  be registered or in the pool (archived / other-event attendees: 422
+  `attendee_id` on assign, 409 `ATTENDEE_INACTIVE` on reveal); `inPool` is
+  information only. The report file is now
   `Randomizer Winners (Pre-Drawn).xlsx` (same route and columns).
 - Migration 035 (Pre-Drawn Winner Reveal, active event day): `GET /predrawn` (overview: `assignments`, `voided`),
   `GET /predrawn/roll-names`, `POST /predrawn/reveal {letter}` (admin + event

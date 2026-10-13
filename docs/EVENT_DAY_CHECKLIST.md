@@ -23,7 +23,7 @@
 - [ ] Registration page shows Registered = 0 for the new day (previous days' check-ins are kept, not reset).
 - [ ] Scanner operators signed in on each device; disable any account that should not be used today.
 - [ ] **Randomizer › Name pool**: tick today's registration sessions and **Save sessions** (the pool size appears). Without a selection the presentation cannot start.
-- [ ] **Randomizer › Assignments**: assign the Spin the Wheel winners to letters A–Z with their prizes; no row may show **Not in pool**.
+- [ ] **Randomizer › Assignments**: assign the Spin the Wheel winners to letters A–Z with their prizes. Any active attendee of the event can be chosen, even if they have not scanned yet; the list marks who is registered in the selected sessions.
 
 ## Switching registration sessions (Oct 15)
 - [ ] At **5:00 PM** an admin opens Events › Days › Sessions (Day 2) and clicks **Make current** → **Confirm** on "Oct 15 - 5:00 PM". The Registration page banner must then show **October 15 · 5:00 PM Registration**.
@@ -44,8 +44,8 @@
 - [ ] Attendees › **Add attendee** (admin or event operator): Full Name required; Company, Cluster, Employee ID, Email optional. Print or download the QR from the success screen, then **scan it** at registration — adding a person does not register them or put them in the Randomizer pool.
 
 ## Randomizer (pre-drawn winners)
-- [ ] If more people registered in a session that is not selected yet, an admin ticks it in **Name pool** → **Save sessions**. The pool only changes which names roll and who can be assigned; registrations are never changed.
-- [ ] Changing the selection while an assigned winner is not registered in the new sessions: the page lists the letters; **Save anyway** keeps them but marks them **Not in pool** and their reveal is refused until an admin edits / removes the assignment or changes the selection back.
+- [ ] If more people registered in a session that is not selected yet, an admin ticks it in **Name pool** → **Save sessions**. The pool only changes which names roll; registrations and assignments are never changed.
+- [ ] Changing the selection only changes the rolling names; assignments stay valid and revealable even if the winner is not registered in the selected sessions.
 - [ ] Open **Randomizer** → **Enter fullscreen** on the LED screen; keep the **operator window** on the laptop.
 - [ ] **Space** starts the names; press the assigned **letter** to reveal (recorded first, then shown). Unassigned letters and errors appear only in the operator notices.
 - [ ] Wrong letter pressed? Admin: **Void reveal** (reason) → assign the letter again → reveal again.

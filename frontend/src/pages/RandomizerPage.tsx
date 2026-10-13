@@ -31,8 +31,8 @@ const STATUS: Record<PredrawnAssignment['status'], { label: string; tone: 'muted
  * Randomizer (Pre-Drawn Winner Reveal): winners chosen BEFORE the event
  * (Spin the Wheel) are revealed one by one on the LED screen. No random
  * selection happens here. The rolling names come from the registration
- * sessions an admin selects for the day; every assigned winner must be in
- * that pool. Admins choose sessions and assign letters; admins and event
+ * sessions an admin selects for the day; a winner can be any active
+ * attendee of the event (registered or not). Admins choose sessions and assign letters; admins and event
  * operators present. Open this page in a second window on the operator
  * laptop to see the operator notices while the first window is fullscreen.
  */
@@ -89,7 +89,6 @@ export function RandomizerPage() {
   const takenLetters = assignments.map((a) => a.letter)
   const revealed = assignments.filter((a) => a.status === 'revealed').length
   const poolReady = data?.pool.configured ?? false
-  const outOfPool = assignments.filter((a) => a.status === 'assigned' && a.inPool === false)
 
   const act = async (action: () => Promise<unknown>, success: string) => {
     setBusy(true)
@@ -125,12 +124,6 @@ export function RandomizerPage() {
 
       {error && <Alert tone="error" className="mb-4">{error}</Alert>}
       {message && <Alert tone={message.tone} className="mb-4" onDismiss={() => setMessage(null)}>{message.text}</Alert>}
-      {outOfPool.length > 0 && (
-        <Alert tone="error" className="mb-4" title="Assigned winners outside the name pool">
-          {outOfPool.map((a) => `${a.letter} (${a.attendee.fullName})`).join(', ')} {outOfPool.length === 1 ? 'is' : 'are'} not registered in the selected
-          sessions and cannot be revealed. {isAdmin ? 'Edit or remove the assignment, or change the session selection.' : 'Ask an admin to fix the assignment or the session selection.'}
-        </Alert>
-      )}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="space-y-6">
@@ -181,8 +174,7 @@ export function RandomizerPage() {
           title={`Assignments${data ? ` — ${data.eventDay.displayName}` : ''}`}
           description={`Review before presenting. ${revealed} of ${assignments.length} revealed. Category on every record: Pre-Drawn Winner.`}
           actions={isAdmin && (
-            <Button icon={<Plus className="size-4" aria-hidden />} onClick={() => setEditing('new')} disabled={!data || !poolReady || assignments.length >= 26}
-              title={!poolReady ? 'Select registration sessions first' : undefined}>
+            <Button icon={<Plus className="size-4" aria-hidden />} onClick={() => setEditing('new')} disabled={!data || assignments.length >= 26}>
               Assign letter
             </Button>
           )}
@@ -209,16 +201,14 @@ export function RandomizerPage() {
                       <span className="block text-xs text-slate-500">
                         <span className="font-mono">{a.attendee.attendeeCode}</span>{a.attendee.company && ` · ${a.attendee.company}`}{a.attendee.department && ` · ${a.attendee.department}`}
                         {!a.attendee.active && <span className="ml-1 font-medium text-red-600">· archived (cannot be revealed)</span>}
-                        {a.inPool === false && a.status === 'assigned' && (
-                          <span className="ml-1 font-medium text-red-600" data-testid={`not-in-pool-${a.letter}`}>· not in the selected sessions (cannot be revealed)</span>
+                        {a.inPool === false && (
+                          <span className="ml-1 text-slate-500" data-testid={`not-registered-${a.letter}`}>· not registered in the selected sessions (allowed)</span>
                         )}
-                        {a.inPool === false && a.status === 'revealed' && <span className="ml-1 text-slate-500">· not in the current selection</span>}
                       </span>
                     </td>
                     <td className="px-5 py-3 text-slate-700">{a.prizeLabel ?? '—'}</td>
                     <td className="px-5 py-3">
                       <Badge tone={STATUS[a.status].tone}>{STATUS[a.status].label}</Badge>
-                      {a.inPool === false && a.status === 'assigned' && <Badge tone="danger" className="ml-2">Not in pool</Badge>}
                       {a.revealedAt && <span className="ml-2 text-xs text-slate-500">{formatTime(a.revealedAt)}{a.revealedBy && ` by ${a.revealedBy}`}</span>}
                     </td>
                     {isAdmin && (

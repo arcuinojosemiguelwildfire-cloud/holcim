@@ -4,8 +4,8 @@ import { Alert } from '../ui/Alert'
 import { Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
 import { Card, CardHeader } from '../ui/Card'
-import { ApiError, errorMessage } from '../../services/apiClient'
-import { predrawnService, type PoolConflict, type RandomizerPool } from '../../services/predrawnService'
+import { errorMessage } from '../../services/apiClient'
+import { predrawnService, type RandomizerPool } from '../../services/predrawnService'
 import { formatNumber, formatShortDate } from '../../utils/format'
 
 interface RandomizerSessionsCardProps {
@@ -24,51 +24,39 @@ function timeLabel(value: string | null): string {
 }
 
 /**
- * Which registration sessions of the current event day feed the Randomizer
- * (the rolling names and who can be assigned a letter). Admins choose; event
- * operators see the selection. Saving only changes the selection; it never
- * touches registrations or scan history. If an assigned (not yet revealed)
- * winner would fall outside the new pool, the server refuses until the admin
- * confirms; such assignments are kept, flagged and cannot be revealed until
- * they are fixed.
+ * Which registration sessions of the current event day feed the Randomizer's
+ * rolling names. Admins choose; event operators see the selection. Saving
+ * only changes the selection; it never touches registrations, scan history
+ * or assignments. Pre-drawn winners do not have to be registered in these
+ * sessions, so a selection never blocks an assignment or a reveal.
  */
 export function RandomizerSessionsCard({ dayName, pool, isAdmin, onSaved }: RandomizerSessionsCardProps) {
   const [checked, setChecked] = useState<number[]>(pool.selectedSessionIds)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [conflicts, setConflicts] = useState<PoolConflict[] | null>(null)
   const saved = pool.selectedSessionIds.join(',')
   // When the saved selection changes (save here, or another admin), reset the checkboxes.
   const [lastSaved, setLastSaved] = useState(saved)
   if (lastSaved !== saved) {
     setLastSaved(saved)
     setChecked(pool.selectedSessionIds)
-    setConflicts(null)
   }
 
   const dirty = [...checked].sort((a, b) => a - b).join(',') !== saved
   const toggle = (id: number) => {
-    setConflicts(null)
     setChecked((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]))
   }
 
-  const save = async (confirm: boolean) => {
+  const save = async () => {
     setSaving(true)
     setError(null)
     try {
-      const result = await predrawnService.savePool(checked, confirm)
-      setConflicts(null)
-      const flagged = result.outOfPool.filter((c) => c.status === 'assigned')
+      const result = await predrawnService.savePool(checked)
       onSaved(result.pool.configured
-        ? `Randomizer sessions saved: ${formatNumber(result.pool.size)} attendee(s) in the pool.${flagged.length > 0
-          ? ` Letter(s) ${flagged.map((c) => c.letter).join(', ')} are outside the pool and cannot be revealed until fixed.` : ''}`
+        ? `Randomizer sessions saved: ${formatNumber(result.pool.size)} attendee(s) in the name pool.`
         : 'Randomizer sessions cleared. Select at least one session before presenting.')
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'POOL_CONFLICTS') {
-        setConflicts(Array.isArray(e.details.conflicts) ? (e.details.conflicts as PoolConflict[]) : [])
-      } else {
-        setError(errorMessage(e))
-      }
+      setError(errorMessage(e))
     } finally {
       setSaving(false)
     }
@@ -78,7 +66,7 @@ export function RandomizerSessionsCard({ dayName, pool, isAdmin, onSaved }: Rand
     <Card className="mt-6" data-testid="randomizer-sessions">
       <CardHeader
         title={`Name pool — ${dayName}`}
-        description="Attendees registered in at least one selected registration session (each person once). Archived attendees and removed registrations are left out."
+        description="Rolling names: attendees registered in at least one selected registration session (each person once; archived attendees and removed registrations left out). Pre-drawn winners do not need to be in this pool."
         actions={
           <span className="inline-flex items-center gap-2 text-sm text-slate-600" data-testid="pool-size">
             <Users className="size-4" aria-hidden />
@@ -95,21 +83,6 @@ export function RandomizerSessionsCard({ dayName, pool, isAdmin, onSaved }: Rand
           </Alert>
         )}
         {error && <Alert tone="error" onDismiss={() => setError(null)}>{error}</Alert>}
-        {conflicts && (
-          <Alert tone="error" title="Assigned winners are not in the new selection">
-            <p>
-              These winners are not registered in any of the sessions you selected. If you save anyway, their assignments are kept but
-              <b> cannot be revealed</b> until you edit them or change the selection again:
-            </p>
-            <ul className="mt-2 list-disc pl-5" data-testid="pool-conflicts">
-              {conflicts.map((c) => <li key={c.letter}><b className="font-mono">{c.letter}</b> — {c.fullName} ({c.attendeeCode})</li>)}
-            </ul>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button size="sm" variant="danger" loading={saving} onClick={() => void save(true)}>Save anyway</Button>
-              <Button size="sm" variant="secondary" disabled={saving} onClick={() => setConflicts(null)}>Keep editing</Button>
-            </div>
-          </Alert>
-        )}
         {pool.sessions.length === 0 ? (
           <p className="text-sm text-slate-500">This event day has no registration sessions yet (Events page).</p>
         ) : (
@@ -140,7 +113,7 @@ export function RandomizerSessionsCard({ dayName, pool, isAdmin, onSaved }: Rand
         )}
         {isAdmin && (
           <div className="flex justify-end">
-            <Button disabled={!dirty || conflicts !== null} loading={saving && conflicts === null} onClick={() => void save(false)} data-testid="pool-save">
+            <Button disabled={!dirty} loading={saving} onClick={() => void save()} data-testid="pool-save">
               Save sessions
             </Button>
           </div>

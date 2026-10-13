@@ -22,9 +22,11 @@ type Picked = Pick<PoolCandidate, 'id' | 'attendeeCode' | 'fullName' | 'company'
 
 /**
  * Admin: assign a pre-drawn winner to a letter A-Z, with an optional prize
- * label. Only attendees in today's Randomizer pool (registered in a selected
- * session) can be picked. The server checks everything again (letter /
- * attendee unique per event day, attendee active, attendee in the pool).
+ * label. Any ACTIVE attendee of the active event can be picked - registered,
+ * scanned or not (the winners were chosen outside the system); the list
+ * marks who is registered in the selected sessions. The server checks
+ * everything again (letter / attendee unique per event day, attendee active
+ * and in this event).
  */
 export function AssignmentModal({ editing, takenLetters, onClose, onSaved }: AssignmentModalProps) {
   const freeLetters = LETTERS.filter((l) => !takenLetters.includes(l) || l === editing?.letter)
@@ -118,7 +120,7 @@ export function AssignmentModal({ editing, takenLetters, onClose, onSaved }: Ass
         </div>
 
         <div>
-          <p className="text-sm font-medium text-slate-700">Winner <span className="font-normal text-slate-400">(registered in a selected session)</span></p>
+          <p className="text-sm font-medium text-slate-700">Winner <span className="font-normal text-slate-400">(any active attendee of this event)</span></p>
           {selected && (
             <p className="mt-1.5 rounded-lg bg-brand-50 px-3 py-2 text-sm text-brand-900 ring-1 ring-inset ring-brand-200" data-testid="assignment-selected">
               <b>{selected.fullName}</b> · <span className="font-mono">{selected.attendeeCode}</span>
@@ -140,7 +142,7 @@ export function AssignmentModal({ editing, takenLetters, onClose, onSaved }: Ass
               data-testid="assignment-search"
             />
           </label>
-          {results && results.length === 0 && <p className="mt-2 text-sm text-slate-500">No attendee in the Randomizer pool matches “{term}”.</p>}
+          {results && results.length === 0 && <p className="mt-2 text-sm text-slate-500">No active attendee of this event matches “{term}”.</p>}
           {results && results.length > 0 && (
             <ul className="mt-2 max-h-56 divide-y divide-slate-100 overflow-y-auto rounded-lg ring-1 ring-slate-200">
               {results.map((a) => {
@@ -156,6 +158,10 @@ export function AssignmentModal({ editing, takenLetters, onClose, onSaved }: Ass
                   >
                     <span className="truncate font-medium text-slate-900">
                       {a.fullName}{taken && <span className="ml-2 text-xs font-normal text-slate-500">already letter {a.assignedLetter}</span>}
+                      <span className={cn('ml-2 rounded px-1.5 py-0.5 text-[11px] font-medium', a.inPool ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500')}
+                        data-testid={`candidate-pool-${a.id}`}>
+                        {a.inPool ? 'Registered in selected sessions' : 'Not registered in selected sessions'}
+                      </span>
                     </span>
                     <span className="truncate text-xs text-slate-500">
                       <span className="font-mono">{a.attendeeCode}</span>{a.company && ` · ${a.company}`}{a.department && ` · ${a.department}`}

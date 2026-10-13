@@ -10,6 +10,9 @@ use App\Core\Database;
  * The Randomizer's name pool (migration 036): the registration sessions an
  * admin selected for ONE event day, and the attendees registered in them.
  *
+ * The pool drives the rolling names only; pre-drawn winners do NOT have to
+ * be in it (any active attendee of the event can be assigned and revealed).
+ *
  * Pool rule (the existing eligibility rules of the system):
  *   an attendee is in the pool of day D when they have an ACTIVE
  *   session_registrations row (status 'active'; admin-removed registrations
@@ -105,20 +108,32 @@ final class RandomizerPool
     }
 
     /**
-     * Pool attendees matching a search (assignment picker).
+     * Assignment picker: ACTIVE attendees of $eventId matching a search,
+     * whether or not they registered or scanned (pre-drawn winners need not
+     * be in the pool). `in_pool` = registered in a selected session of
+     * $dayId (information only). Archived attendees and other events are
+     * never returned.
      *
      * @return list<array<string, mixed>>
      */
-    public static function search(int $dayId, string $search, int $limit = 20): array
+    public static function searchEvent(int $eventId, int $dayId, string $search, int $limit = 20): array
     {
         $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search) . '%';
         $limit = max(1, min(50, $limit));
         $statement = Database::connection()->prepare(
-            'SELECT a.id, a.attendee_code, a.full_name, a.company, a.department, a.external_identifier ' . self::poolFrom('d1') . '
+            "SELECT a.id, a.attendee_code, a.full_name, a.company, a.department, a.external_identifier,
+                    EXISTS (
+                        SELECT 1 FROM randomizer_pool_sessions ps
+                        JOIN session_registrations sr ON sr.registration_session_id = ps.registration_session_id
+                            AND sr.event_day_id = ps.event_day_id AND sr.status = 'active'
+                        WHERE ps.event_day_id = :d1 AND sr.attendee_id = a.id
+                    ) AS in_pool
+             FROM attendees a
+             WHERE a.event_id = :event_id AND a.status = 'active'
                AND (a.full_name LIKE :s1 OR a.attendee_code LIKE :s2 OR a.company LIKE :s3 OR a.external_identifier LIKE :s4)
-             ORDER BY a.full_name, a.attendee_code LIMIT ' . $limit
+             ORDER BY a.full_name, a.attendee_code LIMIT " . $limit
         );
-        $statement->execute(['d1' => $dayId, 's1' => $like, 's2' => $like, 's3' => $like, 's4' => $like]);
+        $statement->execute(['d1' => $dayId, 'event_id' => $eventId, 's1' => $like, 's2' => $like, 's3' => $like, 's4' => $like]);
 
         return $statement->fetchAll();
     }

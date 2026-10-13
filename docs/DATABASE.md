@@ -218,7 +218,7 @@ Pools: Minor = registered in any session of the day; Major = registered in a ses
 - **`predrawn_winners`:** one row per assignment of a pre-drawn winner (chosen outside the system) to a letter A–Z for one event day: `event_id`, `event_day_id`, `letter`, `attendee_id`, optional `prize_label`, `assigned_*`, `revealed_*`, `voided_*`, `void_reason`.
 - Composite FKs: (`event_day_id`, `event_id`) → `event_days`, (`attendee_id`, `event_id`) → `attendees` (same event), RESTRICT; user columns SET NULL.
 - Generated `live_lock` (1, or NULL once voided) in UNIQUE (`event_day_id`, `letter`, `live_lock`) and (`event_day_id`, `attendee_id`, `live_lock`): one live row per letter and per attendee per day; voided rows stay as history. CHECKs: letter A–Z, void only after reveal. PostgreSQL twin: partial unique indexes `WHERE voided_at IS NULL`, RLS SELECT for admin + event operator.
-- Separate from `randomizer_draws`. Since migration 036 every live assignment must be in the day's pool (enforced by the API, not by a constraint, so a selection change can flag rather than delete). System Reset deletes it before `attendees`.
+- Separate from `randomizer_draws`. A winner can be any active attendee of the event: no registration, scan or pool membership is required (the pool from migration 036 only feeds the rolling names). System Reset deletes it before `attendees`.
 
 ## Internal / External attendee type (migration 034)
 
