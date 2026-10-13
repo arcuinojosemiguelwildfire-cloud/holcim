@@ -2,12 +2,10 @@ import {
   CalendarDays,
   ChartColumn,
   Dices,
-  Gift,
   LayoutDashboard,
   QrCode,
   ScanLine,
   Settings,
-  Trophy,
   Users,
   type LucideIcon,
 } from 'lucide-react'
@@ -44,9 +42,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Attendees', path: '/attendees', icon: Users, roles: STAFF_ROLES },
   { label: 'QR / ID Generator', path: '/qr-codes', icon: QrCode, roles: ['admin', 'registration_staff'] },
   { label: 'Registration', path: '/registration', icon: ScanLine, roles: SCANNER_ROLES },
-  { label: 'Minor Randomizer', path: '/minor-randomizer', icon: Dices, roles: RANDOMIZER_ROLES },
-  { label: 'Major Randomizer', path: '/major-randomizer', icon: Trophy, roles: RANDOMIZER_ROLES },
-  { label: 'Pre-Drawn Reveal', path: '/predrawn-reveal', icon: Gift, roles: RANDOMIZER_ROLES },
+  { label: 'Randomizer', path: '/randomizer', icon: Dices, roles: RANDOMIZER_ROLES },
   { label: 'Reports', path: '/reports', icon: ChartColumn, roles: ['admin'] },
   { label: 'Settings', path: '/settings', icon: Settings, roles: ['admin'] },
 ]

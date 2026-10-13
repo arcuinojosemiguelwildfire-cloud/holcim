@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { Download, FileSpreadsheet, ScanLine, Sheet, Trophy } from 'lucide-react'
+import { Archive, Download, ScanLine, Sheet } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Card, CardHeader } from '../components/ui/Card'
 import { PageHeader } from '../components/ui/PageHeader'
@@ -11,6 +11,9 @@ import { cn } from '../utils/cn'
 
 type Scope = 'day' | 'all'
 
+// Legacy Minor / Major reports: draws.csv and Winners.xlsx are offered under
+// "Legacy Minor/Major History" below; eligibility.csv is no longer offered in
+// the UI (its API stays available at /reports/eligibility.csv).
 const REPORTS: Array<{ path: string; title: string; description: string; columns: string; icon: LucideIcon }> = [
   {
     path: '/reports/registration.csv',
@@ -18,20 +21,6 @@ const REPORTS: Array<{ path: string; title: string; description: string; columns
     description: 'Every attendee with registration status for the day, time and the staff member who scanned them.',
     columns: 'Event Day, Attendee Code, Full Name, Cluster, Email, Registration Status, Registered At, Registered By, Attendee Status',
     icon: ScanLine,
-  },
-  {
-    path: '/reports/eligibility.csv',
-    title: 'Raffle eligibility report',
-    description: 'Registration makes an attendee eligible for both Minor and Major. Shows eligibility, its source and whether they already won each draw.',
-    columns: 'Event Day, Attendee Code, Full Name, Cluster, Email, Registered, Minor Eligible, Minor Source, Won Minor, Major Eligible, Major Source, Won Major, Attendee Status',
-    icon: FileSpreadsheet,
-  },
-  {
-    path: '/reports/draws.csv',
-    title: 'Draw winners report',
-    description: 'All Minor and Major draws in order, including voided draws (Status = VOID with reason).',
-    columns: 'Event Day, Draw Type, Attendee Code, Full Name, Cluster, Drawn At, Drawn By, Status, Voided At, Voided By, Void Reason',
-    icon: Trophy,
   },
 ]
 
@@ -65,7 +54,7 @@ export function ReportsPage() {
       <Card className="mb-6">
         <CardHeader
           title="Excel lists"
-          description="Attendee list per event day (same attendees every day, with that day's registration status) and the winners list."
+          description="Attendee list per event day (same attendees every day, with that day's registration status) and the Randomizer winners."
         />
         <div className="flex flex-wrap items-center gap-3 px-5 py-4" data-testid="excel-lists">
           <Sheet className="size-5 text-brand-700" aria-hidden />
@@ -74,20 +63,18 @@ export function ReportsPage() {
               <Download className="size-4" aria-hidden /> Day {d.dayNumber} Attendees.xlsx
             </a>
           ))}
-          <a href={`${API_BASE_URL}/reports/winners.xlsx?scope=all`} className={linkClass}>
-            <Download className="size-4" aria-hidden /> Winners.xlsx
-          </a>
           <a href={`${API_BASE_URL}/reports/predrawn-winners.xlsx?scope=all`} className={linkClass}>
-            <Download className="size-4" aria-hidden /> Pre-Drawn Winners.xlsx
+            <Download className="size-4" aria-hidden /> Randomizer Winners (Pre-Drawn).xlsx
           </a>
         </div>
         <p className="px-5 pb-4 text-xs text-slate-500">
-          Winners.xlsx lists the Minor / Major random draws only. Pre-Drawn Winners.xlsx lists the winners selected before the event and revealed with the Pre-Drawn Reveal (category “Pre-Drawn Winner”).
+          Randomizer Winners (Pre-Drawn).xlsx lists the winners selected before the event (Spin the Wheel) and revealed with the Randomizer,
+          including voided reveals. Every row has the category “Pre-Drawn Winner”: they were not drawn at random by this system.
         </p>
       </Card>
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-base font-semibold text-slate-900">CSV reports</h2>
+        <h2 className="text-base font-semibold text-slate-900">CSV report</h2>
         <div className="flex rounded-lg bg-slate-100 p-0.5" role="tablist" aria-label="Report scope">
           <button type="button" role="tab" aria-selected={scope === 'day'} className={tabClass(scope === 'day')} onClick={() => setScope('day')}>
             {day ? `Day ${day.dayNumber} only` : 'Current day'}
@@ -102,7 +89,7 @@ export function ReportsPage() {
           ? `CSV exports cover ${day ? day.displayName : 'the current event day'}.`
           : 'CSV exports cover every day of the active event, one Event Day column per row.'}
       </p>
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-2">
         {REPORTS.map(({ path, title, description, columns, icon: Icon }) => (
           <Card key={path} className="flex flex-col p-5">
             <span className="flex size-10 items-center justify-center rounded-lg bg-brand-50 text-brand-700">
@@ -117,6 +104,26 @@ export function ReportsPage() {
           </Card>
         ))}
       </div>
+
+      <Card className="mt-8" data-testid="legacy-reports">
+        <CardHeader
+          title="Legacy Minor/Major History"
+          description="Records of the old Minor and Major Randomizer draws (no longer used). Kept unchanged for the record, including voided draws and reset marks."
+        />
+        <div className="flex flex-wrap items-center gap-3 px-5 py-4">
+          <Archive className="size-5 text-slate-500" aria-hidden />
+          <a href={`${API_BASE_URL}/reports/winners.xlsx?scope=all`} className={linkClass}>
+            <Download className="size-4" aria-hidden /> Winners.xlsx
+          </a>
+          <a href={`${API_BASE_URL}/reports/draws.csv?scope=${scope}`} className={linkClass}>
+            <Download className="size-4" aria-hidden /> draws.csv {scope === 'all' ? '(all days)' : `(${day ? `Day ${day.dayNumber}` : 'current day'})`}
+          </a>
+        </div>
+        <p className="px-5 pb-4 text-xs text-slate-500">
+          Winners.xlsx: Minor / Major draws of every day. draws.csv (follows the scope selected above): Event Day, Draw Type, Attendee Code, Full Name,
+          Cluster, Drawn At, Drawn By, Status, Voided At, Voided By, Void Reason.
+        </p>
+      </Card>
     </>
   )
 }

@@ -8,6 +8,7 @@ use App\Models\Attendee;
 use App\Models\Event;
 use App\Models\EventDay;
 use App\Models\RandomizerDraw;
+use App\Models\RandomizerPool;
 use App\Models\SessionRegistration;
 
 /**
@@ -22,6 +23,10 @@ use App\Models\SessionRegistration;
  *   Minor eligible = registered today OR manually added to Minor today
  *   Major eligible = registered today in a session that counts for Major
  *                    OR manually added to Major today
+ * minorEligible / majorEligible are kept in the API for compatibility only;
+ * the dashboard no longer shows them (single Randomizer). randomizerPool is
+ * the size of today's Randomizer name pool (registration sessions selected
+ * for the Randomizer; configured = false when none are selected).
  */
 final class DashboardService
 {
@@ -38,7 +43,7 @@ final class DashboardService
         ];
     }
 
-    /** @return array<string, array{value: int, available: bool}> */
+    /** @return array<string, array{value: int, available: bool, configured?: bool}> */
     private static function metrics(?int $eventId, ?int $dayId): array
     {
         return [
@@ -57,6 +62,11 @@ final class DashboardService
             'majorEligible' => [
                 'value' => $dayId !== null ? RandomizerDraw::countEligible($dayId, RandomizerDraw::TYPE_MAJOR) : 0,
                 'available' => true,
+            ],
+            'randomizerPool' => [
+                'value' => $dayId !== null ? RandomizerPool::count($dayId) : 0,
+                'available' => true,
+                'configured' => $dayId !== null && RandomizerPool::selectedSessionIds($dayId) !== [],
             ],
         ];
     }

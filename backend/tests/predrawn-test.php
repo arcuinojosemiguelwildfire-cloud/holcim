@@ -3,11 +3,15 @@
 declare(strict_types=1);
 
 /**
- * Pre-Drawn Winner Reveal test (HTTP, end to end; migration 035).
- * Assignments (validation, uniqueness, roles), reveals (correct winner,
- * unassigned letter, repeat, concurrent duplicates), voids and re-reveal,
- * the report, audit labels, and that the Minor / Major Randomizer, its
- * history and every attendee / QR / registration record stay unchanged.
+ * Randomizer (= Pre-Drawn Winner Reveal) test (HTTP, end to end;
+ * migrations 035 + 036). Session pool (selection per event day, persistence,
+ * de-duplication, archived / removed / other-day / other-event exclusions,
+ * NO_POOL), assignments (validation, uniqueness, roles, pool membership),
+ * reveals (correct winner, unassigned letter, repeat, concurrent
+ * duplicates), selection-change conflicts (POOL_CONFLICTS, NOT_IN_POOL),
+ * voids and re-reveal, the report, audit labels, that the legacy Minor /
+ * Major APIs are gone, and that every attendee / QR / registration record
+ * stays unchanged.
  *
  *   HOLCIM_TEST_EMAIL=admin@example.com HOLCIM_TEST_PASSWORD='...' \
  *     php backend/tests/predrawn-test.php http://localhost/Holcim/backend/api --write
@@ -31,6 +35,8 @@ use App\Core\Database;
 use App\Core\Env;
 use App\Models\Attendee;
 use App\Models\AttendeeQrCode;
+use App\Models\RegistrationSession;
+use App\Models\SessionRegistration;
 use App\Models\User;
 use App\Utils\SpreadsheetReader;
 use App\Utils\Token;
@@ -64,6 +70,12 @@ function check(string $label, bool $condition, mixed $detail = ''): void
         $failed++;
         echo "  FAIL  {$label}" . ($detail !== '' ? '  -> ' . (is_string($detail) ? $detail : json_encode($detail)) : '') . "\n";
     }
+}
+function sorted(array $values): array
+{
+    sort($values);
+
+    return $values;
 }
 function section(string $title): void
 {
@@ -111,7 +123,8 @@ try {
         && $admin->request('PATCH', "/events/{$eventId}/status", ['status' => 'active'])['status'] === 200, $created['raw']);
     $dayId = (int) (($admin->data('GET', "/events/{$eventId}/days")['days'] ?? [])[0]['id'] ?? 0);
 
-    $people = ['anna' => 'Anna Reyes', 'juan' => 'Juan Dela Cruz', 'makiling' => 'Makiling Santos', 'dina' => 'Dina Uy', 'eli' => 'Eli Cruz', 'old' => 'Archived Person'];
+    $people = ['anna' => 'Anna Reyes', 'juan' => 'Juan Dela Cruz', 'makiling' => 'Makiling Santos', 'dina' => 'Dina Uy', 'eli' => 'Eli Cruz', 'old' => 'Archived Person',
+        'fay' => 'Fay Unselected', 'gus' => 'Gus Removed', 'hal' => 'Hal Otherday'];
     $ids = [];
     foreach ($people as $key => $name) {
         $ids[$key] = Attendee::create($eventId, 'PDT-' . strtoupper($key) . "-{$stamp}", ['full_name' => $name, 'company' => 'Test Co', 'department' => 'QA'], null);
@@ -119,6 +132,26 @@ try {
     }
     Attendee::setStatus($ids['old'], Attendee::STATUS_ARCHIVED);
     $otherEventAttendee = (int) $pdo->query("SELECT id FROM attendees WHERE event_id <> {$eventId} LIMIT 1")->fetchColumn();
+
+    // Registration sessions: Day 1 = S1 (default) + S2 + S3, Day 2 = D2 (default).
+    $s1 = (int) (($admin->data('GET', "/event-days/{$dayId}/sessions")['sessions'] ?? [])[0]['id'] ?? 0);
+    $mk = static fn (string $label, string $time): int => (int) ($admin->request('POST', "/event-days/{$dayId}/sessions",
+        ['label' => $label, 'session_date' => '2026-10-20', 'start_time' => $time, 'counts_for_major' => false])['body']['data']['session']['id'] ?? 0);
+    $s2 = $mk('PDT Afternoon', '13:00');
+    $s3 = $mk('PDT Evening', '18:00');
+    $added = $admin->request('POST', "/events/{$eventId}/days", ['event_date' => '2026-10-21', 'label' => '']);
+    $day2 = (int) ($added['body']['data']['day']['id'] ?? 0);
+    $d2 = (int) (($admin->data('GET', "/event-days/{$day2}/sessions")['sessions'] ?? [])[0]['id'] ?? 0);
+    check('Sessions S1, S2, S3 (Day 1) and D2 (Day 2) exist', $s1 > 0 && $s2 > 0 && $s3 > 0 && $d2 > 0 && count(array_unique([$s1, $s2, $s3, $d2])) === 4, [$s1, $s2, $s3, $d2]);
+    // Anna in S1 AND S2 (must appear once); Fay only in S3 (not selected); Gus removed
+    // from S1; Hal only on Day 2; the archived person registered in S1.
+    $reg = static fn (string $key, int $day, int $session): int => SessionRegistration::create($eventId, $day, $session, $ids[$key], 'manual', null);
+    foreach ([['anna', $s1], ['anna', $s2], ['juan', $s1], ['makiling', $s2], ['dina', $s1], ['eli', $s2], ['old', $s1], ['fay', $s3]] as [$key, $session]) {
+        $reg($key, $dayId, $session);
+    }
+    SessionRegistration::remove($reg('gus', $dayId, $s1), null, 'Predrawn test removal');
+    $reg('hal', $day2, $d2);
+    $poolNames = ['Anna Reyes', 'Juan Dela Cruz', 'Makiling Santos', 'Dina Uy', 'Eli Cruz'];
 
     foreach (['operator' => User::ROLE_EVENT_OPERATOR, 'staff' => User::ROLE_REGISTRATION_STAFF] as $key => $role) {
         $secret = bin2hex(random_bytes(12));
@@ -143,8 +176,7 @@ try {
     ]));
     $before = $snapshot();
     $drawsBefore = (int) $pdo->query("SELECT COUNT(*) FROM randomizer_draws WHERE event_id = {$eventId}")->fetchColumn();
-    $minorBefore = $operator->data('GET', '/randomizers/minor')['eligibleCount'] ?? null;
-    $majorBefore = $operator->data('GET', '/randomizers/major')['eligibleCount'] ?? null;
+    $poolRowsBefore = (int) $pdo->query('SELECT COUNT(*) FROM randomizer_pool_sessions')->fetchColumn();
     $winnersBefore = $xlsxRows($admin, '/reports/winners.xlsx?scope=day');
 
     section('Permissions');
@@ -156,16 +188,68 @@ try {
             $client->request('POST', '/predrawn/reveal', ['letter' => 'A'])['status'],
             $client->request('POST', '/predrawn/assignments', ['letter' => 'A', 'attendee_id' => $ids['anna']])['status'],
             $client->request('GET', '/reports/predrawn-winners.xlsx')['status'],
+            $client->request('PUT', '/predrawn/pool', ['session_ids' => [$s1]])['status'],
+            $client->request('GET', '/predrawn/pool/candidates?search=Anna')['status'],
         ];
-        check("{$who}: list / reveal / assign / report all 403", $codes === [403, 403, 403, 403], $codes);
+        check("{$who}: list / reveal / assign / report / pool / candidates all 403", $codes === [403, 403, 403, 403, 403, 403], $codes);
     }
+    check('Event operator cannot change the pool sessions or search candidates (403)', $operator->request('PUT', '/predrawn/pool', ['session_ids' => [$s1]])['status'] === 403
+        && $operator->request('GET', '/predrawn/pool/candidates?search=Anna')['status'] === 403);
     check('Event operator can view (200) but not assign (403)', $operator->request('GET', '/predrawn')['status'] === 200
         && $operator->request('POST', '/predrawn/assignments', ['letter' => 'A', 'attendee_id' => $ids['anna']])['status'] === 403);
     $old = $admin->swapCsrf(null);
     $r = $admin->request('POST', '/predrawn/assignments', ['letter' => 'A', 'attendee_id' => $ids['anna']]);
     $admin->swapCsrf($old);
     check('Admin without CSRF token -> 403 CSRF_TOKEN_MISMATCH', $r['status'] === 403 && ($r['body']['error']['code'] ?? '') === 'CSRF_TOKEN_MISMATCH', $r['raw']);
-    check('Nothing assigned by refused requests', ($admin->data('GET', '/predrawn')['assignments'] ?? null) === []);
+    $old = $admin->swapCsrf(null);
+    $r = $admin->request('PUT', '/predrawn/pool', ['session_ids' => [$s1]]);
+    $admin->swapCsrf($old);
+    check('Pool change without CSRF token -> 403', $r['status'] === 403, $r['raw']);
+    check('Nothing assigned or selected by refused requests', ($admin->data('GET', '/predrawn')['assignments'] ?? null) === []
+        && (int) $pdo->query('SELECT COUNT(*) FROM randomizer_pool_sessions')->fetchColumn() === $poolRowsBefore);
+
+    section('Randomizer pool: no sessions selected');
+    $pool = $operator->data('GET', '/predrawn')['pool'] ?? [];
+    check('Overview: not configured, size 0, the 3 sessions of Day 1 listed (Day 2 not)', ($pool['configured'] ?? null) === false && ($pool['size'] ?? null) === 0
+        && sorted(array_column($pool['sessions'] ?? [], 'id')) === sorted([$s1, $s2, $s3]) && ($pool['selectedSessionIds'] ?? null) === [], $pool);
+    $byId = array_column($pool['sessions'] ?? [], null, 'id');
+    check('Session list shows date, time and active registrations of active attendees (S1: Anna, Juan, Dina = 3; archived and removed not counted)',
+        ($byId[$s2]['sessionDate'] ?? '') === '2026-10-20' && ($byId[$s2]['startTime'] ?? '') === '13:00' && ($byId[$s1]['registered'] ?? null) === 3
+        && ($byId[$s2]['registered'] ?? null) === 3 && ($byId[$s3]['registered'] ?? null) === 1, $byId);
+    $codes = [
+        $operator->request('GET', '/predrawn/roll-names'),
+        $admin->request('POST', '/predrawn/assignments', ['letter' => 'A', 'attendee_id' => $ids['anna']]),
+        $operator->request('POST', '/predrawn/reveal', ['letter' => 'A']),
+        $admin->request('GET', '/predrawn/pool/candidates?search=Anna'),
+    ];
+    check('Roll names / assign / reveal / candidates -> 409 NO_POOL', array_map(static fn (array $r): string => $r['status'] . ($r['body']['error']['code'] ?? ''), $codes)
+        === array_fill(0, 4, '409NO_POOL'), array_column($codes, 'raw'));
+
+    section('Randomizer pool: selecting sessions');
+    $put = static fn (array $body) => $admin->request('PUT', '/predrawn/pool', $body);
+    foreach (['a Day 2 session' => [$s1, $d2], 'an unknown session' => [999999999], 'a non-number' => ['x']] as $label => $sessionIds) {
+        $r = $put(['session_ids' => $sessionIds]);
+        check("Rejected: {$label} (422 on session_ids)", $r['status'] === 422 && isset($r['body']['error']['details']['fields']['session_ids']), $r['raw']);
+    }
+    check('Rejected: session_ids missing (422)', $put([])['status'] === 422);
+    check('Nothing saved by rejected selections', (int) $pdo->query("SELECT COUNT(*) FROM randomizer_pool_sessions WHERE event_id = {$eventId}")->fetchColumn() === 0);
+    $r = $put(['session_ids' => [$s2, (string) $s1, $s2]]);
+    $pool = $r['body']['data']['pool'] ?? [];
+    check('Admin selects S1 + S2 (200): configured, ids de-duplicated and sorted', $r['status'] === 200 && ($pool['configured'] ?? null) === true
+        && ($pool['selectedSessionIds'] ?? null) === sorted([$s1, $s2]) && ($r['body']['data']['outOfPool'] ?? null) === [], $r['raw']);
+    check('Pool size 5: Anna counted once; archived, removed (Gus), unselected (Fay), other day (Hal) excluded', ($pool['size'] ?? null) === 5, $pool);
+    $fresh = $login($adminEmail, $adminPassword);
+    check('Selection persists for a new login session', ($fresh->data('GET', '/predrawn')['pool']['selectedSessionIds'] ?? null) === sorted([$s1, $s2]));
+    $search = static fn (string $q): array => array_column($admin->data('GET', '/predrawn/pool/candidates?search=' . rawurlencode($q))['items'] ?? [], 'fullName');
+    check('Candidates "Cruz" -> Juan Dela Cruz and Eli Cruz', count($search('Cruz')) === 2 && array_diff($search('Cruz'), ['Juan Dela Cruz', 'Eli Cruz']) === []);
+    check('Candidates "Anna" -> exactly one Anna (two sessions, one entry)', $search('Anna') === ['Anna Reyes']);
+    check('Candidates exclude archived / removed / unselected / other-day attendees', $search('Archived') === [] && $search('Gus') === []
+        && $search('Fay') === [] && $search('Hal') === [] && $search('PDT-OLD') === []);
+    $names = $operator->data('GET', '/predrawn/roll-names')['names'] ?? [];
+    check('Roll names come only from the pool, each name once', $names !== [] && array_diff($names, $poolNames) === [] && count($names) === count(array_unique($names)), $names);
+    $audit = $pdo->query("SELECT metadata FROM audit_logs WHERE event_id = {$eventId} AND action = 'randomizer.pool_sessions_changed' ORDER BY id")->fetchAll(PDO::FETCH_COLUMN);
+    $meta = json_decode((string) end($audit), true) ?: [];
+    check('Audit randomizer.pool_sessions_changed with before / after', count($audit) === 1 && ($meta['before'] ?? null) === [] && ($meta['after'] ?? null) === sorted([$s1, $s2]), $audit);
 
     section('Assignment validation');
     $assign = static fn (array $body) => $admin->request('POST', '/predrawn/assignments', $body);
@@ -178,6 +262,9 @@ try {
         'unknown attendee' => [['letter' => 'A', 'attendee_id' => 999999999], 'attendee_id'],
         'attendee of another event' => [['letter' => 'A', 'attendee_id' => $otherEventAttendee], 'attendee_id'],
         'archived attendee' => [['letter' => 'A', 'attendee_id' => $ids['old']], 'attendee_id'],
+        'not in the selected sessions (Fay, S3 only)' => [['letter' => 'A', 'attendee_id' => $ids['fay']], 'attendee_id'],
+        'registration removed (Gus)' => [['letter' => 'A', 'attendee_id' => $ids['gus']], 'attendee_id'],
+        'registered on another day only (Hal)' => [['letter' => 'A', 'attendee_id' => $ids['hal']], 'attendee_id'],
         'prize over 150 characters' => [['letter' => 'A', 'attendee_id' => $ids['anna'], 'prize_label' => str_repeat('x', 151)], 'prize_label'],
     ];
     foreach ($bad as $label => [$body, $field]) {
@@ -207,8 +294,10 @@ try {
     check('Edit onto a taken letter -> 409', $r['status'] === 409, $r['raw']);
     check('Remove an unrevealed assignment (D) -> 200', $admin->request('DELETE', '/predrawn/assignments/' . ($e['id'] ?? 0))['status'] === 200);
     $list = $operator->data('GET', '/predrawn');
-    check('Operator sees A, B, C in letter order (review list)', array_column($list['assignments'] ?? [], 'letter') === ['A', 'B', 'C']
-        && ($list['category'] ?? '') === 'Pre-Drawn Winner', $list);
+    check('Operator sees A, B, C in letter order (review list), all in the pool', array_column($list['assignments'] ?? [], 'letter') === ['A', 'B', 'C']
+        && ($list['category'] ?? '') === 'Pre-Drawn Winner' && array_column($list['assignments'] ?? [], 'inPool') === [true, true, true], $list);
+    $r = $admin->request('PUT', '/predrawn/assignments/' . ($c['id'] ?? 0), ['letter' => 'C', 'attendee_id' => $ids['fay']]);
+    check('Edit C to an attendee outside the pool (Fay) -> 422', $r['status'] === 422, $r['raw']);
 
     section('Reveal');
     $r = $operator->request('POST', '/predrawn/reveal', ['letter' => 'Q']);
@@ -253,20 +342,38 @@ try {
     $overview = $admin->data('GET', '/predrawn');
     check('Overview: A, B, C live; voided B listed separately', array_column($overview['assignments'] ?? [], 'letter') === ['A', 'B', 'C']
         && array_column($overview['voided'] ?? [], 'letter') === ['B'], $overview);
+
+    section('Selection change with an assigned winner outside the new pool');
+    $r = $put(['session_ids' => [$s1]]);
+    check('S1 only -> 409 POOL_CONFLICTS naming C (Makiling, S2 only); revealed A / B not blocking', $r['status'] === 409
+        && ($r['body']['error']['code'] ?? '') === 'POOL_CONFLICTS' && array_column($r['body']['error']['details']['conflicts'] ?? [], 'letter') === ['C']
+        && str_contains($r['body']['error']['message'] ?? '', 'Makiling Santos'), $r['raw']);
+    check('Refused change saved nothing (still S1 + S2)', ($admin->data('GET', '/predrawn')['pool']['selectedSessionIds'] ?? null) === sorted([$s1, $s2]));
+    $r = $put(['session_ids' => [$s1], 'confirm_conflicts' => true]);
+    check('Confirmed -> 200, C reported out of pool, assignment kept', $r['status'] === 200 && array_column($r['body']['data']['outOfPool'] ?? [], 'letter') === ['C']
+        && ($r['body']['data']['pool']['size'] ?? null) === 3, $r['raw']);
+    $list = $admin->data('GET', '/predrawn');
+    $flags = array_column(array_column($list['assignments'] ?? [], null, 'letter'), 'inPool', 'letter');
+    check('Overview flags C inPool = false (A, B true); C still assigned', $flags === ['A' => true, 'B' => true, 'C' => false], $flags);
+    $r = $operator->request('POST', '/predrawn/reveal', ['letter' => 'C']);
+    check('Reveal C -> 409 NOT_IN_POOL, nothing recorded', $r['status'] === 409 && ($r['body']['error']['code'] ?? '') === 'NOT_IN_POOL'
+        && (int) $pdo->query("SELECT COUNT(*) FROM predrawn_winners WHERE event_day_id = {$dayId} AND letter = 'C' AND revealed_at IS NOT NULL")->fetchColumn() === 0, $r['raw']);
+    check('Assigning Eli (S2 only) now refused (422)', $assign(['letter' => 'E', 'attendee_id' => $ids['eli']])['status'] === 422);
+    $r = $put(['session_ids' => [$s1, $s2]]);
+    check('Admin resolves by re-selecting S1 + S2 (200, no conflicts)', $r['status'] === 200 && ($r['body']['data']['outOfPool'] ?? null) === [], $r['raw']);
     $r = $admin->request('POST', '/predrawn/reveal', ['letter' => 'C']);
     check('Admin reveals C -> Makiling with prize TV', ($r['body']['data']['winner'] ?? null) === ['fullName' => 'Makiling Santos', 'prizeLabel' => 'TV'], $r['raw']);
 
     section('Records, report and audit');
     $names = $operator->data('GET', '/predrawn/roll-names')['names'] ?? [];
-    check('Roll names: a sample of this event\'s active attendees (archived excluded)', $names !== [] && count($names) <= 40
-        && array_diff($names, array_values(array_diff($people, ['Archived Person']))) === [], $names);
+    check('Roll names: a sample of the pool only (max 40)', $names !== [] && count($names) <= 40 && array_diff($names, $poolNames) === [], $names);
     $sheet = $xlsxRows($admin, '/reports/predrawn-winners.xlsx?scope=day');
     $byStatus = array_count_values(array_map(static fn (array $row): string => $row['cells'][8] ?? '', $sheet['rows']));
-    check('Pre-Drawn Winners.xlsx: header + every row labelled "Pre-Drawn Winner"', ($sheet['headers'][0] ?? '') === 'Category'
+    check('Randomizer Winners (Pre-Drawn).xlsx: header + every row labelled "Pre-Drawn Winner"', ($sheet['headers'][0] ?? '') === 'Category'
         && count($sheet['rows']) === 4 && array_unique(array_map(static fn (array $row): string => $row['cells'][0], $sheet['rows'])) === ['Pre-Drawn Winner'], $sheet);
     check('Report statuses: 3 REVEALED + 1 VOIDED', $byStatus == ['REVEALED' => 3, 'VOIDED' => 1], $byStatus);
     $winnersAfter = $xlsxRows($admin, '/reports/winners.xlsx?scope=day');
-    check('Winners.xlsx (Minor / Major) unchanged: same columns, no pre-drawn rows', $winnersAfter['headers'] === $winnersBefore['headers'] && count($winnersAfter['rows']) === count($winnersBefore['rows']));
+    check('Legacy Winners.xlsx (Minor / Major history) unchanged: same columns, no pre-drawn rows', $winnersAfter['headers'] === $winnersBefore['headers'] && count($winnersAfter['rows']) === count($winnersBefore['rows']));
     $audit = $pdo->query("SELECT action, description FROM audit_logs WHERE event_id = {$eventId} AND action LIKE 'predrawn.%' ORDER BY id")->fetchAll();
     $actions = array_count_values(array_column($audit, 'action'));
     check('Audit: assigned / updated / removed / revealed (x4) / voided recorded', ($actions['predrawn.revealed'] ?? 0) === 4 && ($actions['predrawn.reveal_voided'] ?? 0) === 1
@@ -274,19 +381,18 @@ try {
     $reveals = array_filter($audit, static fn (array $x): bool => $x['action'] === 'predrawn.revealed');
     check('Every reveal audit says "Pre-Drawn Winner" and "not a random draw"', array_filter($reveals, static fn (array $x): bool => !str_contains($x['description'], 'Pre-Drawn Winner') || !str_contains($x['description'], 'not a random draw')) === []);
     check('No randomizer_draws row was written', (int) $pdo->query("SELECT COUNT(*) FROM randomizer_draws WHERE event_id = {$eventId}")->fetchColumn() === $drawsBefore);
-    check('Minor / Major eligible counts unchanged', ($operator->data('GET', '/randomizers/minor')['eligibleCount'] ?? null) === $minorBefore
-        && ($operator->data('GET', '/randomizers/major')['eligibleCount'] ?? null) === $majorBefore);
-    check('Attendees, QR tokens, registrations and manual pools unchanged', $snapshot() === $before);
+    check('Attendees, QR tokens, registrations, scans and manual pools unchanged by pool changes / reveals', $snapshot() === $before);
+    check('Removed registration (Gus) still removed', $pdo->query("SELECT status FROM session_registrations WHERE attendee_id = {$ids['gus']}")->fetchColumn() === 'removed');
 
-    section('Normal Minor draw still works (and is independent)');
-    $r = $operator->request('POST', '/randomizers/minor/participants', ['attendee_id' => $ids['anna'], 'reason' => 'Predrawn test']);
-    check('Anna (a pre-drawn winner) can still be added to the Minor pool (201)', $r['status'] === 201, $r['raw']);
-    $r = $operator->request('POST', '/randomizers/minor/draw');
-    check('Minor random draw -> Anna (only eligible), recorded as a Minor draw', $r['status'] === 200 && ($r['body']['data']['winner']['fullName'] ?? '') === 'Anna Reyes', $r['raw']);
-    $drawId = (int) ($r['body']['data']['drawId'] ?? 0);
-    check('Minor draw void still works', $operator->request('POST', "/randomizers/draws/{$drawId}/void", ['reason' => 'test'])['status'] === 200);
-    check('Pre-drawn rows untouched by the Minor draw (4 rows, 3 live revealed)', (int) $pdo->query("SELECT COUNT(*) FROM predrawn_winners WHERE event_id = {$eventId}")->fetchColumn() === 4
-        && (int) $pdo->query("SELECT COUNT(*) FROM predrawn_winners WHERE event_id = {$eventId} AND voided_at IS NULL AND revealed_at IS NOT NULL")->fetchColumn() === 3);
+    section('Legacy Minor / Major Randomizer APIs removed');
+    $legacy = [
+        ['GET', '/randomizers/minor'], ['POST', '/randomizers/minor/draw'], ['GET', '/randomizers/major'], ['POST', '/randomizers/major/draw'],
+        ['GET', '/randomizers/minor/candidates?search=Anna'], ['POST', '/randomizers/minor/participants'], ['POST', '/randomizers/draws/1/void'],
+        ['GET', '/settings/randomizer-reset'], ['POST', '/settings/randomizer-reset'],
+    ];
+    $codes = array_map(static fn (array $x): int => $admin->request($x[0], $x[1], $x[0] === 'POST' ? [] : null)['status'], $legacy);
+    check('Every legacy route -> 404 (admin)', array_unique($codes) === [404], $codes);
+    check('Still no randomizer_draws rows for this event', (int) $pdo->query("SELECT COUNT(*) FROM randomizer_draws WHERE event_id = {$eventId}")->fetchColumn() === $drawsBefore);
 } finally {
     section('Cleanup');
     if ($eventId) {

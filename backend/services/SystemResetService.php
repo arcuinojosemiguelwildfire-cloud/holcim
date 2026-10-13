@@ -18,7 +18,8 @@ use App\Models\User;
  * Removed: events, event days, registration sessions, attendees, QR tokens,
  * registrations (day check-ins and session registrations + history), scan
  * logs, randomizer draws, pre-drawn winner assignments / reveals
- * (migration 035), manual raffle participants, Major eligibility
+ * (migration 035), Randomizer pool session selections (migration 036),
+ * legacy manual raffle participants, Major eligibility
  * (incl. legacy imported rows), legacy major_entries, import batches,
  * audit logs, login attempts and every non-admin user (registration staff,
  * event operators, scanner operators).
@@ -43,6 +44,7 @@ final class SystemResetService
         ['session_registrations', ''],
         ['randomizer_draws', ''],
         ['predrawn_winners', ''],
+        ['randomizer_pool_sessions', ''],
         ['minor_manual_entries', ''],
         ['major_eligibility', ''],
         ['major_entries', ''],
@@ -127,7 +129,7 @@ final class SystemResetService
     {
         $pdo = Database::connection();
         $counts = [];
-        foreach (['events', 'event_days', 'attendees', 'registration_scans', 'randomizer_draws', 'predrawn_winners', 'import_batches'] as $table) {
+        foreach (['events', 'event_days', 'attendees', 'registration_scans', 'randomizer_draws', 'predrawn_winners', 'randomizer_pool_sessions', 'import_batches'] as $table) {
             $counts[$table] = (int) $pdo->query("SELECT COUNT(*) FROM {$table}")->fetchColumn();
         }
         $counts['manual_participants'] = (int) $pdo->query('SELECT (SELECT COUNT(*) FROM minor_manual_entries) + (SELECT COUNT(*) FROM major_eligibility)')->fetchColumn();

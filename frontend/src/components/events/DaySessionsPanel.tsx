@@ -30,9 +30,11 @@ function toDraft(session: RegistrationSession): Draft {
 
 /**
  * Admin: registration sessions of one event day (Phase 10). Sessions are
- * data - e.g. Oct 15 has "8:00 AM" (does not count for Major) and "5:00 PM"
- * (counts for Major). The CURRENT session is where scans are recorded;
- * switching it never changes registrations already made.
+ * data - e.g. Oct 15 has "8:00 AM" and "5:00 PM". The CURRENT session is
+ * where scans are recorded; switching it never changes registrations
+ * already made. The Randomizer page chooses which sessions feed its name
+ * pool. The legacy "counts for Major" flag is no longer shown: an edit
+ * sends the stored value back unchanged (new sessions: false).
  */
 export function DaySessionsPanel({ day }: DaySessionsPanelProps) {
   const [sessions, setSessions] = useState<RegistrationSession[] | null>(null)
@@ -111,7 +113,6 @@ export function DaySessionsPanel({ day }: DaySessionsPanelProps) {
                   {` · ${session.registrations ?? 0} registered`}
                 </p>
               </div>
-              <Badge tone={session.countsForMajor ? 'brand' : 'neutral'}>{session.countsForMajor ? 'Counts for Major' : 'Minor only'}</Badge>
               {session.current && <Badge tone="success" dot>Current</Badge>}
               {!session.enabled && <Badge tone="muted">Disabled</Badge>}
               <Button type="button" variant="ghost" size="sm" onClick={() => { setFieldErrors({}); setDraft(toDraft(session)) }} icon={<Pencil className="size-4" aria-hidden />}>
@@ -157,15 +158,6 @@ export function DaySessionsPanel({ day }: DaySessionsPanelProps) {
           <label className="text-xs font-medium text-slate-600">
             Description (optional)
             <input className={inputClass} maxLength={255} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
-          </label>
-          <label className="col-span-2 flex items-start gap-2 text-sm text-slate-800">
-            <input type="checkbox" className="mt-0.5 size-4 rounded border-slate-300" checked={draft.counts_for_major} onChange={(e) => setDraft({ ...draft, counts_for_major: e.target.checked })} />
-            <span>
-              <b>Counts for the Major Randomizer</b>
-              <span className="block text-xs text-slate-500">
-                Attendees registered in this session can be drawn in this day&apos;s Major Randomizer. Every session counts for the Minor Randomizer.
-              </span>
-            </span>
           </label>
           <label className="col-span-2 flex items-center gap-2 text-sm text-slate-800">
             <input type="checkbox" className="size-4 rounded border-slate-300" checked={draft.enabled} onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })} />

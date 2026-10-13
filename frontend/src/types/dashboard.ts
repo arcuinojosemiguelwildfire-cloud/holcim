@@ -13,7 +13,10 @@ export interface DashboardSummary {
   metrics: {
     totalAttendees: DashboardMetric
     registered: DashboardMetric
+    /** Legacy (not shown): Minor / Major eligibility counts, kept in the API for compatibility. */
     minorEligible: DashboardMetric
     majorEligible: DashboardMetric
+    /** Size of today's Randomizer name pool (selected registration sessions). */
+    randomizerPool: DashboardMetric & { configured: boolean }
   }
 }

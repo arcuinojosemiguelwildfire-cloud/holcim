@@ -29,8 +29,7 @@ import type { DeskSession } from '../types/registrationSession'
  *
  * Phase 10: every scan is recorded in the CURRENT REGISTRATION SESSION that an
  * admin selected (shown prominently here); operators cannot choose it. The
- * result shows the session and the attendee's Major Randomizer eligibility,
- * which the server derives from the registration sessions.
+ * result shows the session the attendee was registered in.
  */
 
 /** How long a result stays large on screen before the panel returns to "Ready". */
@@ -356,18 +355,7 @@ function ResultPanel({ result }: { result: ScanResult }) {
       {registered && company && <p className="text-xl font-semibold sm:text-2xl">{company}</p>}
       {registered && department && <p className="text-lg font-medium text-white/90 sm:text-xl">{department}</p>}
       {registered ? (
-        <>
-          <p className="mt-2 text-base font-semibold sm:text-lg" data-testid="scan-session">Registered: {sessionWhen(data.registrationSession)}</p>
-          <p
-            className={cn(
-              'mt-1 rounded-full px-4 py-1 text-sm font-bold uppercase tracking-wide',
-              data.majorEligible ? 'bg-white text-emerald-700' : 'bg-white/20 text-white',
-            )}
-            data-testid="scan-major"
-          >
-            Major Randomizer: {data.majorEligible ? 'Eligible' : 'Not eligible'}
-          </p>
-        </>
+        <p className="mt-2 text-base font-semibold sm:text-lg" data-testid="scan-session">Registered: {sessionWhen(data.registrationSession)}</p>
       ) : (
         <p className="mt-2 text-base">
           Already registered for {sessionWhen(data.registrationSession)} at {formatTime(data.registeredAt)}

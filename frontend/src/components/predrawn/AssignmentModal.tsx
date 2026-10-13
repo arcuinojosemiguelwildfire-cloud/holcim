@@ -4,9 +4,7 @@ import { Alert } from '../ui/Alert'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
 import { ApiError, errorMessage } from '../../services/apiClient'
-import { attendeeService } from '../../services/attendeeService'
-import { predrawnService, type PredrawnAssignment } from '../../services/predrawnService'
-import type { Attendee } from '../../types/attendee'
+import { predrawnService, type PoolCandidate, type PredrawnAssignment } from '../../services/predrawnService'
 import { cn } from '../../utils/cn'
 
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
@@ -20,12 +18,13 @@ interface AssignmentModalProps {
   onSaved: (assignment: PredrawnAssignment) => void
 }
 
-type Picked = Pick<Attendee, 'id' | 'attendeeCode' | 'fullName' | 'company' | 'department'>
+type Picked = Pick<PoolCandidate, 'id' | 'attendeeCode' | 'fullName' | 'company' | 'department'>
 
 /**
- * Admin: assign a pre-drawn winner (an EXISTING active attendee of the active
- * event) to a letter A-Z, with an optional prize label. The server checks
- * everything again (letter / attendee unique per event day, attendee active).
+ * Admin: assign a pre-drawn winner to a letter A-Z, with an optional prize
+ * label. Only attendees in today's Randomizer pool (registered in a selected
+ * session) can be picked. The server checks everything again (letter /
+ * attendee unique per event day, attendee active, attendee in the pool).
  */
 export function AssignmentModal({ editing, takenLetters, onClose, onSaved }: AssignmentModalProps) {
   const freeLetters = LETTERS.filter((l) => !takenLetters.includes(l) || l === editing?.letter)
@@ -33,7 +32,7 @@ export function AssignmentModal({ editing, takenLetters, onClose, onSaved }: Ass
   const [prize, setPrize] = useState(editing?.prizeLabel ?? '')
   const [selected, setSelected] = useState<Picked | null>(editing ? editing.attendee : null)
   const [query, setQuery] = useState('')
-  const [found, setFound] = useState<{ term: string; items: Attendee[] } | null>(null)
+  const [found, setFound] = useState<{ term: string; items: PoolCandidate[] } | null>(null)
   const [error, setError] = useState<ApiError | string | null>(null)
   const [saving, setSaving] = useState(false)
   const term = query.trim()
@@ -43,9 +42,9 @@ export function AssignmentModal({ editing, takenLetters, onClose, onSaved }: Ass
     if (term === '') return
     let cancelled = false
     const timer = window.setTimeout(() => {
-      attendeeService.list({ search: term, department: '', status: 'active', page: 1, perPage: 10 }).then(
-        (data) => {
-          if (!cancelled) setFound({ term, items: data.items })
+      predrawnService.poolCandidates(term).then(
+        (items) => {
+          if (!cancelled) setFound({ term, items })
         },
         (e: unknown) => {
           if (!cancelled) setError(errorMessage(e))
@@ -119,7 +118,7 @@ export function AssignmentModal({ editing, takenLetters, onClose, onSaved }: Ass
         </div>
 
         <div>
-          <p className="text-sm font-medium text-slate-700">Winner (existing attendee)</p>
+          <p className="text-sm font-medium text-slate-700">Winner <span className="font-normal text-slate-400">(registered in a selected session)</span></p>
           {selected && (
             <p className="mt-1.5 rounded-lg bg-brand-50 px-3 py-2 text-sm text-brand-900 ring-1 ring-inset ring-brand-200" data-testid="assignment-selected">
               <b>{selected.fullName}</b> · <span className="font-mono">{selected.attendeeCode}</span>
@@ -141,23 +140,30 @@ export function AssignmentModal({ editing, takenLetters, onClose, onSaved }: Ass
               data-testid="assignment-search"
             />
           </label>
-          {results && results.length === 0 && <p className="mt-2 text-sm text-slate-500">No active attendee matches “{term}”.</p>}
+          {results && results.length === 0 && <p className="mt-2 text-sm text-slate-500">No attendee in the Randomizer pool matches “{term}”.</p>}
           {results && results.length > 0 && (
             <ul className="mt-2 max-h-56 divide-y divide-slate-100 overflow-y-auto rounded-lg ring-1 ring-slate-200">
-              {results.map((a) => (
+              {results.map((a) => {
+                const taken = a.assignedLetter !== null && a.id !== editing?.attendee.id
+                return (
                 <li key={a.id}>
                   <button
                     type="button"
+                    disabled={taken}
                     onClick={() => setSelected(a)}
-                    className={cn('flex w-full flex-col px-3 py-2 text-left text-sm hover:bg-slate-50', selected?.id === a.id && 'bg-brand-50')}
+                    className={cn('flex w-full flex-col px-3 py-2 text-left text-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60',
+                      selected?.id === a.id && 'bg-brand-50')}
                   >
-                    <span className="truncate font-medium text-slate-900">{a.fullName}</span>
+                    <span className="truncate font-medium text-slate-900">
+                      {a.fullName}{taken && <span className="ml-2 text-xs font-normal text-slate-500">already letter {a.assignedLetter}</span>}
+                    </span>
                     <span className="truncate text-xs text-slate-500">
                       <span className="font-mono">{a.attendeeCode}</span>{a.company && ` · ${a.company}`}{a.department && ` · ${a.department}`}
                     </span>
                   </button>
                 </li>
-              ))}
+                )
+              })}
             </ul>
           )}
         </div>

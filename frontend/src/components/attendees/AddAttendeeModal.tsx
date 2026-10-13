@@ -23,9 +23,8 @@ interface AddAttendeeModalProps {
 
 /**
  * Manual "Add Attendee" (admin / event operator). Creates ONE attendee in the
- * master list with a server-generated code and a normal QR. This is NOT the
- * randomizer "+ Add Participant": it does not register the attendee or make
- * them raffle eligible - scanning their QR on an event day does that.
+ * master list with a server-generated code and a normal QR. It does not
+ * register the attendee - scanning their QR on an event day does that.
  */
 export function AddAttendeeModal({ onClose, onCreated, onView }: AddAttendeeModalProps) {
   const [form, setForm] = useState<AttendeeCreateInput>(EMPTY)
@@ -77,7 +76,7 @@ export function AddAttendeeModal({ onClose, onCreated, onView }: AddAttendeeModa
         <div className="space-y-4" data-testid="add-attendee-success">
           <Alert tone="success">
             Attendee added with a QR code. They are not registered yet: scan this QR at the entrance on each event day to register them
-            (that also makes them eligible for the Minor and Major draws for that day).
+            (the Randomizer uses the registration sessions an admin selects for each day).
           </Alert>
           {qr.qrPayload ? (
             <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">

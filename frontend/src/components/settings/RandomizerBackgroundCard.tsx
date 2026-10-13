@@ -22,8 +22,7 @@ const fetchBackground = () => randomizerBackgroundService.current()
 
 /**
  * Settings > Randomizer Background (admin only; the API enforces it).
- * Upload a JPG / PNG / WebP (≤ 10 MB) for the Minor and Major Randomizer
- * screens, or restore the built-in default. A failed upload keeps the
+ * Upload a JPG / PNG / WebP (≤ 10 MB) for the Randomizer screen, or restore the built-in default. A failed upload keeps the
  * current background.
  */
 export function RandomizerBackgroundCard() {
@@ -69,7 +68,7 @@ export function RandomizerBackgroundCard() {
       await randomizerBackgroundService.upload(file)
       clearSelection()
       reload()
-      setMessage({ tone: 'success', text: 'Randomizer background updated. Open the Minor or Major Randomizer to see it.' })
+      setMessage({ tone: 'success', text: 'Randomizer background updated. Open the Randomizer to see it.' })
     } catch (caught) {
       setMessage({ tone: 'error', text: `${errorMessage(caught)} The current background was not changed.` })
     } finally {
@@ -100,7 +99,7 @@ export function RandomizerBackgroundCard() {
     <Card>
       <CardHeader
         title="Randomizer Background"
-        description="Background image of the Minor and Major Randomizer screens, including fullscreen. JPG, PNG or WebP, up to 10 MB. A landscape image (e.g. 1920 × 1080) looks best; a dark overlay keeps names readable."
+        description="Background image of the Randomizer screen, including fullscreen. JPG, PNG or WebP, up to 10 MB. A landscape image (e.g. 1920 × 1080) looks best; a dark overlay keeps names readable."
       />
       <div className="grid gap-6 p-5 lg:grid-cols-2">
         <div>
@@ -180,7 +179,7 @@ export function RandomizerBackgroundCard() {
       <Modal
         open={confirming}
         title="Restore the default background?"
-        description="The Minor and Major Randomizer screens go back to the built-in background. The uploaded image is removed. Nothing else changes."
+        description="The Randomizer screen goes back to the built-in background. The uploaded image is removed. Nothing else changes."
         onClose={() => !busy && setConfirming(false)}
         footer={
           <>

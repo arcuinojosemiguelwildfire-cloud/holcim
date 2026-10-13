@@ -91,8 +91,9 @@ Admin, registration staff, event operator (scanner operators use `GET /registrat
     "metrics": {
       "totalAttendees": { "value": 0, "available": true },
       "registered":     { "value": 0, "available": true },
-      "minorEligible":  { "value": 0, "available": false },
-      "majorEligible":  { "value": 0, "available": false }
+      "minorEligible":  { "value": 0, "available": true },
+      "majorEligible":  { "value": 0, "available": true },
+      "randomizerPool": { "value": 0, "available": true, "configured": false }
     }
   }
 }
@@ -150,8 +151,29 @@ and the role matrix is in README §9g. Phase 8 notes:
   `External Attendees` sheet when present and, for the
   `Cluster | Name 1 | Attendee 1..N` layout, returns one row per attendee
   (`layout: "external_attendees"`, headers Full Name / Company / Cluster).
-- Migration 035 (Pre-Drawn Winner Reveal, active event day; separate from the
-  Minor / Major Randomizer): `GET /predrawn` (overview: `assignments`, `voided`),
+- **Single Randomizer (migration 036).** The Minor / Major Randomizer endpoints
+  were removed and return 404: `/randomizers/{minor|major}`, `…/draw`,
+  `…/candidates`, `…/participants` (GET / POST), `POST /randomizers/draws/{id}/void`
+  and `GET|POST /settings/randomizer-reset`. Kept: `/randomizers/background*`,
+  the legacy history reports (`/reports/winners.xlsx`, `/reports/draws.csv`,
+  `/reports/eligibility.csv` — the latter no longer linked in the UI) and the
+  dashboard's `minorEligible` / `majorEligible` metrics (not shown).
+  New: dashboard metric `randomizerPool {value, available, configured}`;
+  `GET /predrawn` adds `pool: {sessions: [{id, label, sessionDate, startTime,
+  enabled, current, selected, registered}], selectedSessionIds, configured, size}`
+  and `inPool` on each live assignment; `PUT /predrawn/pool` (admin, CSRF)
+  `{session_ids: int[], confirm_conflicts?: bool}` → `{pool, outOfPool}`
+  (422 `session_ids` for sessions not of the current day; 409 `POOL_CONFLICTS`
+  with `details.conflicts: [{letter, fullName, attendeeCode, status}]` when
+  unrevealed assignments would leave the pool and `confirm_conflicts` is not
+  true); `GET /predrawn/pool/candidates?search=` (admin) → `{items: [{id,
+  attendeeCode, fullName, company, department, externalIdentifier,
+  assignedLetter}]}`. Roll names, assignments and reveals return
+  `409 NO_POOL` when no session is selected; assignments whose attendee is
+  not in the pool return 422 `attendee_id`; revealing an out-of-pool
+  assignment returns `409 NOT_IN_POOL`. The report file is now
+  `Randomizer Winners (Pre-Drawn).xlsx` (same route and columns).
+- Migration 035 (Pre-Drawn Winner Reveal, active event day): `GET /predrawn` (overview: `assignments`, `voided`),
   `GET /predrawn/roll-names`, `POST /predrawn/reveal {letter}` (admin + event
   operator; `404 NOT_ASSIGNED`, `409 ALREADY_REVEALED`, `409 ATTENDEE_INACTIVE`);
   admin only: `POST /predrawn/assignments {letter, attendee_id, prize_label?}`
@@ -180,7 +202,7 @@ and the role matrix is in README §9g. Phase 8 notes:
   non-admin accounts (422 with `fields.confirmation` / `fields.password` when
   refused, `500 RESET_FAILED` with a generic message if the transaction rolled
   back).
-- Phase 9.4: `GET /settings/randomizer-reset?event_id=&event_day_id=` (admin)
+- Phase 9.4 (**removed** with the single Randomizer; reset marks stay in the history): `GET /settings/randomizer-reset?event_id=&event_day_id=` (admin)
   returns `{event, eventDay, phrases, minor: {count, winners}, major: {count, winners}}`.
   `POST /settings/randomizer-reset` (admin)
   `{event_id, event_day_id, randomizer: "minor"|"major"|"both", confirmation, password}`

@@ -1,4 +1,4 @@
-import { createBrowserRouter, RouterProvider } from 'react-router'
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router'
 import { AuthProvider } from './components/auth/AuthProvider'
 import { GuestOnly, RequireAuth, RequireRole } from './components/auth/RouteGuards'
 import { AdminLayout } from './layouts/AdminLayout'
@@ -12,7 +12,6 @@ import { NotFoundPage } from './pages/NotFoundPage'
 import { QrGeneratorPage } from './pages/QrGeneratorPage'
 import { QrPrintPage } from './pages/QrPrintPage'
 import { RandomizerPage } from './pages/RandomizerPage'
-import { PredrawnRevealPage } from './pages/PredrawnRevealPage'
 import { RegistrationPage } from './pages/RegistrationPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { SettingsPage } from './pages/SettingsPage'
@@ -54,9 +53,12 @@ const router = createBrowserRouter(
             {
               element: <RequireRole roles={RANDOMIZER_ROLES} />,
               children: [
-                { path: 'minor-randomizer', element: <RandomizerPage key="minor" type="minor" /> },
-                { path: 'major-randomizer', element: <RandomizerPage key="major" type="major" /> },
-                { path: 'predrawn-reveal', element: <PredrawnRevealPage /> },
+                { path: 'randomizer', element: <RandomizerPage /> },
+                // Old bookmarks: the separate Minor / Major pages were removed and
+                // Pre-Drawn Reveal is now simply "Randomizer".
+                { path: 'predrawn-reveal', element: <Navigate to="/randomizer" replace /> },
+                { path: 'minor-randomizer', element: <Navigate to="/randomizer" replace /> },
+                { path: 'major-randomizer', element: <Navigate to="/randomizer" replace /> },
               ],
             },
             {

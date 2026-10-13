@@ -1,10 +1,12 @@
 # Holcim Event System
 
 An online event management and prize-draw system: attendee import, QR-based
-registration, minor and major randomizers, winner management, reports and an
+registration, a Randomizer that reveals pre-drawn winners, reports and an
 audit trail.
 
-> **Phase 9.2 (current):** Registration is the only source of raffle eligibility: a successful scan makes the attendee eligible for **both** Minor and Major that day. No Major QR, survey/form or Major import any more. Winners cannot win the **same** randomizer twice on the same day (unless the draw is voided); a Minor winner can still win Major and vice versa. Attendees have **Full Name, Company and Cluster** (location/region); the client's `External Attendees` sheet is imported directly. Excel lists: `Day N Attendees.xlsx` and `Winners.xlsx`. See [§9h](#9h-raffle-rules-cluster-and-excel-lists-phase-92).
+> **Current: single Randomizer (migration 036).** The separate Minor and Major Randomizers were removed. **Randomizer** (formerly "Pre-Drawn Reveal") reveals winners selected before the event (Spin the Wheel) by letter; its rolling names come from the **registration sessions an admin selects** for each event day. Historical Minor / Major draws are kept and remain downloadable under **Reports › Legacy Minor/Major History**. See [§9r](#9r-randomizer-pre-drawn-winner-reveal-migrations-035--036). Sections about Minor / Major draws, + Add Participant and Randomizer Reset below describe the **legacy** behaviour and its stored history.
+
+> **Phase 9.2 (superseded by the single Randomizer above; Minor / Major parts are legacy):** Registration is the only source of raffle eligibility: a successful scan makes the attendee eligible for **both** Minor and Major that day. No Major QR, survey/form or Major import any more. Winners cannot win the **same** randomizer twice on the same day (unless the draw is voided); a Minor winner can still win Major and vice versa. Attendees have **Full Name, Company and Cluster** (location/region); the client's `External Attendees` sheet is imported directly. Excel lists: `Day N Attendees.xlsx` and `Winners.xlsx`. See [§9h](#9h-raffle-rules-cluster-and-excel-lists-phase-92).
 >
 > **Phase 8 (multi-day events).** Events run over several Event Days with one current day; registration, Minor/Major eligibility, draws and reports are per day. New **Scanner Operator** role (scanner only, username login, managed in Settings) and **+ Add Participant** for manual Minor/Major pool additions. See [§9g](#9g-multi-day-events-scanner-operators-and-manual-participants-phase-8).
 >
@@ -61,13 +63,13 @@ The finished system will support a corporate event from start to finish:
 | 3 | Automatic attendee QR generation (opaque tokens) | **Built** (Phase 3) |
 | 4 | Printable attendee QR/ID | **Built** (Phase 3, A4 label sheets) |
 | 5 | Registration QR scanner | **Built** (Phase 4) |
-| 6 | Minor randomizer | **Built** (Phase 5) |
-| 7 | Major randomizer | **Built** (Phase 6) |
+| 6 | Minor randomizer | Removed (Phase 5–9.4; history kept) |
+| 7 | Major randomizer | Removed (Phase 6–9.4; history kept) |
 | 8 | Google Form / Google Sheet response import | Schema ready |
 | 9 | Winner management | Planned |
 | 10 | Reports | **Built** (Phase 7, CSV exports) |
 | 11 | Audit logs | **Recording** logins, logouts and event changes |
-| 12 | Fullscreen event mode | **Built** for the Minor Randomizer (reusable stage) |
+| 12 | Fullscreen event mode | **Built** (Randomizer presentation) |
 | 13 | Multi-day events, scanner operators, manual draw participants | **Built** (Phase 8) |
 
 The system is built around one **active event** at a time and its **current
@@ -391,26 +393,24 @@ Error codes: `BAD_REQUEST` (400), `UNAUTHENTICATED` / `INVALID_CREDENTIALS` (401
 | GET / POST | `/api/attendees/{id}/qr` | Admin, registration staff, event operator / Admin | QR state / generate if missing |
 | POST | `/api/attendees/{id}/qr/regenerate` | Admin | Replace token (old QR becomes invalid) |
 | GET | `/api/registration/summary` | Admin, registration staff, scanner operator | Current day: total / registered / remaining, my / all scans today, latest 20 check-ins |
-| GET | `/api/randomizers/minor` | Admin, event operator | Event, eligible count, latest 10 winners |
-| POST | `/api/randomizers/minor/draw` | Admin, event operator | Server-side draw from today's registered attendees minus today's Minor winners; records it; returns the winner (409 `NO_ELIGIBLE_ATTENDEES` if nobody is left) |
-| GET | `/api/randomizers/major` · POST `/api/randomizers/major/draw` | Admin, event operator | Same as Minor, excluding today's Major winners |
-| POST | `/api/randomizers/draws/{id}/void` | Admin, event operator | Mark a draw VOID `{reason?}` (kept in history; the attendee re-enters that randomizer's pool) |
-| GET | `/api/reports/registration.csv` · `eligibility.csv` · `draws.csv` `?scope=day\|all` | Admin | CSV exports for the current day or all days of the active event |
-| GET | `/api/reports/day-attendees.xlsx?day_id=` · `/api/reports/winners.xlsx?scope=all\|day` | Admin | `Day N Attendees.xlsx` and `Winners.xlsx` (Phase 9.2) |
+| GET | `/api/predrawn` | Admin, event operator | Randomizer overview for the current day: assignments (with `inPool`), voided reveals, `pool` {sessions, selectedSessionIds, configured, size} |
+| GET | `/api/predrawn/roll-names` | Admin, event operator | Display-only sample of pool names for the rolling animation (409 `NO_POOL` if no session is selected) |
+| POST | `/api/predrawn/reveal` | Admin, event operator | `{letter}` → records and returns the assigned winner (404 `NOT_ASSIGNED`, 409 `ALREADY_REVEALED` / `NO_POOL` / `NOT_IN_POOL`) |
+| POST · PUT · DELETE | `/api/predrawn/assignments` · `/{id}` | Admin | Assign / edit / remove an unrevealed letter `{letter, attendee_id, prize_label?}`; the attendee must be in the pool (422) |
+| POST | `/api/predrawn/assignments/{id}/void` | Admin | Void a reveal `{reason?}` (kept in history) |
+| PUT | `/api/predrawn/pool` | Admin | `{session_ids, confirm_conflicts?}` — select the day's registration sessions for the Randomizer (409 `POOL_CONFLICTS` when assigned winners would leave the pool, unless confirmed) |
+| GET | `/api/predrawn/pool/candidates?search=` | Admin | Pool attendees for the assignment picker (with `assignedLetter`) |
+| GET | `/api/reports/registration.csv` · `eligibility.csv` · `draws.csv` `?scope=day\|all` | Admin | CSV exports for the current day or all days of the active event (`eligibility.csv` and `draws.csv` are legacy Minor / Major history; `eligibility.csv` is API-only) |
+| GET | `/api/reports/day-attendees.xlsx?day_id=` · `/api/reports/winners.xlsx?scope=all\|day` · `/api/reports/predrawn-winners.xlsx?scope=all\|day` | Admin | `Day N Attendees.xlsx`, legacy `Winners.xlsx` (Minor / Major history) and `Randomizer Winners (Pre-Drawn).xlsx` |
 | POST | `/api/registration/scan` | Admin, registration staff, scanner operator | `{token}` (token or full QR URL) → `registered` / `already_registered` (for the current day), or 422 `INVALID_QR` / `WRONG_EVENT` / `ATTENDEE_INACTIVE`; 409 `NO_ACTIVE_DAY` |
 | GET | `/api/registration/scans?view=mine\|all&result=all\|successful\|already_registered\|invalid&page=` | Admin, registration staff, scanner operator | Scan attempts of the current day (20 per page) |
 | GET | `/api/registration/attendees?search=` | Signed in | Read-only lookup: attendee + registered today |
 | GET | `/api/event-days/current` | Signed in | Active event + current Event Day |
 | GET / POST | `/api/events/{id}/days` | Admin | List / add event days `{event_date, label?}` |
 | PUT · PATCH | `/api/event-days/{id}` · `/api/event-days/{id}/activate` | Admin | Edit a day / make it the current day |
-| GET | `/api/randomizers/{minor\|major}/participants?search=&page=` | Admin, event operator | Today's draw pool with source (registration / manual), winners excluded |
-| GET | `/api/randomizers/{minor\|major}/candidates?search=` | Admin, event operator | Active attendees to add, with `alreadyEligible` and `alreadyWon` |
-| POST | `/api/randomizers/{minor\|major}/participants` | Admin, event operator | `{attendee_id, reason?}` manual add for today, that randomizer only (409 `ALREADY_ELIGIBLE` / `ALREADY_WON`) |
 | GET / POST | `/api/settings/scanner-operators` | Admin | List / create `{name, username, password, password_confirmation, status}` |
 | PATCH · POST | `/api/settings/scanner-operators/{id}` · `/{id}/password` | Admin | Enable/disable `{status}` / reset password |
 | GET | `/api/settings/system-reset` | Admin | Row counts a reset would remove (read-only) |
-| GET | `/api/settings/randomizer-reset?event_id=&event_day_id=` | Admin | Randomizer Reset preview: current Minor / Major winners of that day (read-only) |
-| POST | `/api/settings/randomizer-reset` | Admin | `{event_id, event_day_id, randomizer: minor\|major\|both, confirmation, password}` — lifts the no-repeat exclusion; draws are kept |
 | POST | `/api/settings/system-reset` | Admin | **Destructive** System Reset: `{confirmation: "RESET EVENT DATA", password}` (current admin password) |
 
 Full request/response examples: [docs/API.md](docs/API.md).
@@ -476,6 +476,8 @@ Full request/response examples: [docs/API.md](docs/API.md).
 
 ## 9d. Minor Randomizer (Phase 5)
 
+> **Legacy — removed.** This workflow no longer exists in the app (see §9r). The text below documents the stored history only.
+
 - **Eligible pool** (queried on every draw, server-side): active attendees of the active event with a `registration_scans` row. Nothing else maintains eligibility.
 - **Draw:** the server picks the winner with `random_int()` (cryptographically secure), stores it in `randomizer_draws` (event, attendee, type `minor`, user, time; migration 010) and returns it. The browser only animates the result: it receives the winner plus a random sample of up to 24 other eligible names for the rolling effect, never the full pool.
 - **No repeat-winner rule:** winners stay eligible; `registration_scans` is never modified. If a rule is needed later it can be built on `randomizer_draws`.
@@ -483,6 +485,8 @@ Full request/response examples: [docs/API.md](docs/API.md).
 - **Event Fullscreen Mode:** "Enter fullscreen" uses the standard browser Fullscreen API on the stage element, so the sidebar and top bar disappear. Space/Enter draws (works with presenter remotes); Esc or the corner button exits. Browsers require a click or key press to enter fullscreen and always let the viewer exit; the app cannot hide browser UI on its own. The stage (`components/randomizer/RandomizerStage.tsx`) is reusable for the Major Randomizer.
 
 ## 9e. Major Randomizer (Phase 6, changed in Phase 9.2)
+
+> **Legacy — removed.** This workflow no longer exists in the app (see §9r). The text below documents the stored history only.
 
 - **Major Randomizer:** same stage, fullscreen and server-side `random_int()` draw as Minor, using `randomizer_draws.randomizer_type = 'major'`.
 - The Phase 6 Major eligibility import (form responses), the Major Eligibility page and the Major QR were **removed in Phase 9.2**: Major eligibility now comes from registration (see §9h). Old `major_eligibility` rows with `source = import` and their `import_batches` stay in the database as history but no longer count.
@@ -514,7 +518,8 @@ Permission matrix (enforced in `backend/api/routes.php`):
 | QR view/print | ✓ | ✓ | | |
 | Registration scanner, scan history | ✓ | ✓ | | ✓ |
 | Attendee status lookup | ✓ | ✓ | ✓ | ✓ |
-| Randomizers, + Add Participant, void draw | ✓ | | ✓ | |
+| Randomizer: view, present (Space + letter reveal), operator notices | ✓ | | ✓ | |
+| Randomizer: name pool sessions, assign / edit / remove letters, void reveal | ✓ | | | |
 
 ## 9h. Raffle rules, Cluster and Excel lists (Phase 9.2)
 
@@ -569,6 +574,8 @@ Minor eligible  +  Major eligible
 - After the reset, recreate staff / event operator accounts (`backend/cli/create-user.php`) and scanner operators (Settings), then create the real event and import/add attendees.
 
 ## 9j. Randomizer Reset (Phase 9.4, migration 032)
+
+> **Legacy — removed.** This workflow no longer exists in the app (see §9r). The text below documents the stored history only.
 
 Settings › **Randomizer Reset** (admin only) lets previous winners of **one event day** be drawn again, for **Minor**, **Major** or **Minor + Major**. It is not the System Reset.
 
@@ -625,7 +632,11 @@ Work toward React/Vite on Vercel + Supabase has started. **Phase 1** adds the Po
 
 ## 9o. Registration sessions and Major eligibility (Phase 10, migration 033)
 
-An event day can have several registration sessions, for example Oct 14 5:00 PM, Oct 15 8:00 AM and Oct 15 5:00 PM. Each attendee has **one** record and **one** QR code across all sessions. Every scan is recorded in the **current session**, which only an admin selects (Events › Days › Sessions). A session can be marked **Counts for the Major Randomizer**:
+An event day can have several registration sessions, for example Oct 14 5:00 PM, Oct 15 8:00 AM and Oct 15 5:00 PM. Each attendee has **one** record and **one** QR code across all sessions. Every scan is recorded in the **current session**, which only an admin selects (Events › Days › Sessions).
+
+> **Legacy:** `registration_sessions.counts_for_major` is kept in the database (and still sent back unchanged when a session is edited) but is **no longer shown in the session editor** and no longer drives any workflow: the Minor / Major Randomizers were removed. The Randomizer's name pool comes from the sessions selected on the Randomizer page (§9r). The rules below describe the legacy Minor / Major pools, which the API still derives (dashboard `minorEligible` / `majorEligible`, scan `majorEligible`, `eligibility.csv`) for compatibility.
+
+Legacy rule — a session could be marked **Counts for the Major Randomizer**:
 
 - **Major pool:** a registration in a session that counts for Major, so Oct 15 8:00 AM alone is not enough.
 - **Minor pool:** a registration in any session of the day.
@@ -664,17 +675,21 @@ php backend/cli/check-readiness.php   # "PHP extension gd" should be OK
 
 Upload limits: PHP's `upload_max_filesize` must be at least `10M` and `post_max_size` a little larger (e.g. `12M`) in `/Applications/XAMPP/xamppfiles/etc/php.ini` (XAMPP's defaults are usually higher); restart Apache after changing them. If the folder is not writable the page shows "The server cannot save files…" and nothing changes.
 
-## 9r. Pre-Drawn Winner Reveal (migration 035)
+## 9r. Randomizer (Pre-Drawn Winner Reveal, migrations 035 + 036)
 
-**Pre-Drawn Reveal** (sidebar; admin and event operator) reveals winners who were **already selected before the event** outside this system (e.g. a Spin the Wheel app). It is **not** a random draw and is completely separate from the Minor / Major Randomizer: nothing is written to `randomizer_draws`, and Minor / Major eligibility, pools, history, Winners.xlsx and the eligibility report are unchanged. A pre-drawn winner stays eligible for the Minor / Major draws.
+**Randomizer** (sidebar; admin and event operator; formerly "Pre-Drawn Reveal") reveals winners who were **already selected before the event** outside this system (e.g. a Spin the Wheel app). It is **not** a random draw: the rolling names are for display only and never choose anyone; only the letter assigned by an admin reveals a winner, after the server records it. It is the only randomizer: the old Minor / Major Randomizer pages and APIs were removed (old links redirect here); their history stays in `randomizer_draws` and in **Reports › Legacy Minor/Major History**. Nothing here writes to `randomizer_draws`.
 
-- **Assign (admin):** "Assign letter" → letter A–Z, an existing **active attendee of the active event** (search), optional prize label. Per event day each letter and each attendee can be used once. Unrevealed assignments can be edited or removed; the list is the review checklist before presenting.
+- **Name pool (admin, per event day):** the **Name pool** card lists the registration sessions of the current day (name, date, time, registered count, current / disabled). Tick one or more and **Save sessions**. The selection is stored in `randomizer_pool_sessions` (migration 036) and survives refreshes and logins; changing it never changes registrations, scans or the sessions themselves. **Pool = attendees with an active registration in at least one selected session of that day, each person once**, who are active (not archived) and belong to the active event. Removed registrations, archived attendees, other days and other events never count. Disabled sessions still count if selected (their earlier registrations are real).
+- **No sessions selected:** the page shows a validation message, "Enter fullscreen" is disabled, Space does nothing (operator notice), and the API answers 409 `NO_POOL` for roll names, assignments and reveals.
+- **Assign (admin):** "Assign letter" → letter A–Z, an attendee **from the pool** (search), optional prize label. Per event day each letter and each attendee can be used once. Unrevealed assignments can be edited or removed; the list is the review checklist before presenting.
+- **Changing the selection with assigned winners:** if an assigned, not yet revealed winner is not in the new pool, saving is refused with the list of affected letters (409 `POOL_CONFLICTS`). **Save anyway** keeps the assignments, flags them **Not in pool**, and their reveal is blocked (409 `NOT_IN_POOL`) until an admin edits / removes the assignment or changes the selection back. Nothing is deleted silently. Changes are audit-logged (`randomizer.pool_sessions_changed`, before / after / out-of-pool letters).
 - **Present (admin or event operator):** "Enter fullscreen" on the LED screen shows only the Randomizer background. **Space** starts the rolling names (nothing is recorded); while they roll, the assigned **letter** asks the server to record the reveal and only then stops on the winner: name and prize label. **Backspace** stops the names (nothing recorded) or hides the winner; **Esc** leaves fullscreen.
-- **Safety:** letters before Space, unassigned letters, letters already revealed, held-down keys and keys typed in form fields never reveal anything; one reveal request at a time; the server locks the event day and allows exactly one reveal per letter (concurrent presses get "already revealed").
+- **Safety:** letters before Space, unassigned letters, letters already revealed, out-of-pool winners, held-down keys and keys typed in form fields never reveal anything; one reveal request at a time; the server locks the event day and allows exactly one reveal per letter (concurrent presses get "already revealed").
 - **Operator notices** ("Letter Q has no pre-drawn winner", "already revealed", errors) are never shown on the LED screen. Click **Open operator window** and keep that window on the laptop while the first window is fullscreen on the LED; notices appear there instantly.
 - **Void (admin):** "Void reveal" keeps the reveal in history marked VOID (audit-logged); the letter can then be assigned again and revealed again (never two live reveals for one letter).
-- **Records:** every record is labelled **Pre-Drawn Winner** — admin list, audit log (`predrawn.assigned / assignment_updated / assignment_removed / revealed / reveal_voided`, "not a random draw") and **Reports › Pre-Drawn Winners.xlsx** (`GET /api/reports/predrawn-winners.xlsx?scope=all|day`).
-- **System Reset** also clears `predrawn_winners` (it is event data, like draws).
+- **Records:** every record is labelled **Pre-Drawn Winner** — admin list, audit log (`predrawn.assigned / assignment_updated / assignment_removed / revealed / reveal_voided`, "not a random draw") and **Reports › Randomizer Winners (Pre-Drawn).xlsx** (`GET /api/reports/predrawn-winners.xlsx?scope=all|day`).
+- **System Reset** also clears `predrawn_winners` and `randomizer_pool_sessions` (event data).
+- **Legacy data kept:** `randomizer_draws` (incl. void and reset marks), `minor_manual_entries`, `major_eligibility` and `registration_sessions.counts_for_major` stay in the database unchanged. The "Counts for Major" control is no longer shown; editing a session keeps its stored value.
 
 ## 10. Creating the first admin
 
@@ -803,9 +818,9 @@ HOLCIM_TEST_EMAIL=admin@example.com HOLCIM_TEST_PASSWORD='your-password' \
 ```
 
 It creates its own "Phase 8 Smoke …" event (Day 1 + Day 2, attendees A–D),
-test accounts with random passwords, scans and draws, then checks day
-isolation (registration, scanner counts, Minor/Major pools, manual
-participants, draws, voids, reports), switching back and forth between days,
+test accounts with random passwords and scans (legacy Minor / Major draws are
+seeded directly as history), then checks day isolation (registration, scanner
+counts, legacy draw history, voids, reports), switching back and forth between days,
 scanner-operator permissions, and that a password reset or disable signs the
 operator out. While it runs, the currently active event is set to completed;
 afterwards it is restored, the smoke events are archived and the test
@@ -822,7 +837,7 @@ DB_DATABASE=holcim_test php backend/tests/reset-test.php --confirm-reset
 
 It seeds an event, two days, attendees, QR codes, registrations, draws (incl. a void), manual participants, legacy Major rows, an import batch, login attempts, audit logs and staff / event operator / scanner operator accounts, runs the reset and checks that every event table is empty, all admins are unchanged and can still authenticate, the schema and `schema_migrations` are unchanged, no foreign key has orphans, and that a failure part-way rolls back. It refuses to run without `--confirm-reset`, unless the database name contains `test`, or with `APP_ENV=production`.
 
-The Phase 8 smoke test also covers manual Add Attendee and the System Reset endpoint's permissions and validation (it never performs a System Reset), and the Randomizer Reset on its own smoke event (scope isolation, history kept, audit, reports, void, and a draw/reset race).
+The Phase 8 smoke test also covers manual Add Attendee, the System Reset endpoint's permissions and validation (it never performs a System Reset), that the removed Minor / Major draw, participant and Randomizer Reset APIs return 404, and that the legacy history reports (Winners.xlsx, draws.csv incl. reset marks, eligibility.csv) still export correctly. The Randomizer itself (pool sessions, assignments, reveals, conflicts) is covered by `backend/tests/predrawn-test.php`.
 
 **Supabase migration tools (Phase 1):** `cd tools && npm ci && npm run typecheck && npm test`. Set `TEST_MYSQL_ADMIN_URL` / `TEST_PG_ADMIN_URL` to run the database tests on throwaway `holcim_migtest_*` databases (docs/SUPABASE_MIGRATION.md §7).
 

@@ -212,7 +212,7 @@ final class ReportService
     }
 
     /**
-     * Pre-Drawn Winners.xlsx (migration 035): every pre-drawn winner
+     * "Randomizer Winners (Pre-Drawn).xlsx" (migration 035): every pre-drawn winner
      * assignment of the event (or the current day) with its reveal and void,
      * each row labelled "Pre-Drawn Winner" (selected outside the system, not
      * a random draw). Separate file: Winners.xlsx is unchanged.
@@ -230,13 +230,13 @@ final class ReportService
             ];
         }
         $xlsx = (new XlsxWriter())->addSheet(
-            'Pre-Drawn Winners',
+            'Randomizer Winners (Pre-Drawn)',
             ['Category', 'Event Day', 'Letter', 'Prize', 'Attendee Code', 'Full Name', 'Company', 'Cluster', 'Status',
                 'Assigned At', 'Assigned By', 'Revealed At', 'Revealed By', 'Voided At', 'Voided By', 'Void Reason'],
             $rows
         );
 
-        return self::xlsx($xlsx, $day !== null ? "Pre-Drawn Winners - Day {$day['day_number']}.xlsx" : 'Pre-Drawn Winners.xlsx');
+        return self::xlsx($xlsx, $day !== null ? "Randomizer Winners (Pre-Drawn) - Day {$day['day_number']}.xlsx" : 'Randomizer Winners (Pre-Drawn).xlsx');
     }
 
     /**

@@ -17,7 +17,7 @@ export const TIME_ZONE = 'Asia/Manila';
 export const TABLES = [
   'users', 'events', 'event_days', 'registration_sessions', 'import_batches', 'attendees', 'attendee_qr_codes',
   'registration_scans', 'session_registrations', 'session_registration_changes', 'scan_logs',
-  'minor_manual_entries', 'major_eligibility', 'major_entries', 'randomizer_draws', 'predrawn_winners', 'audit_logs', 'login_attempts',
+  'minor_manual_entries', 'major_eligibility', 'major_entries', 'randomizer_draws', 'predrawn_winners', 'randomizer_pool_sessions', 'audit_logs', 'login_attempts',
 ] as const;
 export type TableName = (typeof TABLES)[number];
 

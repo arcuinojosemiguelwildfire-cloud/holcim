@@ -20,6 +20,8 @@ export class ApiError extends Error {
   readonly status: number
   readonly code: string
   readonly fieldErrors: Record<string, string[]>
+  /** Extra error details sent by the server (e.g. conflicts), if any. */
+  readonly details: Record<string, unknown>
 
   constructor(status: number, payload: ApiErrorPayload) {
     super(payload.message)
@@ -27,6 +29,7 @@ export class ApiError extends Error {
     this.status = status
     this.code = payload.code
     this.fieldErrors = payload.details?.fields ?? {}
+    this.details = payload.details ?? {}
   }
 
   /** First validation message for a field, if any. */

@@ -23,10 +23,9 @@ const ACTIONS: Record<RegistrationHistoryItem['action'], string> = {
 }
 
 /**
- * Registration history per session and the resulting raffle eligibility per
- * day (Phase 10). The admin only chooses WHICH SESSIONS the attendee is
- * registered for; eligibility is always derived by the server. The attendee,
- * attendee code and QR code are never changed here.
+ * Registration history per session (Phase 10). The admin only chooses WHICH
+ * SESSIONS the attendee is registered for. The attendee, attendee code and
+ * QR code are never changed here.
  */
 export function AttendeeRegistrationsPanel({ attendeeId, canManage }: AttendeeRegistrationsPanelProps) {
   const [data, setData] = useState<AttendeeRegistrations | null>(null)
@@ -88,22 +87,10 @@ export function AttendeeRegistrationsPanel({ attendeeId, canManage }: AttendeeRe
   return (
     <section className="space-y-3 border-t border-slate-200 pt-4" data-testid="attendee-registrations">
       <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-        <ClipboardCheck className="size-4 text-brand-700" aria-hidden /> Registration &amp; raffle eligibility
+        <ClipboardCheck className="size-4 text-brand-700" aria-hidden /> Registration sessions
       </h3>
       {notice && <Alert tone="success" onDismiss={() => setNotice(null)}>{notice}</Alert>}
       {error && <Alert tone="error">{error}</Alert>}
-
-      <div className="grid gap-2 sm:grid-cols-2" data-testid="major-eligibility">
-        {data.days.map((day) => (
-          <div key={day.day.id} className="rounded-lg px-3 py-2 ring-1 ring-slate-200">
-            <p className="text-xs font-medium text-slate-500">Day {day.day.dayNumber} · {day.day.eventDate}</p>
-            <div className="mt-1 flex flex-wrap gap-1.5">
-              <Badge tone={day.majorEligible ? 'success' : 'neutral'}>Major: {day.majorEligible ? 'Eligible' : 'Not eligible'}{day.majorSource === 'manual' ? ' (manual add)' : ''}</Badge>
-              <Badge tone={day.minorEligible ? 'success' : 'neutral'}>Minor: {day.minorEligible ? 'Eligible' : 'Not eligible'}</Badge>
-            </div>
-          </div>
-        ))}
-      </div>
 
       {canManage ? (
         <div className="space-y-2 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200" data-testid="manage-registrations">
@@ -122,7 +109,6 @@ export function AttendeeRegistrationsPanel({ attendeeId, canManage }: AttendeeRe
                   />
                   <span className="flex-1">
                     {session.label}
-                    {session.countsForMajor && <span className="ml-1 text-xs text-brand-700">(counts for Major)</span>}
                   </span>
                   {registration?.status === 'removed' && <span className="text-xs text-slate-500">removed {formatDateTime(registration.removedAt)}</span>}
                 </label>
@@ -146,7 +132,7 @@ export function AttendeeRegistrationsPanel({ attendeeId, canManage }: AttendeeRe
               <Button type="button" variant="ghost" size="sm" onClick={() => apply(data)} icon={<RotateCcw className="size-4" aria-hidden />}>Undo</Button>
             )}
             <Button type="button" size="sm" loading={saving} disabled={changes.length === 0 || (removing && reason.trim() === '')} onClick={() => void save()}>
-              Save registration eligibility
+              Save registrations
             </Button>
           </div>
           <p className="text-xs text-slate-500">Saving never changes the attendee, the attendee code or the QR code. Removed registrations stay in the history.</p>

@@ -21,7 +21,6 @@ use App\Controllers\HealthController;
 use App\Controllers\PredrawnController;
 use App\Controllers\QrCodeController;
 use App\Controllers\RandomizerBackgroundController;
-use App\Controllers\RandomizerController;
 use App\Controllers\RegistrationController;
 use App\Controllers\RegistrationSessionController;
 use App\Controllers\ReportController;
@@ -115,8 +114,9 @@ return static function (Router $router): void {
 
     // Randomizers (active event): admin + event operator.
     $randomizerOperators = AuthMiddleware::roles(User::ROLE_ADMIN, User::ROLE_EVENT_OPERATOR);
-    // Pre-Drawn Winner Reveal (migration 035): winners chosen outside the system,
-    // revealed by letter on the LED screen. Separate from Minor / Major draws.
+    // Randomizer = Pre-Drawn Winner Reveal (migration 035): winners chosen outside
+    // the system, revealed by letter on the LED screen. The name pool comes from the
+    // registration sessions selected for the active day (migration 036).
     $router->get('/predrawn', [PredrawnController::class, 'index'], [$randomizerOperators]);
     $router->get('/predrawn/roll-names', [PredrawnController::class, 'rollNames'], [$randomizerOperators]);
     $router->post('/predrawn/reveal', [PredrawnController::class, 'reveal'], [$randomizerOperators]);
@@ -124,6 +124,8 @@ return static function (Router $router): void {
     $router->put('/predrawn/assignments/{id}', [PredrawnController::class, 'update'], [$adminOnly]);
     $router->delete('/predrawn/assignments/{id}', [PredrawnController::class, 'remove'], [$adminOnly]);
     $router->post('/predrawn/assignments/{id}/void', [PredrawnController::class, 'void'], [$adminOnly]);
+    $router->put('/predrawn/pool', [PredrawnController::class, 'pool'], [$adminOnly]);
+    $router->get('/predrawn/pool/candidates', [PredrawnController::class, 'poolCandidates'], [$adminOnly]);
 
     // Randomizer background (custom image or default). Viewing: randomizer operators;
     // changing / restoring: admin only (Settings > Randomizer Background).
@@ -131,24 +133,11 @@ return static function (Router $router): void {
     $router->get('/randomizers/background/image', [RandomizerBackgroundController::class, 'image'], [$randomizerOperators]);
     $router->post('/settings/randomizer-background', [RandomizerBackgroundController::class, 'upload'], [$adminOnly]);
     $router->delete('/settings/randomizer-background', [RandomizerBackgroundController::class, 'restore'], [$adminOnly]);
-    $router->get('/randomizers/minor', [RandomizerController::class, 'minorSummary'], [$randomizerOperators]);
-    $router->post('/randomizers/minor/draw', [RandomizerController::class, 'minorDraw'], [$randomizerOperators]);
-    $router->get('/randomizers/major', [RandomizerController::class, 'majorSummary'], [$randomizerOperators]);
-    $router->post('/randomizers/major/draw', [RandomizerController::class, 'majorDraw'], [$randomizerOperators]);
 
-    // Manual participants for TODAY's pools (Phase 8): admin + event operator.
-    $router->get('/randomizers/minor/candidates', [RandomizerController::class, 'minorCandidates'], [$randomizerOperators]);
-    $router->get('/randomizers/minor/participants', [RandomizerController::class, 'minorParticipants'], [$randomizerOperators]);
-    $router->post('/randomizers/minor/participants', [RandomizerController::class, 'addMinorParticipant'], [$randomizerOperators]);
-    $router->get('/randomizers/major/candidates', [RandomizerController::class, 'majorCandidates'], [$randomizerOperators]);
-    $router->get('/randomizers/major/participants', [RandomizerController::class, 'majorParticipants'], [$randomizerOperators]);
-    $router->post('/randomizers/major/participants', [RandomizerController::class, 'addMajorParticipant'], [$randomizerOperators]);
-
-    // Phase 9.2: Major eligibility comes from registration (no Major form, QR
-    // or import). The /major-eligibility and /major-form routes were removed.
-
-    // Draw voiding (Phase 7): admin + event operator. Never deletes the draw.
-    $router->post('/randomizers/draws/{id}/void', [RandomizerController::class, 'voidDraw'], [$randomizerOperators]);
+    // Phase 10.x: the separate Minor / Major Randomizer workflows (draw, candidates,
+    // manual participants, draw voiding, Randomizer Reset) were removed. Their
+    // historical records stay in randomizer_draws (incl. reset marks) and remain in
+    // the Legacy Minor/Major History reports below.
 
     // CSV reports for the active event (Phase 7), ?scope=day|all (Phase 8): admin only.
     $router->get('/reports/registration.csv', [ReportController::class, 'registration'], [$adminOnly]);
@@ -171,8 +160,4 @@ return static function (Router $router): void {
     $router->get('/settings/system-reset', [SettingsController::class, 'resetSummary'], [$adminOnly]);
     $router->post('/settings/system-reset', [SettingsController::class, 'reset'], [$adminOnly]);
 
-    // Settings > Randomizer Reset (Phase 9.4): admin only. Lifts the no-repeat
-    // winner exclusion for one event day + Minor/Major/both; draws are kept.
-    $router->get('/settings/randomizer-reset', [SettingsController::class, 'randomizerResetPreview'], [$adminOnly]);
-    $router->post('/settings/randomizer-reset', [SettingsController::class, 'randomizerReset'], [$adminOnly]);
 };

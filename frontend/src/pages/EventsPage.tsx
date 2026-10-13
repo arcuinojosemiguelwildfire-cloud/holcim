@@ -58,7 +58,7 @@ export function EventsPage() {
     <>
       <PageHeader
         title="Events"
-        description="The active event and its current day drive the dashboard, registration and randomizers."
+        description="The active event and its current day drive the dashboard, registration and the Randomizer."
         actions={
           canManage && (
             <Button onClick={() => setForm({ open: true, event: null })} icon={<CalendarPlus className="size-4" aria-hidden />}>

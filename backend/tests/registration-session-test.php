@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 /**
  * Phase 10 registration-session test (HTTP, end to end):
- * sessions per event day, scanning into the CURRENT session, Major eligibility
- * from Major-qualifying sessions only (Oct 14 5:00 PM yes, Oct 15 8:00 AM no,
- * Oct 15 5:00 PM yes), one candidate per attendee, admin Manage / renew
- * registration with history, role restrictions, and that the existing
- * randomizer rules (no repeat, void, reset, day separation, Minor/Major
- * independence) still hold. QR tokens and attendee records must not change.
+ * sessions per event day, scanning into the CURRENT session, the legacy Major
+ * eligibility the API still derives from sessions marked counts_for_major
+ * (Oct 14 5:00 PM yes, Oct 15 8:00 AM no, Oct 15 5:00 PM yes; shown nowhere
+ * in the UI since the single Randomizer), one entry per attendee, admin
+ * Manage / renew registration with history, role restrictions, day
+ * separation, and that the removed Minor / Major draw and Randomizer Reset
+ * APIs return 404. QR tokens and attendee records must not change.
  *
  *   HOLCIM_TEST_EMAIL=admin@example.com HOLCIM_TEST_PASSWORD='...' \
  *     php backend/tests/registration-session-test.php http://localhost/Holcim/backend/api --write
@@ -178,19 +179,19 @@ try {
         "SELECT COUNT(*) FROM session_registrations WHERE attendee_id = {$ids[$key]}" . ($sessionId !== null ? " AND registration_session_id = {$sessionId}" : '')
     )->fetchColumn();
     $scan = static fn (string $key) => $scanner->request('POST', '/registration/scan', ['token' => $tokens[$key]]);
-    $pool = static function (string $type) use ($operator): array {
-        $items = [];
-        for ($page = 1; $page < 20; $page++) {
-            $data = $operator->data('GET', "/randomizers/{$type}/participants?page={$page}");
-            $items = [...$items, ...($data['items'] ?? [])];
-            if ($page >= ($data['pagination']['totalPages'] ?? 1)) {
-                break;
-            }
+    // The Minor / Major screens and APIs were removed; the session-based eligibility
+    // they used is still computed on the server (scan result, attendee history,
+    // reports), so it is checked through the model directly for the CURRENT day.
+    $currentDay = static fn (): int => (int) ($admin->data('GET', '/event-days/current')['eventDay']['id'] ?? 0);
+    $pool = static function (string $type) use ($pdo, $currentDay): array {
+        $ids = App\Models\RandomizerDraw::eligibleIds($currentDay(), $type);
+        if ($ids === []) {
+            return [];
         }
 
-        return array_map(static fn (array $i): string => (string) $i['attendeeCode'], $items);
+        return array_map('strval', $pdo->query('SELECT attendee_code FROM attendees WHERE id IN (' . implode(',', $ids) . ') ORDER BY attendee_code')->fetchAll(PDO::FETCH_COLUMN));
     };
-    $eligibleCount = static fn (string $type): int => (int) ($operator->data('GET', "/randomizers/{$type}")['eligibleCount'] ?? -1);
+    $eligibleCount = static fn (string $type): int => App\Models\RandomizerDraw::countEligible($currentDay(), $type);
 
     // ---------------------------------------------------- Test 1: Oct 14 5:00 PM
     section('Test 1 - Oct 14 5:00 PM registration');
@@ -339,31 +340,12 @@ try {
     check('Archived attendee cannot be given a registration (422)', $reg($admin, 'G', [['session_id' => $pm, 'registered' => true]])['status'] === 422);
 
     // ---------------------------------------------------- Test 11 - randomizer rules
-    section('Test 11 - randomizer rules unchanged (no repeat, void, reset, day + type separation)');
-    $draw = static fn (string $type) => $operator->request('POST', "/randomizers/{$type}/draw");
-    $winners = [];
-    for ($i = 0; $i < 4; $i++) {
-        $d = $draw('major');
-        $winners[] = (string) ($d['body']['data']['winner']['attendeeCode'] ?? $d['status']);
+    section('Test 11 - old Minor / Major draw and reset APIs are gone; eligibility still derived from sessions');
+    foreach ([['POST', '/randomizers/major/draw'], ['POST', '/randomizers/minor/draw'], ['GET', '/randomizers/major/participants'], ['POST', '/settings/randomizer-reset']] as [$m, $p]) {
+        check("Removed: {$m} {$p} (404)", $operator->request($m, $p)['status'] === 404 && $admin->request($m, $p)['status'] === 404);
     }
-    $sortedWinners = $winners;
-    sort($sortedWinners);
-    $want = [$code('B'), $code('C'), $code('D'), $code('E')];
-    sort($want);
-    check('Four Major draws pick B, C, D, E once each (5:00 PM registrations only, no repeats)', $sortedWinners === $want, $winners);
-    $d = $draw('major');
-    check('Fifth Major draw: pool empty (409) - F and H (8:00 AM only) were never drawn', $d['status'] === 409 && ($d['body']['error']['code'] ?? '') === 'NO_ELIGIBLE_ATTENDEES', $d['raw']);
-    $drawIdOf = static fn (string $attendeeKey): int => (int) $pdo->query("SELECT id FROM randomizer_draws WHERE attendee_id = {$ids[$attendeeKey]} AND randomizer_type = 'major' AND event_day_id = {$day2} ORDER BY id DESC LIMIT 1")->fetchColumn();
-    $r = $operator->request('POST', '/randomizers/draws/' . $drawIdOf('D') . '/void', ['reason' => 'Not present']);
-    check('Void D: D returns to the Major pool', $r['status'] === 200 && $pool('major') === [$code('D')], $r['raw']);
-    check('Next Major draw picks D (only candidate)', ($draw('major')['body']['data']['winner']['attendeeCode'] ?? '') === $code('D'));
-    $m = $draw('minor');
-    check('Minor draw is independent of Major wins (any Oct 15 registrant can win Minor)', $m['status'] === 200 && in_array($m['body']['data']['winner']['attendeeCode'] ?? '', [$code('B'), $code('C'), $code('D'), $code('E'), $code('F'), $code('H')], true), $m['raw']);
-    $r = $admin->request('POST', '/settings/randomizer-reset', ['event_id' => $eventId, 'event_day_id' => $day2, 'randomizer' => 'major', 'confirmation' => 'RESET MAJOR DRAW', 'password' => $adminPassword]);
-    check('Randomizer Reset (Major, Oct 15) puts B, C, D, E back - still never the 8:00 AM-only attendees', $r['status'] === 200 && $eligibleCount('major') === 4
-        && array_intersect([$code('F'), $code('H')], $pool('major')) === [], $r['raw']);
-    check('Draw history kept (5 Major rows incl. 1 VOID; reset marks, never deletes)', (int) $pdo->query("SELECT COUNT(*) FROM randomizer_draws WHERE event_day_id = {$day2} AND randomizer_type = 'major'")->fetchColumn() === 5
-        && (int) $pdo->query("SELECT COUNT(*) FROM randomizer_draws WHERE event_day_id = {$day2} AND randomizer_type = 'major' AND voided_at IS NOT NULL")->fetchColumn() === 1);
+    check('No draw rows were created by registration or sessions', (int) $pdo->query("SELECT COUNT(*) FROM randomizer_draws WHERE event_id = {$eventId}")->fetchColumn() === 0);
+    check('Major (session-based) still excludes the 8:00 AM-only attendees F and H', array_intersect([$code('F'), $code('H')], $pool('major')) === []);
     check('Oct 14 pools are separate (A still the only Oct 14 registration)', (int) $pdo->query("SELECT COUNT(DISTINCT attendee_id) FROM session_registrations WHERE event_day_id = {$day1} AND status = 'active'")->fetchColumn() === 1);
 
     // ---------------------------------------------------- reports + invariants

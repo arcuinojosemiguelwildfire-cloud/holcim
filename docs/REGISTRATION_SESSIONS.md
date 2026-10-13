@@ -1,5 +1,7 @@
 # Registration sessions and raffle eligibility (Phase 10)
 
+> **Update (single Randomizer, migration 036):** the Minor / Major Randomizers were removed. Registration sessions now feed the **Randomizer** name pool: an admin selects one or more sessions per event day on the Randomizer page (`randomizer_pool_sessions`), and the pool is every active attendee of the event with an active registration in at least one selected session (each person once). The `counts_for_major` column is kept but no longer shown or used by any workflow; the scan result no longer shows Major eligibility (the API still returns `majorEligible`). The Minor / Major rules below describe the legacy behaviour and its stored history. See README §9r.
+
 An event day can have more than one **registration session**. The same attendee record, with the same attendee code and the same QR code, is used for every session. Each session gets its own registration row.
 
 ```

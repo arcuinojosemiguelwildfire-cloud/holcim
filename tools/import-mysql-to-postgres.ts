@@ -92,6 +92,7 @@ try {
   if (!migrations.some((m) => m.startsWith('033'))) throw new Refused('Source database is missing migration 033 (registration sessions); run php backend/cli/migrate.php first.');
   if (!migrations.some((m) => m.startsWith('034'))) throw new Refused('Source database is missing migration 034 (attendee Internal/External type); run php backend/cli/migrate.php first.');
   if (!migrations.some((m) => m.startsWith('035'))) throw new Refused('Source database is missing migration 035 (pre-drawn winners); run php backend/cli/migrate.php first.');
+  if (!migrations.some((m) => m.startsWith('036'))) throw new Refused('Source database is missing migration 036 (Randomizer pool sessions); run php backend/cli/migrate.php first.');
 
   // ---- 2. Target: one transaction; schema must match and every table must be empty.
   await dst.query('BEGIN ISOLATION LEVEL SERIALIZABLE');

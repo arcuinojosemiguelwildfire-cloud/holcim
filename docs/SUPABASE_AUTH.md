@@ -51,8 +51,9 @@ The prompt's list was compared with the real middleware. **Bold** marks behaviou
 | Generate / regenerate / export QR | ✓ | – | – | – |
 | Registration scanning + scan history | ✓ | ✓ | **–** | ✓ |
 | Attendee status lookup (minimal fields) | ✓ | ✓ | ✓ | ✓ |
-| Randomizers: draw, add participant, **void** | ✓ | – | ✓ | – |
-| Randomizer Reset, System Reset, reports, settings | ✓ | – | – | – |
+| Randomizer: view, present, reveal | ✓ | – | ✓ | – |
+| Randomizer: name pool sessions, assignments, void reveal | ✓ | – | – | – |
+| System Reset, reports, settings | ✓ | – | – | – |
 | Manage / renew registration eligibility | ✓ | – | – | – |
 | User management | ✓ (scanner operators only, in the app) | – | – | – |
 
@@ -121,7 +122,7 @@ These are SECURITY DEFINER functions with `search_path = ''`. The schema is not 
 | `events`, `attendees`, `session_registrations`, `session_registration_changes` | admin, registration staff, event operator |
 | `event_days`, `registration_sessions` | admin (others: `current_event_context()`) |
 | `registration_scans`, `scan_logs` | admin, registration staff, scanner operator |
-| `minor_manual_entries`, `major_eligibility`, `randomizer_draws` | admin, event operator |
+| `minor_manual_entries`, `major_eligibility`, `randomizer_draws` (legacy history), `predrawn_winners`, `randomizer_pool_sessions` | admin, event operator |
 | `major_entries`, `import_batches`, `audit_logs`, `migration_import_runs` | admin |
 | **`attendee_qr_codes`, `users`, `login_attempts`** | **nobody** (no grant, no policy) |
 

@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { KeyRound, ScanLine, UserPlus } from 'lucide-react'
 import { RandomizerBackgroundCard } from '../components/settings/RandomizerBackgroundCard'
-import { RandomizerResetCard } from '../components/settings/RandomizerResetCard'
 import { RESET_SUCCESS, SystemResetCard } from '../components/settings/SystemResetCard'
 import { Alert } from '../components/ui/Alert'
 import { Badge } from '../components/ui/Badge'
@@ -119,13 +118,6 @@ export function SettingsPage() {
       </Card>
 
       <RandomizerBackgroundCard />
-
-      <RandomizerResetCard
-        onDone={(message) => {
-          setNotice({ tone: 'success', text: message })
-          window.scrollTo({ top: 0, behavior: 'smooth' })
-        }}
-      />
 
       <SystemResetCard
         onReset={() => {

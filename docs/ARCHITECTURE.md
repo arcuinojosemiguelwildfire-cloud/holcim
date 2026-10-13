@@ -57,8 +57,8 @@ the client sees a generic `SERVER_ERROR` unless `APP_DEBUG=true`.
 | Attendee import + mapping | `ImportService` (parse CSV/XLSX, apply `column_mapping`), `Attendee` model writes | Attendees page, mapping wizard | `import_batches.column_mapping`, `attendees.extra_data`, unique code per event |
 | QR generation/printing | `QrCodeService` using `Token::random()` | Printable ID view | `attendee_qr_codes` (unique token, one per attendee) |
 | Registration scanner | `POST /registration/scan` (token → attendee, insert scan, duplicate → 409 + audit) | Registration page (hardware QR scanner input) | `registration_scans` unique (event, attendee), composite FK |
-| Minor randomizer | Draw service using `random_int()` + audit | Fullscreen draw UI | Eligibility = registered attendees (rules defined then) |
-| Major randomizer | Pool = today's registrations (+ manual) − today's Major winners (Phase 9.2) | Major draw UI | `randomizer_draws`, `registration_scans` |
+| Minor / Major randomizer (removed; history kept) | Was: draw service using `random_int()` + audit | Was: fullscreen draw UI | `randomizer_draws` (history), `minor_manual_entries`, `major_eligibility` |
+| Randomizer (pre-drawn reveal) | `PredrawnRevealService` + `RandomizerPool` (pool = active registrations in the day's selected sessions, distinct active attendees); letter reveal locked per day | `/randomizer` page: name pool, assignments, fullscreen stage, operator window | `predrawn_winners` (035), `randomizer_pool_sessions` (036) |
 | Winners / Reports | New `winners` table migration | Reports pages | `audit_logs` |
 
 ## Security checklist (Phase 1)

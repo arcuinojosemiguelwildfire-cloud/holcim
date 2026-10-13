@@ -11,6 +11,8 @@ use App\Models\Attendee;
 use App\Models\EventDay;
 use App\Models\PredrawnWinner;
 use App\Models\RandomizerDraw;
+use App\Models\RandomizerPool;
+use App\Models\RegistrationSession;
 
 /**
  * Pre-Drawn Winner Reveal (migration 035), for the ACTIVE event day.
@@ -22,11 +24,20 @@ use App\Models\RandomizerDraw;
  * reveal in one locked transaction, and only then does the screen show the
  * winner. Every record is labelled "Pre-Drawn Winner" - never a random draw.
  *
- * Separate from the Minor / Major Randomizer: nothing is written to
- * randomizer_draws and Minor / Major eligibility and pools are unchanged.
+ * This is the system's single Randomizer (the separate Minor / Major
+ * Randomizer screens were removed; their history is kept). Nothing here is
+ * written to randomizer_draws.
+ *
+ * Name pool (migration 036, see RandomizerPool): per event day an admin
+ * selects registration sessions; the rolling names come from the attendees
+ * registered in them, and every assigned winner must be in that pool. The
+ * rolling names never decide anything - only the assigned letter reveals.
+ * When the selection changes, assignments are kept: those whose attendee
+ * left the pool are flagged (inPool = false) and cannot be revealed until
+ * an admin edits / removes them or changes the selection back.
  *
  * Roles (routes.php): list / roll names / reveal = admin + event operator;
- * assign / edit / remove / void = admin.
+ * pool selection, assign / edit / remove / void = admin.
  */
 final class PredrawnRevealService
 {
@@ -38,32 +49,34 @@ final class PredrawnRevealService
     public static function overview(): array
     {
         [$event, $day] = EventDayService::activeContext();
-        $rows = PredrawnWinner::forDay((int) $day['id']);
+        $dayId = (int) $day['id'];
+        $rows = PredrawnWinner::forDay($dayId);
+        $live = array_values(array_filter($rows, static fn (array $r): bool => $r['voided_at'] === null));
+        $inPool = RandomizerPool::inSessions($dayId, RandomizerPool::selectedSessionIds($dayId), array_map(static fn (array $r): int => (int) $r['attendee_id'], $live));
 
         return [
             'event' => ['id' => (int) $event['id'], 'name' => $event['name']],
             'eventDay' => EventDay::toPublic($day),
             'category' => self::CATEGORY,
-            'assignments' => array_values(array_map([self::class, 'present'], array_filter($rows, static fn (array $r): bool => $r['voided_at'] === null))),
-            'voided' => array_values(array_map([self::class, 'present'], array_filter($rows, static fn (array $r): bool => $r['voided_at'] !== null))),
+            'pool' => self::poolInfo($dayId),
+            'assignments' => array_map(static fn (array $r): array => self::present($r, in_array((int) $r['attendee_id'], $inPool, true)), $live),
+            'voided' => array_values(array_map(static fn (array $r): array => self::present($r), array_filter($rows, static fn (array $r): bool => $r['voided_at'] !== null))),
         ];
     }
 
     /**
-     * Names for the rolling animation: a random sample of the active event's
-     * active attendees (display only; never decides anything).
+     * Names for the rolling animation: a random sample of the day's pool
+     * (display only; never decides anything). 409 NO_POOL without sessions.
      *
      * @return array{names: list<string>}
      */
     public static function rollNames(): array
     {
-        [$event] = EventDayService::activeContext();
-        $statement = Database::connection()->prepare(
-            "SELECT full_name FROM attendees WHERE event_id = :event_id AND status = 'active' ORDER BY RAND() LIMIT " . self::ROLL_SAMPLE_SIZE
-        );
-        $statement->execute(['event_id' => (int) $event['id']]);
+        [, $day] = EventDayService::activeContext();
+        $dayId = (int) $day['id'];
+        self::requirePool($dayId);
 
-        return ['names' => array_map('strval', $statement->fetchAll(\PDO::FETCH_COLUMN))];
+        return ['names' => RandomizerPool::sampleNames($dayId, self::ROLL_SAMPLE_SIZE)];
     }
 
     /**
@@ -79,8 +92,9 @@ final class PredrawnRevealService
         $userId = AuthService::currentUserId();
 
         $id = Database::transaction(static function () use ($eventId, $dayId, $letter, $attendeeId, $prize, $userId): int {
-            RandomizerDraw::lockDay($dayId); // same per-day lock as draws: serialises assignment changes and reveals
+            RandomizerDraw::lockDay($dayId); // per-day lock: serialises pool changes, assignment changes and reveals
             self::checkAttendee($eventId, $attendeeId);
+            self::checkInPool($dayId, $attendeeId);
             self::checkFree($dayId, $letter, $attendeeId, null);
             try {
                 return PredrawnWinner::create($eventId, $dayId, $letter, $attendeeId, $prize, $userId);
@@ -94,7 +108,7 @@ final class PredrawnRevealService
             self::CATEGORY, $letter, $row['attendee_code'], $row['full_name'], $prize !== null ? " - prize \"{$prize}\"" : '', (int) $day['day_number']
         ), $eventId, ['predrawn_winner_id' => $id, 'event_day_id' => $dayId, 'letter' => $letter, 'attendee_id' => $attendeeId, 'prize_label' => $prize]);
 
-        return ['assignment' => self::present($row)];
+        return ['assignment' => self::present($row, true)];
     }
 
     /**
@@ -115,6 +129,7 @@ final class PredrawnRevealService
             RandomizerDraw::lockDay($dayId);
             $current = self::liveUnrevealedOrFail($id, $dayId);
             self::checkAttendee($eventId, $attendeeId);
+            self::checkInPool($dayId, $attendeeId);
             self::checkFree($dayId, $letter, $attendeeId, $id);
             try {
                 if (!PredrawnWinner::updateAssignment($id, $letter, $attendeeId, $prize, $userId)) {
@@ -134,7 +149,7 @@ final class PredrawnRevealService
         ), $eventId, ['predrawn_winner_id' => $id, 'event_day_id' => $dayId, 'letter' => $letter, 'attendee_id' => $attendeeId, 'prize_label' => $prize,
             'previous' => ['letter' => $before['letter'], 'attendee_id' => (int) $before['attendee_id'], 'prize_label' => $before['prize_label']]]);
 
-        return ['assignment' => self::present($row)];
+        return ['assignment' => self::present($row, true)];
     }
 
     /** Removes an assignment that has NOT been revealed (revealed ones can only be voided). */
@@ -174,6 +189,7 @@ final class PredrawnRevealService
 
         $id = Database::transaction(static function () use ($eventId, $dayId, $letter, $userId): int {
             RandomizerDraw::lockDay($dayId);
+            self::requirePool($dayId);
             $row = PredrawnWinner::liveByLetter($dayId, $letter, lock: true);
             if ($row === null) {
                 throw new HttpException(404, 'NOT_ASSIGNED', "Letter {$letter} has no pre-drawn winner assigned for this event day.");
@@ -184,6 +200,9 @@ final class PredrawnRevealService
             $attendee = Attendee::find((int) $row['attendee_id']);
             if ($attendee === null || (int) $attendee['event_id'] !== $eventId || $attendee['status'] !== Attendee::STATUS_ACTIVE) {
                 throw new HttpException(409, 'ATTENDEE_INACTIVE', "The attendee assigned to letter {$letter} is no longer active. Change the assignment first.");
+            }
+            if (!RandomizerPool::contains($dayId, (int) $row['attendee_id'])) {
+                throw new HttpException(409, 'NOT_IN_POOL', "The winner assigned to letter {$letter} is not registered in the selected sessions. An admin must fix the assignment or the session selection first.");
             }
             if (!PredrawnWinner::markRevealed((int) $row['id'], $userId)) {
                 throw new HttpException(409, 'ALREADY_REVEALED', "Letter {$letter} was already revealed.");
@@ -200,7 +219,7 @@ final class PredrawnRevealService
         ), $eventId, ['predrawn_winner_id' => $id, 'event_day_id' => $dayId, 'letter' => $letter, 'attendee_id' => (int) $row['attendee_id'], 'category' => self::CATEGORY]);
 
         return [
-            'reveal' => self::present($row),
+            'reveal' => self::present($row, true),
             // What the LED screen shows: the name and, when set, the prize label.
             'winner' => ['fullName' => $row['full_name'], 'prizeLabel' => $row['prize_label']],
         ];
@@ -239,13 +258,148 @@ final class PredrawnRevealService
     }
 
     /**
+     * Saves the registration sessions of the ACTIVE day whose registered
+     * attendees form the Randomizer pool. Only sessions of that day are
+     * accepted (the database enforces it too). Assignments are never changed:
+     * when unrevealed ones would leave the pool the save is refused with
+     * 409 POOL_CONFLICTS (listing them) unless confirm_conflicts is true;
+     * they are then flagged and blocked from reveal until resolved.
+     *
+     * @param array<string, mixed> $input {session_ids: list<int>, confirm_conflicts?: bool}
+     * @return array<string, mixed>
+     */
+    public static function savePool(Request $request, array $input): array
+    {
+        [$event, $day] = EventDayService::activeContext();
+        $eventId = (int) $event['id'];
+        $dayId = (int) $day['id'];
+        $raw = $input['session_ids'] ?? null;
+        if (!is_array($raw) || array_filter($raw, static fn ($v): bool => !is_int($v) && !(is_string($v) && ctype_digit($v))) !== []) {
+            throw HttpException::validation(['session_ids' => ['Choose registration sessions of this event day.']], 'Choose registration sessions of this event day.');
+        }
+        $sessionIds = array_values(array_unique(array_map('intval', $raw)));
+        sort($sessionIds);
+        $confirm = ($input['confirm_conflicts'] ?? false) === true;
+        $userId = AuthService::currentUserId();
+
+        [$before, $conflicts] = Database::transaction(static function () use ($eventId, $dayId, $sessionIds, $confirm, $userId): array {
+            RandomizerDraw::lockDay($dayId);
+            $daySessions = array_map(static fn (array $s): int => (int) $s['id'], RegistrationSession::forDay($dayId));
+            $foreign = array_diff($sessionIds, $daySessions);
+            if ($foreign !== []) {
+                throw HttpException::validation(['session_ids' => ['Only registration sessions of the current event day can be selected.']],
+                    'Only registration sessions of the current event day can be selected.');
+            }
+            $live = array_values(array_filter(PredrawnWinner::forDay($dayId), static fn (array $r): bool => $r['voided_at'] === null));
+            $stay = RandomizerPool::inSessions($dayId, $sessionIds, array_map(static fn (array $r): int => (int) $r['attendee_id'], $live));
+            $conflicts = array_values(array_map(static fn (array $r): array => [
+                'letter' => $r['letter'], 'fullName' => $r['full_name'], 'attendeeCode' => $r['attendee_code'],
+                'status' => PredrawnWinner::status($r),
+            ], array_filter($live, static fn (array $r): bool => !in_array((int) $r['attendee_id'], $stay, true))));
+            $blocking = array_values(array_filter($conflicts, static fn (array $c): bool => $c['status'] === PredrawnWinner::STATUS_ASSIGNED));
+            if ($blocking !== [] && !$confirm) {
+                throw new HttpException(409, 'POOL_CONFLICTS', count($blocking) . ' assigned winner(s) are not registered in the selected sessions: '
+                    . implode(', ', array_map(static fn (array $c): string => "{$c['letter']} ({$c['fullName']})", $blocking))
+                    . '. Their assignments are kept but cannot be revealed until you edit them or change the selection. Confirm to save anyway.',
+                    ['conflicts' => $blocking]);
+            }
+            $before = RandomizerPool::selectedSessionIds($dayId);
+            RandomizerPool::replace($eventId, $dayId, $sessionIds, $userId);
+
+            return [$before, $conflicts];
+        });
+
+        AuditLogger::log($request, 'randomizer.pool_sessions_changed', sprintf(
+            'Randomizer pool sessions for Day %d changed: [%s] -> [%s]%s.', (int) $day['day_number'], implode(', ', $before), implode(', ', $sessionIds),
+            $conflicts !== [] ? ' - ' . count($conflicts) . ' assigned winner(s) now outside the pool (kept, reveal blocked)' : ''
+        ), $eventId, ['event_day_id' => $dayId, 'before' => $before, 'after' => $sessionIds, 'out_of_pool' => $conflicts]);
+
+        return ['pool' => self::poolInfo($dayId), 'outOfPool' => $conflicts];
+    }
+
+    /**
+     * Pool attendees matching a search, for the assignment picker (admin).
+     *
+     * @return array{items: list<array<string, mixed>>}
+     */
+    public static function poolCandidates(string $search): array
+    {
+        [, $day] = EventDayService::activeContext();
+        $dayId = (int) $day['id'];
+        self::requirePool($dayId);
+        $search = trim($search);
+        if ($search === '') {
+            return ['items' => []];
+        }
+        $assigned = [];
+        foreach (PredrawnWinner::forDay($dayId) as $row) {
+            if ($row['voided_at'] === null) {
+                $assigned[(int) $row['attendee_id']] = $row['letter'];
+            }
+        }
+
+        return ['items' => array_map(static fn (array $a): array => [
+            'id' => (int) $a['id'],
+            'attendeeCode' => $a['attendee_code'],
+            'fullName' => $a['full_name'],
+            'company' => $a['company'],
+            'department' => $a['department'],
+            'externalIdentifier' => $a['external_identifier'],
+            'assignedLetter' => $assigned[(int) $a['id']] ?? null,
+        ], RandomizerPool::search($dayId, mb_substr($search, 0, 100)))];
+    }
+
+    /** @return array<string, mixed> sessions of the day (picker) + selection + pool size */
+    private static function poolInfo(int $dayId): array
+    {
+        $sessions = array_map(static fn (array $s): array => [
+            'id' => (int) $s['id'],
+            'label' => $s['label'],
+            'sessionDate' => $s['session_date'],
+            'startTime' => $s['start_time'] !== null ? substr((string) $s['start_time'], 0, 5) : null,
+            'enabled' => (bool) $s['is_enabled'],
+            'current' => (bool) $s['is_current'],
+            'selected' => (bool) $s['selected'],
+            'registered' => (int) $s['registered'],
+        ], RandomizerPool::sessionsForDay($dayId));
+        $selected = array_values(array_map(static fn (array $s): int => $s['id'], array_filter($sessions, static fn (array $s): bool => $s['selected'])));
+        sort($selected);
+
+        return [
+            'sessions' => $sessions,
+            'selectedSessionIds' => $selected,
+            'configured' => $selected !== [],
+            // Unique active attendees registered in at least one selected session.
+            'size' => $selected !== [] ? RandomizerPool::count($dayId) : 0,
+        ];
+    }
+
+    private static function requirePool(int $dayId): void
+    {
+        if (RandomizerPool::selectedSessionIds($dayId) === []) {
+            throw new HttpException(409, 'NO_POOL', 'No registration sessions are selected for the Randomizer on this event day. An admin must select at least one session first.');
+        }
+    }
+
+    private static function checkInPool(int $dayId, int $attendeeId): void
+    {
+        self::requirePool($dayId);
+        if (!RandomizerPool::contains($dayId, $attendeeId)) {
+            throw HttpException::validation(['attendee_id' => ['This attendee is not registered in the selected sessions for this event day.']],
+                'This attendee is not registered in the selected sessions for this event day.');
+        }
+    }
+
+    /**
      * @param array<string, mixed> $row
      * @return array<string, mixed>
      */
-    public static function present(array $row): array
+    public static function present(array $row, ?bool $inPool = null): array
     {
         return [
             'id' => (int) $row['id'],
+            // Live rows: is the winner in the day's Randomizer pool (null = not computed).
+            'inPool' => $inPool,
             'category' => self::CATEGORY,
             'letter' => $row['letter'],
             'prizeLabel' => $row['prize_label'],

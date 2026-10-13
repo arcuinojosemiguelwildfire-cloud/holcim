@@ -11,6 +11,13 @@ type Phase = 'ready' | 'rolling' | 'landing' | 'winner'
 interface PredrawnStageProps {
   eventName: string | null
   backgroundUrl: string | null
+  /**
+   * false = no registration sessions are selected for the Randomizer today:
+   * fullscreen and Space are blocked (the presentation cannot start).
+   */
+  poolReady: boolean
+  /** Changes whenever the selected sessions change (e.g. their ids joined): refreshes the name sample. */
+  poolKey: string
   /** Operator-only notices (shown in the admin view / a second window, never on the LED screen). */
   notify: (notice: Omit<OperatorNotice, 'id' | 'at'>) => void
   /** Called after a successful reveal (refresh the assignment list). */
@@ -32,8 +39,11 @@ function scramble(name: string): string {
 }
 
 /**
- * Pre-Drawn Winner Reveal screen. The winners were chosen before the event
- * (outside this system); this screen only reveals them.
+ * Randomizer screen (Pre-Drawn Winner Reveal). The winners were chosen before
+ * the event (outside this system); this screen only reveals them. The rolling
+ * names are a display sample of the day's pool (selected registration
+ * sessions) and never decide anything: only the server-validated letter
+ * reveals a winner.
  *
  * Fullscreen = the LED presentation: only the background image until
  * Space starts the rolling names (no server call, nothing recorded). While
@@ -45,7 +55,7 @@ function scramble(name: string): string {
  * (auto-repeat) and keys typed in form fields are ignored.
  * Backspace / Delete: stop the roll (nothing recorded) or hide the winner.
  */
-export function PredrawnStage({ eventName, backgroundUrl, notify, onRevealed }: PredrawnStageProps) {
+export function PredrawnStage({ eventName, backgroundUrl, poolReady, poolKey, notify, onRevealed }: PredrawnStageProps) {
   const stageRef = useRef<HTMLDivElement>(null)
   const { isFullscreen, supported, enter, exit } = useFullscreen(stageRef)
   const [phase, setPhaseState] = useState<Phase>('ready')
@@ -74,16 +84,21 @@ export function PredrawnStage({ eventName, backgroundUrl, notify, onRevealed }: 
       (names) => {
         namesRef.current = names
       },
-      () => {
-        /* keep the previous sample; the roll falls back to scrambled text */
+      (caught: unknown) => {
+        // No sessions selected any more: drop the old sample (the roll falls back to scrambled text).
+        // Other errors keep the previous sample. Names are display only either way.
+        if (caught instanceof ApiError && caught.code === 'NO_POOL') namesRef.current = []
       },
     )
   }, [])
 
+  useEffect(() => clearTimers, [clearTimers])
+  // Sample of pool names, fetched again whenever the selected sessions change
+  // (the page re-reads the overview every 15 s); dropped when none are selected.
   useEffect(() => {
-    refreshNames()
-    return clearTimers
-  }, [refreshNames, clearTimers])
+    if (poolReady) refreshNames()
+    else namesRef.current = []
+  }, [poolReady, poolKey, refreshNames])
 
   const nextName = useCallback((index: number, fallback = 'Holcim'): string => {
     const names = namesRef.current
@@ -166,6 +181,10 @@ export function PredrawnStage({ eventName, backgroundUrl, notify, onRevealed }: 
       const phaseNow = phaseRef.current
       if (key === ' ') {
         if (busyRef.current || phaseNow === 'rolling' || phaseNow === 'landing') return
+        if (!poolReady) {
+          notify({ tone: 'error', text: 'No registration sessions are selected for the Randomizer. The names cannot start.' })
+          return
+        }
         startRoll()
         return
       }
@@ -184,7 +203,16 @@ export function PredrawnStage({ eventName, backgroundUrl, notify, onRevealed }: 
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [isFullscreen, notify, reveal, startRoll, stopRoll])
+  }, [isFullscreen, notify, poolReady, reveal, startRoll, stopRoll])
+
+  // An admin cleared the session selection while names were rolling: stop (nothing recorded;
+  // a reveal already in flight is decided by the server, which also checks the pool).
+  useEffect(() => {
+    if (!poolReady && phaseRef.current === 'rolling' && !busyRef.current) {
+      stopRoll()
+      notify({ tone: 'error', text: 'No registration sessions are selected for the Randomizer any more (changed by an admin). Names stopped; nothing was recorded.' })
+    }
+  }, [poolReady, notify, stopRoll])
 
   // Leaving fullscreen during a roll stops it (nothing recorded unless a reveal is in flight).
   useEffect(() => {
@@ -208,14 +236,17 @@ export function PredrawnStage({ eventName, backgroundUrl, notify, onRevealed }: 
       {!presenting && (
         <div className="flex items-start justify-between gap-4 px-6 pt-6 sm:px-8">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-200 sm:text-sm">Pre-Drawn Winner Reveal</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-200 sm:text-sm">Randomizer</p>
             <p className="mt-1 truncate text-sm font-medium text-slate-300">{eventName ?? '—'}</p>
           </div>
           {supported && (
             <button
               type="button"
+              disabled={!poolReady && !isFullscreen}
+              title={!poolReady ? 'Select registration sessions for the Randomizer first' : undefined}
               onClick={() => void (isFullscreen ? exit() : enter())}
-              className="inline-flex shrink-0 items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-sm font-medium text-slate-200 hover:bg-white/20"
+              className="inline-flex shrink-0 items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-sm font-medium text-slate-200 hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
+              data-testid="enter-fullscreen"
             >
               {isFullscreen ? <Minimize className="size-4" aria-hidden /> : <Maximize className="size-4" aria-hidden />}
               Enter fullscreen
@@ -242,6 +273,10 @@ export function PredrawnStage({ eventName, backgroundUrl, notify, onRevealed }: 
               <p className={cn('mt-[2vh] font-semibold text-white', presenting ? 'text-[3.2vw]' : 'text-2xl sm:text-3xl')}>{winner.prizeLabel}</p>
             )}
           </div>
+        ) : !presenting && !poolReady ? (
+          <p className="max-w-md text-sm font-medium text-amber-200" data-testid="stage-no-pool">
+            No registration sessions are selected for the Randomizer, so the presentation cannot start.
+          </p>
         ) : !presenting ? (
           <p className="max-w-md text-sm text-slate-300">
             Fullscreen shows only the background. <b>Space</b> starts the names, then the assigned <b>letter</b> reveals that winner.

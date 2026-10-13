@@ -1,11 +1,17 @@
 import type { EventDay } from '../types/eventDay'
 import { apiClient } from './apiClient'
 
-/** Pre-Drawn Winner Reveal (winners chosen outside the system, revealed by letter). */
+/**
+ * The Randomizer = Pre-Drawn Winner Reveal: winners chosen outside the system
+ * (Spin the Wheel) are revealed by letter. The rolling names come from the
+ * registration sessions an admin selects for the event day (the "pool").
+ */
 export type PredrawnStatus = 'assigned' | 'revealed' | 'voided'
 
 export interface PredrawnAssignment {
   id: number
+  /** Live rows: is the winner registered in the selected sessions? false = reveal blocked. null = not computed (voided rows). */
+  inPool: boolean | null
   /** Always "Pre-Drawn Winner" (never a random draw). */
   category: string
   letter: string
@@ -28,10 +34,52 @@ export interface PredrawnAssignment {
   voidReason: string | null
 }
 
+/** A registration session of the event day, as shown in the Randomizer session picker. */
+export interface PoolSession {
+  id: number
+  label: string
+  sessionDate: string
+  startTime: string | null
+  enabled: boolean
+  current: boolean
+  selected: boolean
+  /** Active registrations of active attendees in this session. */
+  registered: number
+}
+
+export interface RandomizerPool {
+  sessions: PoolSession[]
+  selectedSessionIds: number[]
+  /** false = no session selected: the presentation cannot start. */
+  configured: boolean
+  /** Unique active attendees registered in at least one selected session. */
+  size: number
+}
+
+/** An assignment whose winner is outside the (new) pool. */
+export interface PoolConflict {
+  letter: string
+  fullName: string
+  attendeeCode: string
+  status: PredrawnStatus
+}
+
+export interface PoolCandidate {
+  id: number
+  attendeeCode: string
+  fullName: string
+  company: string | null
+  department: string | null
+  externalIdentifier: string | null
+  /** Letter already assigned to this attendee today (live), if any. */
+  assignedLetter: string | null
+}
+
 export interface PredrawnOverview {
   event: { id: number; name: string }
   eventDay: EventDay
   category: string
+  pool: RandomizerPool
   /** Live assignments (assigned or revealed), by letter. */
   assignments: PredrawnAssignment[]
   /** Voided reveals (kept for the audit trail). */
@@ -65,6 +113,16 @@ export const predrawnService = {
   remove: (id: number) => apiClient.delete<null>(`/predrawn/assignments/${id}`),
   async voidReveal(id: number, reason: string): Promise<PredrawnAssignment> {
     return (await apiClient.post<{ assignment: PredrawnAssignment }>(`/predrawn/assignments/${id}/void`, { reason })).assignment
+  },
+  /**
+   * Admin: replace the day's selected sessions. 409 POOL_CONFLICTS (details.conflicts)
+   * when unrevealed assignments would leave the pool, unless confirmConflicts.
+   */
+  savePool: (sessionIds: number[], confirmConflicts = false) =>
+    apiClient.put<{ pool: RandomizerPool; outOfPool: PoolConflict[] }>('/predrawn/pool', { session_ids: sessionIds, confirm_conflicts: confirmConflicts }),
+  /** Admin: pool attendees matching a search (assignment picker). */
+  async poolCandidates(search: string): Promise<PoolCandidate[]> {
+    return (await apiClient.get<{ items: PoolCandidate[] }>(`/predrawn/pool/candidates?search=${encodeURIComponent(search)}`)).items
   },
 }
 

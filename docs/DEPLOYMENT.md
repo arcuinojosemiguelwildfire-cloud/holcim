@@ -74,6 +74,15 @@ Attendee QR codes now contain only the token. Printed labels do not depend on `A
 
 On Supabase, apply `supabase/migrations/20261007090000_holcim_registration_sessions.sql`; the MySQL → PostgreSQL import now requires source migration 033. See docs/REGISTRATION_SESSIONS.md.
 
+### Single Randomizer (migration 036): Randomizer name pool
+
+1. Take a **verified** database backup (`mysqldump` and check the file is complete).
+2. Run `php backend/cli/migrate.php`. Migration 036 only **creates** the empty table `randomizer_pool_sessions` (which registration sessions feed the Randomizer per event day). No existing row is changed or deleted: attendees, QR tokens, registrations, scans, `randomizer_draws`, `predrawn_winners` and every Minor / Major record stay as they are.
+3. Deploy the backend and the rebuilt frontend together. The Minor / Major Randomizer pages and APIs are gone (old links redirect to `/randomizer`); legacy reports stay under Reports › Legacy Minor/Major History.
+4. In **Randomizer › Name pool**, an admin selects the registration sessions for each event day before presenting (nothing is selected after the migration, so the presentation cannot start until this is done).
+
+On Supabase, apply `supabase/migrations/20261013100000_holcim_randomizer_pool_sessions.sql`; the MySQL → PostgreSQL import now requires source migration 036 and copies `randomizer_pool_sessions`.
+
 ### Moving the local database online (QR codes already printed)
 
 Before: `php backend/cli/verify-qr-migration.php --save` on the local machine, then `mysqldump`. After restoring the full dump online: `php backend/cli/verify-qr-migration.php --compare=<manifest.json>` must print `RESULT: PASS`. See README §9m. The tool is read-only.
@@ -84,7 +93,7 @@ Before: `php backend/cli/verify-qr-migration.php --save` on the local machine, t
 |-----|-----|---------|
 | `https://domain/` | Staff | Admin app (login) |
 | `https://domain/registration` | Registration staff, scanner operators | Hardware QR scanner input + scanner dashboard (scanner operators land here after login) |
-| `https://domain/minor-randomizer`, `/major-randomizer` | Event operator | Draw stages (fullscreen), + Add Participant |
+| `https://domain/randomizer` | Admin, event operator | Randomizer: name pool, pre-drawn assignments, fullscreen reveal (`/minor-randomizer`, `/major-randomizer`, `/predrawn-reveal` redirect here) |
 | `https://domain/settings` | Admin | Scanner Operators (add, enable/disable, reset password) |
 | (none) | Attendee QR labels contain only the token, not a URL | Read by the hardware scanner on the Registration page |
 

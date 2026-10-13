@@ -22,9 +22,10 @@ const REMOVED: Array<[keyof SystemResetCounts, string]> = [
   ['event_days', 'Event days'],
   ['attendees', 'Attendees and their QR codes'],
   ['registration_scans', 'Registrations (check-ins)'],
-  ['randomizer_draws', 'Randomizer draws / winners'],
-  ['predrawn_winners', 'Pre-drawn winner assignments and reveals'],
-  ['manual_participants', 'Manual raffle participants and Major eligibility'],
+  ['randomizer_draws', 'Legacy Minor / Major draws / winners'],
+  ['predrawn_winners', 'Randomizer (pre-drawn) winner assignments and reveals'],
+  ['randomizer_pool_sessions', 'Randomizer session selections (name pool)'],
+  ['manual_participants', 'Legacy manual raffle participants and Major eligibility'],
   ['import_batches', 'Import batches'],
   ['non_admin_users', 'Registration Staff, Event Operator and Scanner Operator accounts'],
 ]

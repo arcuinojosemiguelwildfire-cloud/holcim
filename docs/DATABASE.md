@@ -192,7 +192,7 @@ Every scan attempt per day: `event_id`, `event_day_id`, `user_id`, `attendee_id`
 ## Phase 9.3: Add Attendee and System Reset (no migration)
 
 - No schema change. Manually added attendees use the existing `attendees` columns (`import_batch_id` NULL) and `attendee_qr_codes`; the code is `MAX(ATT-####) + 1` for the event, generated while the event row is locked (`SELECT … FOR UPDATE`), the same as imports.
-- System Reset deletes, in one transaction and in this order: `scan_logs`, `randomizer_draws`, `minor_manual_entries`, `major_eligibility`, `major_entries`, `registration_scans`, `attendee_qr_codes`, `attendees`, `import_batches`, `event_days`, `audit_logs`, `events`, `login_attempts`, then `users WHERE role <> 'admin'`. Children go before parents, so no RESTRICT foreign key fails and no orphans remain (SET NULL references to users are already gone with their rows). `schema_migrations` and admin users are never touched. Uses DELETE (not TRUNCATE) so it can roll back.
+- System Reset deletes, in one transaction and in this order (current list: `backend/services/SystemResetService.php`, which also covers the session tables, `predrawn_winners` and `randomizer_pool_sessions`): `scan_logs`, `randomizer_draws`, `minor_manual_entries`, `major_eligibility`, `major_entries`, `registration_scans`, `attendee_qr_codes`, `attendees`, `import_batches`, `event_days`, `audit_logs`, `events`, `login_attempts`, then `users WHERE role <> 'admin'`. Children go before parents, so no RESTRICT foreign key fails and no orphans remain (SET NULL references to users are already gone with their rows). `schema_migrations` and admin users are never touched. Uses DELETE (not TRUNCATE) so it can roll back.
 
 ## Phase 10: registration sessions (migration 033)
 
@@ -204,12 +204,21 @@ Every scan attempt per day: `event_id`, `event_day_id`, `user_id`, `attendee_id`
 
 Pools: Minor = registered in any session of the day; Major = registered in a session that counts for Major. Manual additions work as before. See docs/REGISTRATION_SESSIONS.md.
 
+## Randomizer pool sessions (migration 036)
+
+- **`randomizer_pool_sessions`:** which registration sessions feed the Randomizer's name pool for one event day: `id`, `event_id`, `event_day_id`, `registration_session_id`, `selected_by` (FK `users`, ON DELETE SET NULL), `selected_at`. No rows = nothing selected (the presentation cannot start).
+- UNIQUE (`event_day_id`, `registration_session_id`). Composite FKs (RESTRICT): (`event_day_id`, `event_id`) → `event_days`(`id`, `event_id`) and (`registration_session_id`, `event_day_id`) → `registration_sessions`(`id`, `event_day_id`), so a selection can never point at another day's or another event's session. Indexes on (`registration_session_id`, `event_day_id`), `event_id`, `selected_by`.
+- Saving a selection deletes and re-inserts that day's rows in one transaction (holding the `event_days` row lock); it never touches `session_registrations`, `registration_scans`, `scan_logs` or `registration_sessions`.
+- **Pool** (computed, not stored): `attendees` with `status = 'active'` in the same event that have a `session_registrations` row with `status = 'active'` in at least one selected session of that day — `DISTINCT` attendees (an attendee in two selected sessions counts once). See `backend/models/RandomizerPool.php`.
+- PostgreSQL twin: `supabase/migrations/20261013100000_holcim_randomizer_pool_sessions.sql` (same keys; RLS SELECT for admin + event operator via `private.can_operate_randomizers()`; no client writes). Included in the MySQL → Supabase import (`tools/lib/tables.ts`). System Reset deletes it after `predrawn_winners`, before `registration_sessions`.
+- Legacy structures kept unchanged: `randomizer_draws` (Minor / Major history incl. void and reset marks), `minor_manual_entries`, `major_eligibility`, `registration_sessions.counts_for_major`.
+
 ## Pre-drawn winners (migration 035)
 
 - **`predrawn_winners`:** one row per assignment of a pre-drawn winner (chosen outside the system) to a letter A–Z for one event day: `event_id`, `event_day_id`, `letter`, `attendee_id`, optional `prize_label`, `assigned_*`, `revealed_*`, `voided_*`, `void_reason`.
 - Composite FKs: (`event_day_id`, `event_id`) → `event_days`, (`attendee_id`, `event_id`) → `attendees` (same event), RESTRICT; user columns SET NULL.
 - Generated `live_lock` (1, or NULL once voided) in UNIQUE (`event_day_id`, `letter`, `live_lock`) and (`event_day_id`, `attendee_id`, `live_lock`): one live row per letter and per attendee per day; voided rows stay as history. CHECKs: letter A–Z, void only after reveal. PostgreSQL twin: partial unique indexes `WHERE voided_at IS NULL`, RLS SELECT for admin + event operator.
-- Separate from `randomizer_draws`: no effect on Minor / Major pools or eligibility. System Reset deletes it before `attendees`.
+- Separate from `randomizer_draws`. Since migration 036 every live assignment must be in the day's pool (enforced by the API, not by a constraint, so a selection change can flag rather than delete). System Reset deletes it before `attendees`.
 
 ## Internal / External attendee type (migration 034)
 

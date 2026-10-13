@@ -9,7 +9,7 @@ import { ApiError, errorMessage } from '../services/apiClient'
 
 const HIGHLIGHTS = [
   { icon: ScanLine, text: 'Fast QR registration at the venue entrance' },
-  { icon: Trophy, text: 'Fair, auditable minor and major prize draws' },
+  { icon: Trophy, text: 'Auditable winner reveals for pre-drawn prizes' },
   { icon: ShieldCheck, text: 'Role-based access for every staff member' },
 ]
 

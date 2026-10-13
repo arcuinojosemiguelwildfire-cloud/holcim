@@ -12,7 +12,7 @@ use App\Utils\Validator;
 /**
  * Pre-Drawn Winner Reveal (active event day). Roles in routes.php:
  * view / roll names / reveal = admin + event operator; assignments and
- * voids = admin only. Separate from the Minor / Major Randomizer.
+ * voids / pool sessions = admin only. This is the single "Randomizer".
  */
 final class PredrawnController
 {
@@ -63,5 +63,17 @@ final class PredrawnController
         $data = Validator::make($request->body())->string('reason', max: 200, label: 'Reason')->validate();
 
         return Response::success(PredrawnRevealService::void($request, $id, $data['reason'] ?? null), message: 'Reveal voided.');
+    }
+
+    /** PUT /predrawn/pool {session_ids: int[], confirm_conflicts?: bool} (admin) */
+    public static function pool(Request $request): Response
+    {
+        return Response::success(PredrawnRevealService::savePool($request, $request->body()), message: 'Randomizer sessions saved.');
+    }
+
+    /** GET /predrawn/pool/candidates?search= (admin) */
+    public static function poolCandidates(Request $request): Response
+    {
+        return Response::success(PredrawnRevealService::poolCandidates((string) ($request->query('search') ?? '')));
     }
 }

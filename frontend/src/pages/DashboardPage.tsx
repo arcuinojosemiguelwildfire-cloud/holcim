@@ -1,4 +1,4 @@
-import { CalendarDays, CalendarPlus, Dices, RefreshCw, Trophy, UserCheck, Users } from 'lucide-react'
+import { CalendarDays, CalendarPlus, Dices, RefreshCw, UserCheck, Users } from 'lucide-react'
 import { StatCard } from '../components/dashboard/StatCard'
 import { EventStatusBadge } from '../components/events/EventStatusBadge'
 import { Alert } from '../components/ui/Alert'
@@ -78,7 +78,7 @@ function DashboardContent({ summary }: { summary: DashboardSummary }) {
           <EmptyState
             icon={<CalendarDays className="size-6" aria-hidden />}
             title="No active event"
-            description="The dashboard, registration and randomizers all work on the active event. Create an event and set its status to Active."
+            description="The dashboard, registration and the Randomizer all work on the active event. Create an event and set its status to Active."
             action={
               hasRole('admin') ? (
                 <ButtonLink to="/events" icon={<CalendarPlus className="size-4" aria-hidden />}>
@@ -92,11 +92,15 @@ function DashboardContent({ summary }: { summary: DashboardSummary }) {
         )}
       </Card>
 
-      <section aria-label="Event statistics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="Event statistics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <StatCard label="Total Attendees" metric={metrics.totalAttendees} icon={Users} hint="Imported for the active event" />
         <StatCard label="Registered" metric={metrics.registered} icon={UserCheck} hint={activeDay ? `Checked in on Day ${activeDay.dayNumber}` : 'Checked in by QR scan'} />
-        <StatCard label="Minor Eligible" metric={metrics.minorEligible} icon={Dices} hint="Registered today, not yet a Minor winner" />
-        <StatCard label="Major Eligible" metric={metrics.majorEligible} icon={Trophy} hint="Registered today, not yet a Major winner" />
+        <StatCard
+          label="Randomizer Pool"
+          metric={metrics.randomizerPool}
+          icon={Dices}
+          hint={metrics.randomizerPool.configured ? 'Unique attendees in the sessions selected for today' : 'No registration sessions selected yet'}
+        />
       </section>
     </div>
   )

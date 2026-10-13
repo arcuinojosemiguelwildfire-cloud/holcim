@@ -169,7 +169,7 @@ try {
     $anonymous = new TestApiClient($baseUrl);
     check('Event operator and registration staff log in', $operator->login("rb-operator-{$stamp}@example.invalid", $secret['operator']) === 200
         && $staff->login("rb-staff-{$stamp}@example.invalid", $secret['staff']) === 200);
-    $minorBefore = $operator->request('GET', '/randomizers/minor');
+    $randomizerBefore = $operator->request('GET', '/predrawn');
 
     section('Default background');
     $s = $state($admin);
@@ -265,9 +265,10 @@ try {
     check('Restore again is harmless (200)', $admin->request('DELETE', '/settings/randomizer-background')['status'] === 200);
 
     section('Randomizer and event data unchanged');
-    $minorAfter = $operator->request('GET', '/randomizers/minor');
-    check('Minor Randomizer summary answers as before', $minorAfter['status'] === $minorBefore['status']
-        && ($minorAfter['body']['data']['eligibleCount'] ?? null) === ($minorBefore['body']['data']['eligibleCount'] ?? null), [$minorBefore['status'], $minorAfter['status']]);
+    $randomizerAfter = $operator->request('GET', '/predrawn');
+    check('Randomizer overview answers as before', $randomizerAfter['status'] === $randomizerBefore['status']
+        && ($randomizerAfter['body']['data']['pool'] ?? null) === ($randomizerBefore['body']['data']['pool'] ?? null)
+        && ($randomizerAfter['body']['data']['assignments'] ?? null) === ($randomizerBefore['body']['data']['assignments'] ?? null), [$randomizerBefore['status'], $randomizerAfter['status']]);
     check('Draws, winners, QR tokens, attendees, registrations and scan logs unchanged', $dataSnapshot() === $dataBefore);
 } finally {
     section('Cleanup');
