@@ -31,7 +31,7 @@ const SELECT_MATRIX: Record<string, string[]> = {
   events: STAFF, event_days: ADMIN, registration_sessions: ADMIN, attendees: STAFF,
   session_registrations: STAFF, session_registration_changes: STAFF,
   registration_scans: SCANNERS, scan_logs: SCANNERS,
-  minor_manual_entries: RANDOMIZER, major_eligibility: RANDOMIZER, randomizer_draws: RANDOMIZER,
+  minor_manual_entries: RANDOMIZER, major_eligibility: RANDOMIZER, randomizer_draws: RANDOMIZER, predrawn_winners: RANDOMIZER,
   major_entries: ADMIN, import_batches: ADMIN, audit_logs: ADMIN, migration_import_runs: ADMIN,
 };
 const NO_CLIENT_ACCESS = ['users', 'login_attempts', 'attendee_qr_codes'];
@@ -64,6 +64,7 @@ describe('Supabase auth, roles and RLS (SQL as PostgREST runs it)', { skip: skip
       INSERT INTO major_eligibility (id, event_id, event_day_id, attendee_id, source) VALUES (1, 1, 1, 3, 'manual');
       INSERT INTO major_entries (id, event_id, full_name) VALUES (1, 1, 'Legacy');
       INSERT INTO randomizer_draws (id, event_id, event_day_id, attendee_id, randomizer_type) VALUES (1, 1, 1, 1, 'minor');
+      INSERT INTO predrawn_winners (id, event_id, event_day_id, letter, attendee_id, prize_label) VALUES (1, 1, 1, 'A', 2, 'Prize');
       INSERT INTO audit_logs (action) VALUES ('seed');
       INSERT INTO login_attempts (id, email_hash, ip_address) VALUES (1, repeat('a', 64), '10.0.0.1');
       INSERT INTO migration_import_runs (source_database, source_migrations, table_counts, table_fingerprints, qr_fingerprint, qr_identity_fingerprint, started_at)
@@ -192,6 +193,9 @@ describe('Supabase auth, roles and RLS (SQL as PostgREST runs it)', { skip: skip
       `INSERT INTO public.major_eligibility (event_id, event_day_id, attendee_id, source) VALUES (1,1,2,'manual')`,
       `INSERT INTO public.randomizer_draws (event_id, event_day_id, attendee_id, randomizer_type) VALUES (1,1,2,'major')`,
       `UPDATE public.randomizer_draws SET voided_at = now()`,
+      `INSERT INTO public.predrawn_winners (event_id, event_day_id, letter, attendee_id) VALUES (1,1,'B',3)`,
+      `UPDATE public.predrawn_winners SET revealed_at = now()`,
+      `DELETE FROM public.predrawn_winners`,
       `INSERT INTO public.audit_logs (action, description) VALUES ('user.role_changed', 'fake')`,
       `DELETE FROM public.audit_logs`,
       `UPDATE public.attendee_qr_codes SET token = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'`,

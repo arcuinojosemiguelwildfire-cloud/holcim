@@ -258,6 +258,13 @@ export async function seedMysql(name: string): Promise<{ tokens: string[] }> {
     [2, 1, 1, 21, 'minor', 1, '2026-10-10 15:01:00', '2026-10-10 15:02:00', 1, 'Not present', null, null],
     [3, 1, 2, 10, 'major', 5, '2026-10-11 20:00:00', null, null, null, '2026-10-11 21:00:00', 1],
   ]]);
+  // Pre-drawn winners (migration 035): one assigned, one revealed, one revealed then voided + re-assigned.
+  await c.query('INSERT INTO predrawn_winners (id, event_id, event_day_id, letter, attendee_id, prize_label, assigned_by, assigned_at, revealed_at, revealed_by, voided_at, voided_by, void_reason) VALUES ?', [[
+    [1, 1, 2, 'A', 30, 'Grand Prize – “Car”', 1, '2026-10-11 08:00:00', null, null, null, null, null],
+    [2, 1, 2, 'B', 31, null, 1, '2026-10-11 08:01:00', '2026-10-11 20:30:00', 5, null, null, null],
+    [3, 1, 2, 'C', 32, 'TV', 1, '2026-10-11 08:02:00', '2026-10-11 20:31:00', 5, '2026-10-11 20:32:00', 1, 'Wrong letter'],
+    [4, 1, 2, 'C', 32, 'TV', 1, '2026-10-11 20:33:00', null, null, null, null, null],
+  ]]);
   const audit: unknown[][] = [];
   for (let i = 1; i <= 40; i++) {
     audit.push([i, i % 3 ? 1 : null, i % 4 ? 1 : null, `action.${i % 5}`, i % 2 ? `Description ${i} | ü` : null,
@@ -273,7 +280,7 @@ export async function seedMysql(name: string): Promise<{ tokens: string[] }> {
 /** MySQL CHECKSUM TABLE of every table: proves the source was not modified. */
 export async function mysqlChecksums(name: string): Promise<string> {
   const c = await mysqlAdmin(name);
-  const [rows] = await c.query('CHECKSUM TABLE users, events, event_days, registration_sessions, import_batches, attendees, attendee_qr_codes, registration_scans, session_registrations, session_registration_changes, scan_logs, minor_manual_entries, major_eligibility, major_entries, randomizer_draws, audit_logs, login_attempts, schema_migrations');
+  const [rows] = await c.query('CHECKSUM TABLE users, events, event_days, registration_sessions, import_batches, attendees, attendee_qr_codes, registration_scans, session_registrations, session_registration_changes, scan_logs, minor_manual_entries, major_eligibility, major_entries, randomizer_draws, predrawn_winners, audit_logs, login_attempts, schema_migrations');
   const [ai] = await c.query('SELECT table_name, auto_increment FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY table_name');
   await c.end();
   return JSON.stringify([rows, ai]);

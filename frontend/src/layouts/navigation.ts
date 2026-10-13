@@ -2,6 +2,7 @@ import {
   CalendarDays,
   ChartColumn,
   Dices,
+  Gift,
   LayoutDashboard,
   QrCode,
   ScanLine,
@@ -45,6 +46,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Registration', path: '/registration', icon: ScanLine, roles: SCANNER_ROLES },
   { label: 'Minor Randomizer', path: '/minor-randomizer', icon: Dices, roles: RANDOMIZER_ROLES },
   { label: 'Major Randomizer', path: '/major-randomizer', icon: Trophy, roles: RANDOMIZER_ROLES },
+  { label: 'Pre-Drawn Reveal', path: '/predrawn-reveal', icon: Gift, roles: RANDOMIZER_ROLES },
   { label: 'Reports', path: '/reports', icon: ChartColumn, roles: ['admin'] },
   { label: 'Settings', path: '/settings', icon: Settings, roles: ['admin'] },
 ]

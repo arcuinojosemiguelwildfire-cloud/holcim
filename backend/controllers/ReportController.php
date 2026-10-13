@@ -38,6 +38,14 @@ final class ReportController
         return ReportService::winnersXlsx(is_string($scope) && $scope === 'day' ? 'day' : 'all');
     }
 
+    /** GET /reports/predrawn-winners.xlsx?scope=all|day (admin) */
+    public static function predrawnWinners(Request $request): Response
+    {
+        $scope = $request->query('scope', 'all');
+
+        return ReportService::predrawnWinnersXlsx(is_string($scope) && $scope === 'day' ? 'day' : 'all');
+    }
+
     /** GET /reports/draws.csv?scope=day|all */
     public static function draws(Request $request): Response
     {

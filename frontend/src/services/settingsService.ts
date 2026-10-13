@@ -39,6 +39,8 @@ export interface SystemResetCounts {
   attendees: number
   registration_scans: number
   randomizer_draws: number
+  /** Migration 035; absent on servers that have not run it yet. */
+  predrawn_winners?: number
   import_batches: number
   manual_participants: number
   non_admin_users: number

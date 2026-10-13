@@ -18,6 +18,7 @@ use App\Controllers\DashboardController;
 use App\Controllers\EventController;
 use App\Controllers\EventDayController;
 use App\Controllers\HealthController;
+use App\Controllers\PredrawnController;
 use App\Controllers\QrCodeController;
 use App\Controllers\RandomizerBackgroundController;
 use App\Controllers\RandomizerController;
@@ -114,6 +115,16 @@ return static function (Router $router): void {
 
     // Randomizers (active event): admin + event operator.
     $randomizerOperators = AuthMiddleware::roles(User::ROLE_ADMIN, User::ROLE_EVENT_OPERATOR);
+    // Pre-Drawn Winner Reveal (migration 035): winners chosen outside the system,
+    // revealed by letter on the LED screen. Separate from Minor / Major draws.
+    $router->get('/predrawn', [PredrawnController::class, 'index'], [$randomizerOperators]);
+    $router->get('/predrawn/roll-names', [PredrawnController::class, 'rollNames'], [$randomizerOperators]);
+    $router->post('/predrawn/reveal', [PredrawnController::class, 'reveal'], [$randomizerOperators]);
+    $router->post('/predrawn/assignments', [PredrawnController::class, 'assign'], [$adminOnly]);
+    $router->put('/predrawn/assignments/{id}', [PredrawnController::class, 'update'], [$adminOnly]);
+    $router->delete('/predrawn/assignments/{id}', [PredrawnController::class, 'remove'], [$adminOnly]);
+    $router->post('/predrawn/assignments/{id}/void', [PredrawnController::class, 'void'], [$adminOnly]);
+
     // Randomizer background (custom image or default). Viewing: randomizer operators;
     // changing / restoring: admin only (Settings > Randomizer Background).
     $router->get('/randomizers/background', [RandomizerBackgroundController::class, 'show'], [$randomizerOperators]);
@@ -146,6 +157,8 @@ return static function (Router $router): void {
     // Excel lists (Phase 9.2): "Day N Attendees.xlsx" for a day of the active event, and Winners.xlsx.
     $router->get('/reports/day-attendees.xlsx', [ReportController::class, 'dayAttendees'], [$adminOnly]);
     $router->get('/reports/winners.xlsx', [ReportController::class, 'winners'], [$adminOnly]);
+    // Pre-drawn winners (assignments, reveals, voids), labelled "Pre-Drawn Winner"; separate from Winners.xlsx.
+    $router->get('/reports/predrawn-winners.xlsx', [ReportController::class, 'predrawnWinners'], [$adminOnly]);
 
     // Settings > Scanner Operators (Phase 8): admin only.
     $router->get('/settings/scanner-operators', [SettingsController::class, 'scannerOperators'], [$adminOnly]);

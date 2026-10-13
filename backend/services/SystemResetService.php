@@ -17,7 +17,8 @@ use App\Models\User;
  * status), the schema, schema_migrations and configuration.
  * Removed: events, event days, registration sessions, attendees, QR tokens,
  * registrations (day check-ins and session registrations + history), scan
- * logs, randomizer draws, manual raffle participants, Major eligibility
+ * logs, randomizer draws, pre-drawn winner assignments / reveals
+ * (migration 035), manual raffle participants, Major eligibility
  * (incl. legacy imported rows), legacy major_entries, import batches,
  * audit logs, login attempts and every non-admin user (registration staff,
  * event operators, scanner operators).
@@ -41,6 +42,7 @@ final class SystemResetService
         ['session_registration_changes', ''],
         ['session_registrations', ''],
         ['randomizer_draws', ''],
+        ['predrawn_winners', ''],
         ['minor_manual_entries', ''],
         ['major_eligibility', ''],
         ['major_entries', ''],
@@ -125,7 +127,7 @@ final class SystemResetService
     {
         $pdo = Database::connection();
         $counts = [];
-        foreach (['events', 'event_days', 'attendees', 'registration_scans', 'randomizer_draws', 'import_batches'] as $table) {
+        foreach (['events', 'event_days', 'attendees', 'registration_scans', 'randomizer_draws', 'predrawn_winners', 'import_batches'] as $table) {
             $counts[$table] = (int) $pdo->query("SELECT COUNT(*) FROM {$table}")->fetchColumn();
         }
         $counts['manual_participants'] = (int) $pdo->query('SELECT (SELECT COUNT(*) FROM minor_manual_entries) + (SELECT COUNT(*) FROM major_eligibility)')->fetchColumn();

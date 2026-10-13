@@ -23,6 +23,7 @@ const REMOVED: Array<[keyof SystemResetCounts, string]> = [
   ['attendees', 'Attendees and their QR codes'],
   ['registration_scans', 'Registrations (check-ins)'],
   ['randomizer_draws', 'Randomizer draws / winners'],
+  ['predrawn_winners', 'Pre-drawn winner assignments and reveals'],
   ['manual_participants', 'Manual raffle participants and Major eligibility'],
   ['import_batches', 'Import batches'],
   ['non_admin_users', 'Registration Staff, Event Operator and Scanner Operator accounts'],
@@ -60,7 +61,7 @@ export function SystemResetCard({ onReset }: { onReset: () => void }) {
                 {REMOVED.map(([key, label]) => (
                   <li key={key} className="flex items-center justify-between gap-3 px-3 py-2">
                     <span className="text-slate-700">{label}</span>
-                    <span className="tabular-nums font-medium text-slate-900">{formatNumber(data.counts[key])}</span>
+                    <span className="tabular-nums font-medium text-slate-900">{formatNumber(data.counts[key] ?? 0)}</span>
                   </li>
                 ))}
                 <li className="px-3 py-2 text-slate-500">Also: scan logs, login attempts and audit log entries.</li>

@@ -77,7 +77,13 @@ export function ReportsPage() {
           <a href={`${API_BASE_URL}/reports/winners.xlsx?scope=all`} className={linkClass}>
             <Download className="size-4" aria-hidden /> Winners.xlsx
           </a>
+          <a href={`${API_BASE_URL}/reports/predrawn-winners.xlsx?scope=all`} className={linkClass}>
+            <Download className="size-4" aria-hidden /> Pre-Drawn Winners.xlsx
+          </a>
         </div>
+        <p className="px-5 pb-4 text-xs text-slate-500">
+          Winners.xlsx lists the Minor / Major random draws only. Pre-Drawn Winners.xlsx lists the winners selected before the event and revealed with the Pre-Drawn Reveal (category “Pre-Drawn Winner”).
+        </p>
       </Card>
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">

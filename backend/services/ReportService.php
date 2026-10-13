@@ -8,6 +8,7 @@ use App\Core\Database;
 use App\Core\HttpException;
 use App\Core\Response;
 use App\Models\EventDay;
+use App\Models\PredrawnWinner;
 use App\Models\RandomizerDraw;
 use App\Utils\XlsxWriter;
 
@@ -208,6 +209,34 @@ final class ReportService
         );
 
         return self::xlsx($xlsx, $day !== null ? "Winners - Day {$day['day_number']}.xlsx" : 'Winners.xlsx');
+    }
+
+    /**
+     * Pre-Drawn Winners.xlsx (migration 035): every pre-drawn winner
+     * assignment of the event (or the current day) with its reveal and void,
+     * each row labelled "Pre-Drawn Winner" (selected outside the system, not
+     * a random draw). Separate file: Winners.xlsx is unchanged.
+     */
+    public static function predrawnWinnersXlsx(string $scope): Response
+    {
+        [$event, $day] = self::context($scope);
+        $rows = [];
+        foreach (PredrawnWinner::forEvent((int) $event['id'], $day !== null ? (int) $day['id'] : null) as $row) {
+            $rows[] = [
+                PredrawnRevealService::CATEGORY, self::dayCell($row), $row['letter'], $row['prize_label'], $row['attendee_code'], $row['full_name'],
+                $row['company'], $row['department'], strtoupper(PredrawnWinner::status($row)),
+                $row['assigned_at'], $row['assigned_by_name'], $row['revealed_at'], $row['revealed_by_name'],
+                $row['voided_at'], $row['voided_by_name'], $row['void_reason'],
+            ];
+        }
+        $xlsx = (new XlsxWriter())->addSheet(
+            'Pre-Drawn Winners',
+            ['Category', 'Event Day', 'Letter', 'Prize', 'Attendee Code', 'Full Name', 'Company', 'Cluster', 'Status',
+                'Assigned At', 'Assigned By', 'Revealed At', 'Revealed By', 'Voided At', 'Voided By', 'Void Reason'],
+            $rows
+        );
+
+        return self::xlsx($xlsx, $day !== null ? "Pre-Drawn Winners - Day {$day['day_number']}.xlsx" : 'Pre-Drawn Winners.xlsx');
     }
 
     /**

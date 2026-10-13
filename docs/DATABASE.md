@@ -204,6 +204,13 @@ Every scan attempt per day: `event_id`, `event_day_id`, `user_id`, `attendee_id`
 
 Pools: Minor = registered in any session of the day; Major = registered in a session that counts for Major. Manual additions work as before. See docs/REGISTRATION_SESSIONS.md.
 
+## Pre-drawn winners (migration 035)
+
+- **`predrawn_winners`:** one row per assignment of a pre-drawn winner (chosen outside the system) to a letter A–Z for one event day: `event_id`, `event_day_id`, `letter`, `attendee_id`, optional `prize_label`, `assigned_*`, `revealed_*`, `voided_*`, `void_reason`.
+- Composite FKs: (`event_day_id`, `event_id`) → `event_days`, (`attendee_id`, `event_id`) → `attendees` (same event), RESTRICT; user columns SET NULL.
+- Generated `live_lock` (1, or NULL once voided) in UNIQUE (`event_day_id`, `letter`, `live_lock`) and (`event_day_id`, `attendee_id`, `live_lock`): one live row per letter and per attendee per day; voided rows stay as history. CHECKs: letter A–Z, void only after reveal. PostgreSQL twin: partial unique indexes `WHERE voided_at IS NULL`, RLS SELECT for admin + event operator.
+- Separate from `randomizer_draws`: no effect on Minor / Major pools or eligibility. System Reset deletes it before `attendees`.
+
 ## Internal / External attendee type (migration 034)
 
 - `attendees.attendee_type` ENUM('internal','external') NULL — additive; every existing attendee stays NULL (not specified). PostgreSQL twin: `supabase/migrations/20261011090000_holcim_attendee_type.sql` (text + CHECK).

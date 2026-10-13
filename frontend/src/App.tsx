@@ -12,6 +12,7 @@ import { NotFoundPage } from './pages/NotFoundPage'
 import { QrGeneratorPage } from './pages/QrGeneratorPage'
 import { QrPrintPage } from './pages/QrPrintPage'
 import { RandomizerPage } from './pages/RandomizerPage'
+import { PredrawnRevealPage } from './pages/PredrawnRevealPage'
 import { RegistrationPage } from './pages/RegistrationPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { SettingsPage } from './pages/SettingsPage'
@@ -55,6 +56,7 @@ const router = createBrowserRouter(
               children: [
                 { path: 'minor-randomizer', element: <RandomizerPage key="minor" type="minor" /> },
                 { path: 'major-randomizer', element: <RandomizerPage key="major" type="major" /> },
+                { path: 'predrawn-reveal', element: <PredrawnRevealPage /> },
               ],
             },
             {

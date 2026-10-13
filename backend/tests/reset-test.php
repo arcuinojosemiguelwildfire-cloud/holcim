@@ -96,7 +96,7 @@ echo "System reset test against TEST database '{$database}'\n";
 $tables = $pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN);
 $required = ['events', 'event_days', 'attendees', 'attendee_qr_codes', 'registration_scans', 'scan_logs', 'randomizer_draws',
     'minor_manual_entries', 'major_eligibility', 'major_entries', 'import_batches', 'login_attempts', 'audit_logs', 'users', 'schema_migrations',
-    'registration_sessions', 'session_registrations', 'session_registration_changes'];
+    'registration_sessions', 'session_registrations', 'session_registration_changes', 'predrawn_winners'];
 if (array_diff($required, $tables) !== []) {
     fwrite(STDERR, "The test database is not fully migrated. Run: DB_DATABASE={$database} php backend/cli/migrate.php\n");
     exit(1);
@@ -149,6 +149,12 @@ insert($pdo, 'randomizer_draws', ['event_id' => $eventId, 'event_day_id' => $day
 $void = insert($pdo, 'randomizer_draws', ['event_id' => $eventId, 'event_day_id' => $day1, 'attendee_id' => $attendees[3], 'randomizer_type' => 'minor', 'drawn_by' => $operatorId]);
 $pdo->prepare("UPDATE randomizer_draws SET voided_by = :u, voided_at = NOW(), void_reason = 'test' WHERE id = :id")
     ->execute(['u' => $adminId, 'id' => $void]);
+// Pre-drawn winners (migration 035): a revealed + voided row, a re-assignment and a plain assignment.
+$pre = insert($pdo, 'predrawn_winners', ['event_id' => $eventId, 'event_day_id' => $day1, 'letter' => 'A', 'attendee_id' => $attendees[1], 'prize_label' => 'Car', 'assigned_by' => $adminId]);
+$pdo->prepare('UPDATE predrawn_winners SET revealed_at = NOW(), revealed_by = :u WHERE id = :id')->execute(['u' => $operatorId, 'id' => $pre]);
+$pdo->prepare("UPDATE predrawn_winners SET voided_at = NOW(), voided_by = :u, void_reason = 'test' WHERE id = :id")->execute(['u' => $adminId, 'id' => $pre]);
+insert($pdo, 'predrawn_winners', ['event_id' => $eventId, 'event_day_id' => $day1, 'letter' => 'A', 'attendee_id' => $attendees[1], 'assigned_by' => $adminId]);
+insert($pdo, 'predrawn_winners', ['event_id' => $eventId, 'event_day_id' => $day2, 'letter' => 'B', 'attendee_id' => $attendees[2], 'assigned_by' => $operatorId]);
 insert($pdo, 'login_attempts', ['email_hash' => hash('sha256', 'x'), 'ip_address' => '127.0.0.1']);
 insert($pdo, 'audit_logs', ['action' => 'test.seed', 'user_id' => $operatorId, 'event_id' => $eventId]);
 insert($pdo, 'audit_logs', ['action' => 'auth.login', 'user_id' => $adminId]);
@@ -159,10 +165,12 @@ $migrationsBefore = $pdo->query('SELECT migration FROM schema_migrations ORDER B
 
 $seededCounts = SystemResetService::counts();
 check('seed: event data present before reset', $seededCounts['events'] >= 1 && $seededCounts['attendees'] >= 6 && $seededCounts['randomizer_draws'] >= 3 && $seededCounts['non_admin_users'] >= 3);
+check('seed: pre-drawn winners present and counted', ($seededCounts['predrawn_winners'] ?? 0) === 3, json_encode($seededCounts));
 
 // ---------------------------------------------------------------- reset
 $deleted = SystemResetService::run();
 check('reset: returned per-table counts', ($deleted['attendees'] ?? 0) >= 6 && ($deleted['users'] ?? 0) >= 3, json_encode($deleted));
+check('reset: pre-drawn winners deleted before attendees (3 rows)', ($deleted['predrawn_winners'] ?? 0) === 3, json_encode($deleted));
 
 // ---------------------------------------------------------------- verify
 foreach (array_diff($tables, ['users', 'schema_migrations']) as $table) {

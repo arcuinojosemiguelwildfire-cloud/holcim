@@ -664,6 +664,18 @@ php backend/cli/check-readiness.php   # "PHP extension gd" should be OK
 
 Upload limits: PHP's `upload_max_filesize` must be at least `10M` and `post_max_size` a little larger (e.g. `12M`) in `/Applications/XAMPP/xamppfiles/etc/php.ini` (XAMPP's defaults are usually higher); restart Apache after changing them. If the folder is not writable the page shows "The server cannot save files…" and nothing changes.
 
+## 9r. Pre-Drawn Winner Reveal (migration 035)
+
+**Pre-Drawn Reveal** (sidebar; admin and event operator) reveals winners who were **already selected before the event** outside this system (e.g. a Spin the Wheel app). It is **not** a random draw and is completely separate from the Minor / Major Randomizer: nothing is written to `randomizer_draws`, and Minor / Major eligibility, pools, history, Winners.xlsx and the eligibility report are unchanged. A pre-drawn winner stays eligible for the Minor / Major draws.
+
+- **Assign (admin):** "Assign letter" → letter A–Z, an existing **active attendee of the active event** (search), optional prize label. Per event day each letter and each attendee can be used once. Unrevealed assignments can be edited or removed; the list is the review checklist before presenting.
+- **Present (admin or event operator):** "Enter fullscreen" on the LED screen shows only the Randomizer background. **Space** starts the rolling names (nothing is recorded); while they roll, the assigned **letter** asks the server to record the reveal and only then stops on the winner: name and prize label. **Backspace** stops the names (nothing recorded) or hides the winner; **Esc** leaves fullscreen.
+- **Safety:** letters before Space, unassigned letters, letters already revealed, held-down keys and keys typed in form fields never reveal anything; one reveal request at a time; the server locks the event day and allows exactly one reveal per letter (concurrent presses get "already revealed").
+- **Operator notices** ("Letter Q has no pre-drawn winner", "already revealed", errors) are never shown on the LED screen. Click **Open operator window** and keep that window on the laptop while the first window is fullscreen on the LED; notices appear there instantly.
+- **Void (admin):** "Void reveal" keeps the reveal in history marked VOID (audit-logged); the letter can then be assigned again and revealed again (never two live reveals for one letter).
+- **Records:** every record is labelled **Pre-Drawn Winner** — admin list, audit log (`predrawn.assigned / assignment_updated / assignment_removed / revealed / reveal_voided`, "not a random draw") and **Reports › Pre-Drawn Winners.xlsx** (`GET /api/reports/predrawn-winners.xlsx?scope=all|day`).
+- **System Reset** also clears `predrawn_winners` (it is event data, like draws).
+
 ## 10. Creating the first admin
 
 There are **no default or hard-coded credentials**. Create accounts from the

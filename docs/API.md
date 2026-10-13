@@ -150,6 +150,15 @@ and the role matrix is in README §9g. Phase 8 notes:
   `External Attendees` sheet when present and, for the
   `Cluster | Name 1 | Attendee 1..N` layout, returns one row per attendee
   (`layout: "external_attendees"`, headers Full Name / Company / Cluster).
+- Migration 035 (Pre-Drawn Winner Reveal, active event day; separate from the
+  Minor / Major Randomizer): `GET /predrawn` (overview: `assignments`, `voided`),
+  `GET /predrawn/roll-names`, `POST /predrawn/reveal {letter}` (admin + event
+  operator; `404 NOT_ASSIGNED`, `409 ALREADY_REVEALED`, `409 ATTENDEE_INACTIVE`);
+  admin only: `POST /predrawn/assignments {letter, attendee_id, prize_label?}`
+  (`409 LETTER_TAKEN` / `ATTENDEE_ASSIGNED`), `PUT|DELETE /predrawn/assignments/{id}`
+  (unrevealed only), `POST /predrawn/assignments/{id}/void {reason?}`,
+  `GET /reports/predrawn-winners.xlsx?scope=all|day`. Records carry
+  `category: "Pre-Drawn Winner"`.
 - Migration 034 (standard guest sheet): import mappings have the fields
   `full_name, first_name, middle_name, surname, company, attendee_type,
   department, email, external_identifier` (missing keys = not mapped, so old

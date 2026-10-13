@@ -1,5 +1,5 @@
 // Schema tests: the Supabase migrations build every table, foreign key, unique rule,
-// index, CHECK and trigger of the MySQL schema (after migrations 001-034), plus the
+// index, CHECK and trigger of the MySQL schema (after migrations 001-035), plus the
 // Phase 1 security baseline. MySQL is migrated from database/migrations in a scratch
 // database and compared object by object.
 import { after, before, describe, test } from 'node:test';
@@ -98,6 +98,10 @@ describe('PostgreSQL schema mirrors MySQL', { skip: skipBoth }, () => {
       if (cols.includes('active_lock')) {
         // generated active_lock + UNIQUE -> partial unique index on status = 'active'
         found = pgi.find((g) => g.t === t && g.u && /WHERE \(status = 'active'::text\)/.test(g.def));
+      } else if (cols.includes('live_lock')) {
+        // generated live_lock (1 / NULL when voided) in a UNIQUE key -> partial unique index WHERE voided_at IS NULL
+        const rest = cols.filter((c) => c !== 'live_lock').join(',');
+        found = pgi.find((g) => g.t === t && g.u && g.cols === rest && /WHERE \(voided_at IS NULL\)/.test(g.def));
       } else if (cols.includes('current_lock')) {
         // generated current_lock + UNIQUE -> partial unique index WHERE is_current
         found = pgi.find((g) => g.t === t && g.u && /WHERE is_current/.test(g.def));
